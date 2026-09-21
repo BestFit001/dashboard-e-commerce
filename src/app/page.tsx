@@ -22,7 +22,7 @@ export default function Home() {
     precoVenda: 'Preço de Venda',
     frete: 'Frete',
     rebate: 'Rebate',
-    comissao: 'Comissão'
+    retornoLiquido: 'Retorno Líquido' // Substituído de comissão para retorno líquido do canal
   });
 
   const handleProcessarTudo = async (e: React.FormEvent) => {
@@ -82,7 +82,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de 4 bases: Mercado Livre, Faturados, Cancelados e Custos.</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de 4 bases: Mercado Livre (com Retorno Líquido), Faturados, Cancelados e Custos.</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -100,7 +100,7 @@ export default function Home() {
           <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Preço:</label><input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
           <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Frete:</label><input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
           <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Rebate:</label><input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Comissão:</label><input type="text" value={mapping.comissao} onChange={(e) => setMapping({...mapping, comissao: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#00ffcc' }}>Retorno Líquido:</label><input type="text" value={mapping.retornoLiquido} onChange={(e) => setMapping({...mapping, retornoLiquido: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
         </div>
       </div>
 
@@ -146,10 +146,8 @@ export default function Home() {
                 <tr style={{ borderBottom: '1px solid #30363d', color: '#888' }}>
                   <th style={{ padding: '10px' }}>SKU</th>
                   <th style={{ padding: '10px' }}>Preço Venda</th>
-                  <th style={{ padding: '10px' }}>Frete</th>
-                  <th style={{ padding: '10px' }}>Rebate</th>
-                  <th style={{ padding: '10px' }}>Comissão</th>
-                  <th style={{ padding: '10px', color: '#00ffcc' }}>Parcial / Liquidez</th>
+                  <th style={{ padding: '10px' }}>Retorno Líquido</th>
+                  <th style={{ padding: '10px', color: '#00ffcc' }}>Liquidez Final</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,9 +155,7 @@ export default function Home() {
                   <tr key={item.id} style={{ borderBottom: '1px solid #21262d' }}>
                     <td style={{ padding: '10px' }}>{item.sku}</td>
                     <td style={{ padding: '10px' }}>R$ {item.precoVenda.toFixed(2)}</td>
-                    <td style={{ padding: '10px' }}>R$ {item.frete.toFixed(2)}</td>
-                    <td style={{ padding: '10px' }}>R$ {item.rebate.toFixed(2)}</td>
-                    <td style={{ padding: '10px' }}>R$ {item.comissao.toFixed(2)}</td>
+                    <td style={{ padding: '10px' }}>R$ {item.retornoLiquido.toFixed(2)}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', color: '#2ea043' }}>R$ {item.liquidezBruta.toFixed(2)}</td>
                   </tr>
                 ))}
