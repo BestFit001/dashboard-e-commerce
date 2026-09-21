@@ -27,8 +27,9 @@ export default function Home() {
 
   const handleProcessarTudo = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Validação corrigida: apenas ML e Faturados são obrigatórios. Cancelados é opcional.
     if (!fileMl || !fileFaturados) {
-      setErro('Envie pelo menos a planilha do Mercado Livre e a de Faturados.');
+      setErro('Envie obrigatoriamente a planilha do Mercado Livre e a planilha de Pedidos Faturados.');
       return;
     }
 
@@ -39,7 +40,9 @@ export default function Home() {
       const formData = new FormData();
       formData.append('fileMl', fileMl);
       formData.append('fileFaturados', fileFaturados);
-      if (fileCancelados) formData.append('fileCancelados', fileCancelados);
+      if (fileCancelados) {
+        formData.append('fileCancelados', fileCancelados);
+      }
       formData.append('mapping', JSON.stringify(mapping));
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
@@ -82,7 +85,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de 4 bases: Mercado Livre (com Retorno Líquido), Faturados, Cancelados e Custos.</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de bases: Mercado Livre (com Retorno Líquido), Faturados, Cancelados (Opcional) e Custos.</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -114,7 +117,7 @@ export default function Home() {
         </div>
 
         <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Pedidos Cancelados</h2>
+          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Pedidos Cancelados (Opcional)</h2>
           <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCancelados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
           <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID:</label>
           <input type="text" value={mapping.colunaIdCancelado} onChange={(e) => setMapping({...mapping, colunaIdCancelado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
@@ -122,7 +125,7 @@ export default function Home() {
       </div>
 
       <button onClick={handleProcessarTudo} disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '14px 28px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginBottom: '30px', fontSize: '16px' }}>
-        {carregando ? 'A processar...' : 'Processar Cruzamento (ML x Faturados x Cancelados)'}
+        {carregando ? 'A processar...' : 'Processar Cruzamento (ML x Faturados)'}
       </button>
 
       {/* 4. CUSTOS */}
