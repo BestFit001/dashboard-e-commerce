@@ -22,7 +22,7 @@ export default function Home() {
     precoVenda: 'Preço de Venda',
     frete: 'Frete',
     rebate: 'Rebate',
-    retornoLiquido: 'Retorno Líquido' // Substituído de comissão para retorno líquido do canal
+    retornoLiquido: 'Retorno Líquido'
   });
 
   const handleProcessarTudo = async (e: React.FormEvent) => {
