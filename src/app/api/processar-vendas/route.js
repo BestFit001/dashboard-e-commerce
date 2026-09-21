@@ -8,45 +8,30 @@ export async function POST(request) {
     const mappingString = formData.get('mapping');
 
     if (!file) {
-      return NextResponse.json({ 
-        sucesso: false, 
-        erro: 'Nenhum ficheiro foi enviado na requisição.' 
-      }, { status: 400 });
+      return NextResponse.json({ sucesso: false, erro: 'Nenhum ficheiro de vendas enviado.' }, { status: 400 });
     }
 
-    // Recebe o dicionário de colunas mapeadas pelo usuário na interface
     const mapping = mappingString ? JSON.parse(mappingString) : {};
 
-    // Lê os bytes do ficheiro enviado (CSV ou XLSX)
     const bytes = await file.arrayBuffer();
     const workbook = XLSX.read(bytes, { type: 'array' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     
-    // Converte a planilha bruta em um array de objetos JSON
     const linhas = XLSX.utils.sheet_to_json(sheet);
 
-    if (!linhas || linhas.length === 0) {
-      return NextResponse.json({ 
-        sucesso: false, 
-        erro: 'A planilha enviada está vazia ou não pôde ser lida.' 
-      }, { status: 400 });
-    }
-
-    // Processamento e normalização das colunas variáveis de cada canal
     const dadosProcessados = linhas.map((linha, index) => {
-      const sku = String(linha[mapping.sku] || `SKU-NAO-INFORMADO-${index + 1}`).trim();
-      const precoVenda = Number(linha[mapping.precoVenda]) || 0;
-      const frete = Number(linha[mapping.frete]) || 0;
-      const rebate = Number(linha[mapping.rebate]) || 0;
-      const comissao = Number(linha[mapping.comissao]) || 0;
+      const sku = String(linha[mapping.sku] || linha['SKU'] || linha['Código'] || '').trim();
+      const precoVenda = Number(linha[mapping.precoVenda] || linha['Preço'] || linha['Preço de Venda'] || 0);
+      const frete = Number(linha[mapping.frete] || linha['Frete'] || 0);
+      const rebate = Number(linha[mapping.rebate] || linha['Rebate'] || 0);
+      const comissao = Number(linha[mapping.comissao] || linha['Comissão'] || 0);
 
-      // Cálculo preliminar da liquidez (fórmula base do canal)
       const liquidezBruta = precoVenda - frete - rebate - comissao;
 
       return {
         id: index + 1,
-        sku,
+        sku: sku || `SKU-${index + 1}`,
         precoVenda,
         frete,
         rebate,
@@ -57,15 +42,11 @@ export async function POST(request) {
 
     return NextResponse.json({ 
       sucesso: true, 
-      mensagem: `Planilha processada com sucesso! Total de ${dadosProcessados.length} registos extraídos.`,
+      mensagem: `Planilha de vendas processada! Total de ${dadosProcessados.length} registos.`,
       dados: dadosProcessados 
     });
 
   } catch (erro) {
-    return NextResponse.json({ 
-      sucesso: false, 
-      erro: 'Erro interno ao processar a planilha no servidor.', 
-      detalhe: String(erro) 
-    }, { status: 500 });
+    return NextResponse.json({ sucesso: false, erro: String(erro) }, { status: 500 });
   }
 }
