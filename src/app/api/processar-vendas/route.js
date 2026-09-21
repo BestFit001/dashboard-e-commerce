@@ -9,10 +9,15 @@ export async function POST(request: Request) {
     const fileCustos = formData.get('custos') as File;
     const fileCanal = formData.get('canal') as File;
     const mappingString = formData.get('mapping') as string;
+    
+    if (!mappingString) {
+      return NextResponse.json({ sucesso: false, erro: 'Mapeamento de colunas não informado.' }, { status: 400 });
+    }
+
     const mapping = JSON.parse(mappingString);
 
     if (!fileFaturados || !fileCustos || !fileCanal) {
-      return NextResponse.json({ erro: 'Envie as planilhas obrigatórias: Faturados, Custos e Canal.' }, { status: 400 });
+      return NextResponse.json({ sucesso: false, erro: 'Envie as planilhas obrigatórias: Faturados, Custos e Canal.' }, { status: 400 });
     }
 
     // 1. Processar Base de Custos e Salvar no Supabase
@@ -116,14 +121,20 @@ export async function POST(request: Request) {
       await supabase.from('vendas_consolidadas').insert([registroVenda]);
     }
 
+    // Retorno claro com a propriedade 'sucesso: true' para a sua tela validar
     return NextResponse.json({
       sucesso: true,
       totalVendasProcessadas: dadosProcessados.length,
       liquidezTotalAcumulada,
+      mensagem: `Processado com sucesso! ${dadosProcessados.length} vendas gravadas no Supabase.`,
       dados: dadosProcessados
     });
 
   } catch (erro) {
-    return NextResponse.json({ erro: 'Erro ao processar e salvar no banco.', detalhe: String(erro) }, { status: 500 });
+    return NextResponse.json({ 
+      sucesso: false, 
+      erro: 'Erro ao processar e salvar no banco.', 
+      detalhe: String(erro) 
+    }, { status: 500 });
   }
 }
