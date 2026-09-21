@@ -11,22 +11,26 @@ export async function POST(request: Request) {
     const mapping = JSON.parse(mappingString);
 
     if (!fileMl || !fileFaturados) {
-      return NextResponse.json({ erro: 'Envie obrigatório o Mercado Livre e os Faturados.' }, { status: 400 });
+      return NextResponse.json({ erro: 'Envie obrigatoriamente a planilha do canal e a de faturados.' }, { status: 400 });
     }
 
-    // 1. Ler Faturados (Lista de IDs válidos)
+    // 1. Ler Faturados
     const bytesFaturados = await fileFaturados.arrayBuffer();
     const wbFaturados = XLSX.read(bytesFaturados, { type: 'array' });
     const rowsFaturados: any[] = XLSX.utils.sheet_to_json(wbFaturados.Sheets[wbFaturados.SheetNames[0]]);
     const idsFaturadosSet = new Set(rowsFaturados.map(r => String(r[mapping.colunaIdFaturado] || '').trim()));
 
-    // 2. Ler Cancelados (Opcional)
+    // 2. Ler Cancelados (Opcional - se não enviar ou estiver vazio, ignora)
     const idsCanceladosSet = new Set<string>();
-    if (fileCancelados && fileCancelados.size > 0) {
-      const bytesCancelados = await fileCancelados.arrayBuffer();
-      const wbCancelados = XLSX.read(bytesCancelados, { type: 'array' });
-      const rowsCancelados: any[] = XLSX.utils.sheet_to_json(wbCancelados.Sheets[wbCancelados.SheetNames[0]]);
-      rowsCancelados.forEach(r => idsCanceladosSet.add(String(r[mapping.colunaIdCancelado] || '').trim()));
+    if (fileCancelados && fileCancelados.size > 0 && fileCancelados.name !== 'undefined') {
+      try {
+        const bytesCancelados = await fileCancelados.arrayBuffer();
+        const wbCancelados = XLSX.read(bytesCancelados, { type: 'array' });
+        const rowsCancelados: any[] = XLSX.utils.sheet_to_json(wbCancelados.Sheets[wbCancelados.SheetNames[0]]);
+        rowsCancelados.forEach(r => idsCanceladosSet.add(String(r[mapping.colunaIdCancelado] || '').trim()));
+      } catch (e) {
+        // Se houver erro ao ler o cancelados por estar vazio, apenas prossegue sem ele
+      }
     }
 
     // 3. Ler Mercado Livre e Filtrar
@@ -46,15 +50,12 @@ export async function POST(request: Request) {
         return { idVenda, sku, precoVenda, frete, rebate, retornoLiquido };
       })
       .filter((item) => {
-        // Regra de Ouro: Precisa estar nos faturados E NÃO pode estar nos cancelados
         const faturadoValido = idsFaturadosSet.has(item.idVenda);
         const cancelado = idsCanceladosSet.has(item.idVenda);
         return faturadoValido && !cancelado;
       })
       .map((item) => {
-        // Liquidez Final = Retorno Líquido do Canal - Custo do SKU (guardado no banco)
-        // Simulando o cálculo base com o retorno líquido fornecido pelo ML:
-        const liquidezBruta = item.retornoLiquido; 
+        const liquidezBruta = item.retornoLiquido; // Baseado no retorno líquido do canal
 
         return {
           id: item.idVenda,
