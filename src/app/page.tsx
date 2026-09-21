@@ -3,8 +3,10 @@
 import React, { useState } from 'react';
 
 export default function Home() {
-  const [file, setFile] = useState<File | null>(null);
+  const [fileCanal, setFileCanal] = useState<File | null>(null);
+  const [fileFaturados, setFileFaturados] = useState<File | null>(null);
   const [fileCustos, setFileCustos] = useState<File | null>(null);
+  
   const [resultado, setResultado] = useState<any>(null);
   const [resultadoCustos, setResultadoCustos] = useState<any>(null);
   const [carregando, setCarregando] = useState(false);
@@ -12,19 +14,19 @@ export default function Home() {
   const [erro, setErro] = useState<string | null>(null);
 
   const [mapping, setMapping] = useState({
+    colunaIdCanal: 'Número da venda',
+    colunaIdFaturado: 'Pedido',
     sku: 'SKU',
-    precoVenda: 'Preço',
+    precoVenda: 'Preço de Venda',
     frete: 'Frete',
     rebate: 'Rebate',
-    comissao: 'Comissão',
-    status: 'Status', // Coluna para filtrar pedidos faturados
-    statusDesejado: 'Faturado' // Valor que indica que o pedido foi faturado
+    comissao: 'Comissão'
   });
 
   const handleSubmitVendas = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setErro('Por favor, selecione a planilha do canal.');
+    if (!fileCanal || !fileFaturados) {
+      setErro('Envie tanto a planilha do canal quanto a planilha de pedidos faturados.');
       return;
     }
 
@@ -33,12 +35,13 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('fileCanal', fileCanal);
+      formData.append('fileFaturados', fileFaturados);
       formData.append('mapping', JSON.stringify(mapping));
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar vendas.');
+      if (!response.ok) throw new Error(data.erro || 'Erro ao processar.');
 
       setResultado(data);
     } catch (err: any) {
@@ -50,7 +53,7 @@ export default function Home() {
 
   const handleSubmitCustos = async () => {
     if (!fileCustos) {
-      setErro('Por favor, selecione a planilha de base de custos.');
+      setErro('Selecione a planilha de custos.');
       return;
     }
 
@@ -76,7 +79,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de canais com foco estrito em pedidos faturados e cruzamento de custos.</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Cruzamento rigoroso: apenas pedidos presentes na lista de faturados serão considerados.</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -84,21 +87,30 @@ export default function Home() {
         </div>
       )}
 
-      {/* 1. PAINEL DE VENDAS E FILTRO DE FATURADOS */}
+      {/* PAINEL DE CRUZAMENTO DE VENDAS E FATURADOS */}
       <form onSubmit={handleSubmitVendas} style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
-        <h2 style={{ fontSize: '18px', color: '#2ea043', marginBottom: '15px' }}>1. Painel de Pedidos e Filtro de Faturados</h2>
+        <h2 style={{ fontSize: '18px', color: '#2ea043', marginBottom: '15px' }}>1. Upload e Cruzamento (Canal x Faturados)</h2>
         
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Bruta do Canal (CSV ou XLSX):</label>
-          <input 
-            type="file" 
-            accept=".csv, .xlsx, .xls"
-            onChange={(e) => setFile(e.target.files?.[0] || null)} 
-            style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Bruta do Canal (Mercado Livre):</label>
+            <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCanal(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Fixa de Pedidos Faturados:</label>
+            <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px' }}>Coluna ID no Canal:</label>
+            <input type="text" value={mapping.colunaIdCanal} onChange={(e) => setMapping({...mapping, colunaIdCanal: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px' }}>Coluna ID nos Faturados:</label>
+            <input type="text" value={mapping.colunaIdFaturado} onChange={(e) => setMapping({...mapping, colunaIdFaturado: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+          </div>
           <div>
             <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna SKU:</label>
             <input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
@@ -121,32 +133,16 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', background: '#0d1117', padding: '15px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px', fontWeight: 'bold' }}>Nome da Coluna de Status:</label>
-            <input type="text" value={mapping.status} onChange={(e) => setMapping({...mapping, status: e.target.value})} style={{ width: '100%', padding: '8px', background: '#161b22', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px', fontWeight: 'bold' }}>Valor considerado Faturado (ex: Faturado / Entregue):</label>
-            <input type="text" value={mapping.statusDesejado} onChange={(e) => setMapping({...mapping, statusDesejado: e.target.value})} style={{ width: '100%', padding: '8px', background: '#161b22', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-        </div>
-
         <button type="submit" disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '12px 24px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-          {carregando ? 'A processar...' : 'Processar Apenas Faturados e Calcular'}
+          {carregando ? 'A filtrar e cruzar...' : 'Executar Filtro de Faturados e Calcular'}
         </button>
       </form>
 
-      {/* 2. PAINEL DE CUSTOS */}
+      {/* PAINEL DE CUSTOS */}
       <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
         <h2 style={{ fontSize: '18px', color: '#58a6ff', marginBottom: '15px' }}>2. Painel de Base de Custos (Fixo)</h2>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-          <input 
-            type="file" 
-            accept=".csv, .xlsx, .xls" 
-            onChange={(e) => setFileCustos(e.target.files?.[0] || null)} 
-            style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', flex: 1 }} 
-          />
+          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCustos(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', flex: 1 }} />
           <button type="button" onClick={handleSubmitCustos} disabled={carregandoCustos} style={{ background: '#1f6feb', color: '#fff', padding: '12px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
             {carregandoCustos ? 'A processar...' : 'Processar Base de Custos'}
           </button>
@@ -154,7 +150,7 @@ export default function Home() {
         {resultadoCustos && <p style={{ color: '#2ea043', marginTop: '10px', fontWeight: 'bold' }}>{resultadoCustos.mensagem}</p>}
       </div>
 
-      {/* TABELA DE RESULTADOS DE VENDAS */}
+      {/* TABELA DE RESULTADOS */}
       {resultado && (
         <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d' }}>
           <h3 style={{ color: '#2ea043', marginBottom: '10px' }}>{resultado.mensagem}</h3>
