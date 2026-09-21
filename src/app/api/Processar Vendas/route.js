@@ -1,151 +1,129 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/lib/supabase';
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const formData = await request.formData();
+    const fileFaturados = formData.get('faturados') as File;
+    const fileCustos = formData.get('custos') as File;
+    const fileCanal = formData.get('canal') as File;
+    const mappingString = formData.get('mapping') as string;
+    const mapping = JSON.parse(mappingString);
+
+    if (!fileFaturados || !fileCustos || !fileCanal) {
+      return NextResponse.json({ erro: 'Envie as planilhas obrigatórias: Faturados, Custos e Canal.' }, { status: 400 });
+    }
+
+    // 1. Processar Base de Custos e Salvar no Supabase
+    const bytesCustos = await fileCustos.arrayBuffer();
+    const wbCustos = XLSX.read(bytesCustos, { type: 'array' });
+    const linhasCustos: any[] = XLSX.utils.sheet_to_json(wbCustos.Sheets[wbCustos.SheetNames[0]]);
+
+    const mapaCustos = new Map();
+    for (const linha of linhasCustos) {
+      const sku = String(linha[mapping.custosSku] || '').trim();
+      const nomeProduto = String(linha[mapping.custosNome] || '');
+      const custo = Number(linha[mapping.custosValor]) || 0;
+      const embalagem = Number(linha[mapping.custosEmb]) || 0;
+
+      if (sku) {
+        mapaCustos.set(sku, { nomeProduto, custo, embalagem });
+        await supabase.from('custos_produtos').upsert({
+          sku,
+          nome_produto: nomeProduto,
+          custo,
+          embalagem
+        }, { onConflict: 'sku' });
+      }
+    }
+
+    // 2. Processar Faturados
+    const bytesFaturados = await fileFaturados.arrayBuffer();
+    const wbFaturados = XLSX.read(bytesFaturados, { type: 'array' });
+    const linhasFaturados: any[] = XLSX.utils.sheet_to_json(wbFaturados.Sheets[wbFaturados.SheetNames[0]]);
     
-    // Arquivos enviados
-    const fileFaturados = formData.get('faturados');
-    const fileCancelados = formData.get('cancelados');
-    const fileCustos = formData.get('custos');
-    const fileCanal = formData.get('canal');
-    
-    // Mapeamento dinâmico enviado pelo front-end
-    // Ex: { colPedido: 'A', colPdv: 'I', colFrete: 'N', colRebate: 'Q', colLiquido: 'S', colSku: 'W', colEnvio: 'AR', usaFlex: true, usaPdv: true, ... }
-    const mapping = JSON.parse(formData.get('mapping') || '{}');
-
-    if (!fileCanal || !fileCustos || !fileFaturados) {
-      return NextResponse.json({ erro: 'Envie pelo menos a planilha de Faturados, Custos e a do Canal.' }, { status: 400 });
-    }
-
-    // Função auxiliar para ler qualquer planilha XLSX/CSV enviada
-    const lerPlanilha = async (file) => {
-      const bytes = await file.arrayBuffer();
-      const workbook = XLSX.read(bytes, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      return XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Retorna array de linhas em formato matricial (linhas e colunas por índice)
-    };
-
-    // Converter letra de coluna (ex: 'A' -> 0, 'I' -> 8, 'AR' -> 43)
-    const letraParaIndice = (letra) => {
-      if (!letra) return -1;
-      let col = letra.toUpperCase().trim();
-      let sum = 0;
-      for (let i = 0; i < col.length; i++) {
-        sum *= 26;
-        sum += col.charCodeAt(i) - 64;
-      }
-      return sum - 1;
-    };
-
-    // 1. Processar Planilha de Faturados (Filtro de Pedidos Válidos + Data)
-    const dadosFaturados = await lerPlanilha(fileFaturados);
-    const pedidosValidos = new Set();
-    const datasPedidos = {};
-
-    // Ignora o cabeçalho (linha 0)
-    for (let i = 1; i < dadosFaturados.length; i++) {
-      const linha = dadosFaturados[i];
-      const numPedido = String(linha[letraParaIndice(mapping.faturadosPedido || 'A')] || '').trim();
-      const diaPedido = String(linha[letraParaIndice(mapping.faturadosData || 'B')] || '').trim();
-      if (numPedido) {
-        pedidosValidos.add(numPedido);
-        datasPedidos[numPedido] = diaPedido;
+    const pedidosFaturados = new Set();
+    const datasPedidos = new Map();
+    for (const linha of linhasFaturados) {
+      const pedido = String(linha[mapping.faturadosPedido] || '').trim();
+      const dataVenda = String(linha[mapping.faturadosData] || new Date().toISOString().split('T')[0]);
+      if (pedido) {
+        pedidosFaturados.add(pedido);
+        datasPedidos.set(pedido, dataVenda);
       }
     }
 
-    // 2. Processar Pedidos Cancelados (Remover da lista de válidos)
-    if (fileCancelados) {
-      const dadosCancelados = await lerPlanilha(fileCancelados);
-      for (let i = 1; i < dadosCancelados.length; i++) {
-        const linha = dadosCancelados[i];
-        const numPedido = String(linha[letraParaIndice(mapping.canceladosPedido || 'A')] || '').trim();
-        if (numPedido) {
-          pedidosValidos.delete(numPedido);
-        }
-      }
-    }
+    // 3. Processar Canal (Mercado Livre) e Cruzar dados
+    const bytesCanal = await fileCanal.arrayBuffer();
+    const wbCanal = XLSX.read(bytesCanal, { type: 'array' });
+    const linhasCanal: any[] = XLSX.utils.sheet_to_json(wbCanal.Sheets[wbCanal.SheetNames[0]]);
 
-    // 3. Processar Base de Custos (SKU -> Custo Produto + Embalagem)
-    const dadosCustos = await lerPlanilha(fileCustos);
-    const mapaCustos = {};
-    for (let i = 1; i < dadosCustos.length; i++) {
-      const linha = dadosCustos[i];
-      const sku = String(linha[0] || '').trim().toUpperCase(); // Coluna A: SKU
-      const custoProduto = Number(linha[2]) || 0;              // Coluna C: Custo
-      const embalagem = Number(linha[3]) || 0;                 // Coluna D: Embalagem
-      mapaCustos[sku] = {
-        custoTotal: custoProduto + embalagem,
-        nomeProduto: String(linha[1] || '')                    // Coluna B: Nome
-      };
-    }
+    let liquidezTotalAcumulada = 0;
+    const dadosProcessados = [];
 
-    // 4. Processar Planilha do Canal (Mercado Livre)
-    const dadosCanal = await lerPlanilha(fileCanal);
-    const resultados = [];
-    let totalLiquidezGeral = 0;
+    for (const linha of linhasCanal) {
+      const numPedido = String(linha[mapping.colPedido] || '').trim();
+      if (!pedidosFaturados.has(numPedido)) continue;
 
-    const idxPedido = letraParaIndice(mapping.colPedido);
-    const idxPdv = mapping.usaPdv ? letraParaIndice(mapping.colPdv) : -1;
-    const idxFrete = mapping.usaFrete ? letraParaIndice(mapping.colFrete) : -1;
-    const idxRebate = mapping.usaRebate ? letraParaIndice(mapping.colRebate) : -1;
-    const idxLiquido = mapping.usaLiquido ? letraParaIndice(mapping.colLiquido) : -1;
-    const idxSku = letraParaIndice(mapping.colSku);
-    const idxEnvio = mapping.usaFlex ? letraParaIndice(mapping.colEnvio) : -1;
+      const sku = String(linha[mapping.colSku] || '').trim();
+      const pdv = mapping.usaPdv ? Number(linha[mapping.colPdv]) || 0 : 0;
+      const frete = mapping.usaFrete ? Number(linha[mapping.colFrete]) || 0 : 0;
+      const rebate = mapping.usaRebate ? Number(linha[mapping.colRebate]) || 0 : 0;
+      const liquidoRecebido = mapping.usaLiquido ? Number(linha[mapping.colLiquido]) || 0 : 0;
+      const envioTexto = mapping.usaFlex ? String(linha[mapping.colEnvio] || '').toUpperCase() : '';
 
-    for (let i = 1; i < dadosCanal.length; i++) {
-      const linha = dadosCanal[i];
-      const numPedido = String(linha[idxPedido] || '').trim();
-
-      // Regra: Considerar APENAS se estiver na planilha de faturados e não cancelado
-      if (!numPedido || !pedidosValidos.has(numPedido)) continue;
-
-      const sku = String(linha[idxSku] || '').trim().toUpperCase();
-      const pdv = idxPdv !== -1 ? (Number(linha[idxPdv]) || 0) : 0;
-      const frete = idxFrete !== -1 ? (Number(linha[idxFrete]) || 0) : 0;
-      const rebate = idxRebate !== -1 ? (Number(linha[idxRebate]) || 0) : 0;
-      const liquidoOriginal = idxLiquido !== -1 ? (Number(linha[idxLiquido]) || 0) : 0;
-      const metodoEnvio = idxEnvio !== -1 ? String(linha[idxEnvio] || '').toUpperCase() : '';
-
-      // Imposto: 9% em cima do PDV
       const imposto = pdv * 0.09;
+      const custoFlex = envioTexto.includes('FLEX') ? 12.99 : 0;
 
-      // Custo Flex: Adicionar R$ 12,99 se contiver "FLEX"
-      const custoFlex = metodoEnvio.includes('FLEX') ? 12.99 : 0;
+      const infoCusto = mapaCustos.get(sku) || { nomeProduto: 'Não Cadastrado', custo: 0, embalagem: 0 };
+      const custoProduto = infoCusto.custo + infoCusto.embalagem;
 
-      // Buscar custos na base de dados fixa
-      const infoCusto = mapaCustos[sku] || { custoTotal: 0, nomeProduto: 'SKU não cadastrado' };
+      const liquidezFinal = liquidoRecebido > 0 
+        ? liquidoRecebido - imposto - custoFlex - custoProduto 
+        : pdv - frete - rebate - imposto - custoFlex - custoProduto;
 
-      // Liquidez Final por Venda = Líquido Original - Imposto - Custo Flex - Custo Produto - Embalagem
-      const liquidezFinal = liquidoOriginal - imposto - custoFlex - infoCusto.custoTotal;
+      liquidezTotalAcumulada += liquidezFinal;
+      const dataVenda = datasPedidos.get(numPedido) || new Date().toISOString().split('T')[0];
 
-      totalLiquidezGeral += liquidezFinal;
-
-      resultados.push({
-        numPedido,
-        data: datasPedidos[numPedido] || '',
+      const registroVenda = {
+        num_pedido: numPedido,
+        data_venda: dataVenda,
         sku,
-        nomeProduto: infoCusto.nomeProduto,
         pdv,
         imposto,
         frete,
         rebate,
-        liquidoOriginal,
+        liquido_recebido: liquidoRecebido,
+        custo_flex: custoFlex,
+        custo_produto: custoProduto,
+        liquidez_final: liquidezFinal
+      };
+
+      dadosProcessados.push({
+        numPedido,
+        data: dataVenda,
+        sku,
+        nomeProduto: infoCusto.nomeProduto,
+        pdv,
+        imposto,
         custoFlex,
-        custoProduto: infoCusto.custoTotal,
+        custoProduto,
         liquidezFinal
       });
+
+      // Grava o histórico diário consolidado no Supabase
+      await supabase.from('vendas_consolidadas').insert([registroVenda]);
     }
 
     return NextResponse.json({
       sucesso: true,
-      totalVendasProcessadas: resultados.length,
-      liquidezTotalAcumulada: totalLiquidezGeral,
-      dados: resultados
+      totalVendasProcessadas: dadosProcessados.length,
+      liquidezTotalAcumulada,
+      dados: dadosProcessados
     });
 
   } catch (erro) {
-    return NextResponse.json({ erro: 'Erro ao processar o motor do dashboard.', detalhe: String(erro) }, { status: 500 });
+    return NextResponse.json({ erro: 'Erro ao processar e salvar no banco.', detalhe: String(erro) }, { status: 500 });
   }
 }
