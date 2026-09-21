@@ -15,26 +15,31 @@ export default function Home() {
   const [erro, setErro] = useState<string | null>(null);
 
   const [mapping, setMapping] = useState({
-    colunaIdMl: 'Número da venda',
-    colunaIdFaturado: 'Pedido',
-    colunaIdCancelado: 'Pedido',
-    sku: 'SKU',
-    precoVenda: 'Preço de Venda',
-    frete: 'Frete',
-    rebate: 'Rebate',
-    retornoLiquido: 'Retorno Líquido'
+    colunaIdMl: 'A',
+    colunaIdFaturado: 'A',
+    colunaIdCancelado: 'A',
+    sku: 'W',
+    precoVenda: 'I',
+    frete: 'N',
+    rebate: 'Q',
+    retornoLiquido: 'S'
   });
 
   const handleProcessarTudo = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Validação corrigida: apenas ML e Faturados são obrigatórios. Cancelados é opcional.
-    if (!fileMl || !fileFaturados) {
-      setErro('Envie obrigatoriamente a planilha do Mercado Livre e a planilha de Pedidos Faturados.');
+    setErro(null);
+
+    // Validação estrita apenas para os 2 obrigatórios
+    if (!fileMl) {
+      setErro('Por favor, selecione a planilha do Mercado Livre (Item 1).');
+      return;
+    }
+    if (!fileFaturados) {
+      setErro('Por favor, selecione a planilha de Pedidos Faturados (Item 2).');
       return;
     }
 
     setCarregando(true);
-    setErro(null);
 
     try {
       const formData = new FormData();
@@ -47,6 +52,7 @@ export default function Home() {
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
       const data = await response.json();
+      
       if (!response.ok) throw new Error(data.erro || 'Erro ao processar.');
 
       setResultado(data);
@@ -89,7 +95,7 @@ export default function Home() {
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
-          <strong>Erro:</strong> {erro}
+          <strong>Aviso:</strong> {erro}
         </div>
       )}
 
@@ -125,7 +131,7 @@ export default function Home() {
       </div>
 
       <button onClick={handleProcessarTudo} disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '14px 28px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginBottom: '30px', fontSize: '16px' }}>
-        {carregando ? 'A processar...' : 'Processar Cruzamento (ML x Faturados)'}
+        {carregando ? 'A processar cruzamento...' : 'Processar Cruzamento (ML x Faturados)'}
       </button>
 
       {/* 4. CUSTOS */}
@@ -147,6 +153,7 @@ export default function Home() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #30363d', color: '#888' }}>
+                  <th style={{ padding: '10px' }}>ID Venda</th>
                   <th style={{ padding: '10px' }}>SKU</th>
                   <th style={{ padding: '10px' }}>Preço Venda</th>
                   <th style={{ padding: '10px' }}>Retorno Líquido</th>
@@ -154,12 +161,13 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {resultado.dados?.slice(0, 15).map((item: any) => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #21262d' }}>
+                {resultado.dados?.slice(0, 15).map((item: any, idx: number) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #21262d' }}>
+                    <td style={{ padding: '10px' }}>{item.id}</td>
                     <td style={{ padding: '10px' }}>{item.sku}</td>
-                    <td style={{ padding: '10px' }}>R$ {item.precoVenda.toFixed(2)}</td>
-                    <td style={{ padding: '10px' }}>R$ {item.retornoLiquido.toFixed(2)}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#2ea043' }}>R$ {item.liquidezBruta.toFixed(2)}</td>
+                    <td style={{ padding: '10px' }}>R$ {Number(item.precoVenda).toFixed(2)}</td>
+                    <td style={{ padding: '10px' }}>R$ {Number(item.retornoLiquido).toFixed(2)}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#2ea043' }}>R$ {Number(item.liquidezBruta).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>

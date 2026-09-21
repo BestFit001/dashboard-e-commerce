@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 
-export async function POST(request: Request) {
+export async function POST(request: any) {
   try {
     const formData = await request.formData();
-    const fileMl = formData.get('fileMl') as File;
-    const fileFaturados = formData.get('fileFaturados') as File;
-    const fileCancelados = formData.get('fileCancelados') as File | null;
-    const mappingString = formData.get('mapping') as string;
+    const fileMl = formData.get('fileMl');
+    const fileFaturados = formData.get('fileFaturados');
+    const fileCancelados = formData.get('fileCancelados');
+    const mappingString = formData.get('mapping');
     const mapping = JSON.parse(mappingString);
 
     if (!fileMl || !fileFaturados) {
@@ -17,29 +17,29 @@ export async function POST(request: Request) {
     // 1. Ler Faturados
     const bytesFaturados = await fileFaturados.arrayBuffer();
     const wbFaturados = XLSX.read(bytesFaturados, { type: 'array' });
-    const rowsFaturados: any[] = XLSX.utils.sheet_to_json(wbFaturados.Sheets[wbFaturados.SheetNames[0]]);
-    const idsFaturadosSet = new Set(rowsFaturados.map(r => String(r[mapping.colunaIdFaturado] || '').trim()));
+    const rowsFaturados = XLSX.utils.sheet_to_json(wbFaturados.Sheets[wbFaturados.SheetNames[0]]);
+    const idsFaturadosSet = new Set(rowsFaturados.map((r: any) => String(r[mapping.colunaIdFaturado] || '').trim()));
 
-    // 2. Ler Cancelados (Opcional - se não enviar ou estiver vazio, ignora)
-    const idsCanceladosSet = new Set<string>();
+    // 2. Ler Cancelados (Opcional)
+    const idsCanceladosSet = new Set();
     if (fileCancelados && fileCancelados.size > 0 && fileCancelados.name !== 'undefined') {
       try {
         const bytesCancelados = await fileCancelados.arrayBuffer();
         const wbCancelados = XLSX.read(bytesCancelados, { type: 'array' });
-        const rowsCancelados: any[] = XLSX.utils.sheet_to_json(wbCancelados.Sheets[wbCancelados.SheetNames[0]]);
-        rowsCancelados.forEach(r => idsCanceladosSet.add(String(r[mapping.colunaIdCancelado] || '').trim()));
+        const rowsCancelados = XLSX.utils.sheet_to_json(wbCancelados.Sheets[wbCancelados.SheetNames[0]]);
+        rowsCancelados.forEach((r: any) => idsCanceladosSet.add(String(r[mapping.colunaIdCancelado] || '').trim()));
       } catch (e) {
-        // Se houver erro ao ler o cancelados por estar vazio, apenas prossegue sem ele
+        // Ignora se vazio
       }
     }
 
     // 3. Ler Mercado Livre e Filtrar
     const bytesMl = await fileMl.arrayBuffer();
     const wbMl = XLSX.read(bytesMl, { type: 'array' });
-    const rowsMl: any[] = XLSX.utils.sheet_to_json(wbMl.Sheets[wbMl.SheetNames[0]]);
+    const rowsMl = XLSX.utils.sheet_to_json(wbMl.Sheets[wbMl.SheetNames[0]]);
 
     const dadosProcessados = rowsMl
-      .map((linha) => {
+      .map((linha: any) => {
         const idVenda = String(linha[mapping.colunaIdMl] || '').trim();
         const sku = String(linha[mapping.sku] || '').trim();
         const precoVenda = Number(linha[mapping.precoVenda]) || 0;
@@ -49,13 +49,13 @@ export async function POST(request: Request) {
 
         return { idVenda, sku, precoVenda, frete, rebate, retornoLiquido };
       })
-      .filter((item) => {
+      .filter((item: any) => {
         const faturadoValido = idsFaturadosSet.has(item.idVenda);
         const cancelado = idsCanceladosSet.has(item.idVenda);
         return faturadoValido && !cancelado;
       })
-      .map((item) => {
-        const liquidezBruta = item.retornoLiquido; // Baseado no retorno líquido do canal
+      .map((item: any) => {
+        const liquidezBruta = item.retornoLiquido;
 
         return {
           id: item.idVenda,
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       dados: dadosProcessados
     });
 
-  } catch (erro) {
+  } catch (erro: any) {
     return NextResponse.json({ erro: 'Erro ao processar as planilhas.', detalhe: String(erro) }, { status: 500 });
   }
 }
