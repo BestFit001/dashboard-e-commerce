@@ -26,7 +26,7 @@ export default function Home() {
   const handleSubmitVendas = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fileCanal || !fileFaturados) {
-      setErro('Envie tanto a planilha do canal quanto a planilha de pedidos faturados.');
+      setErro('Por favor, selecione tanto a planilha do canal quanto a planilha de pedidos faturados.');
       return;
     }
 
@@ -41,7 +41,7 @@ export default function Home() {
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar.');
+      if (!response.ok) throw new Error(data.erro || 'Erro ao processar as vendas.');
 
       setResultado(data);
     } catch (err: any) {
@@ -53,7 +53,7 @@ export default function Home() {
 
   const handleSubmitCustos = async () => {
     if (!fileCustos) {
-      setErro('Selecione a planilha de custos.');
+      setErro('Por favor, selecione a planilha de base de custos.');
       return;
     }
 
@@ -79,7 +79,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Cruzamento rigoroso: apenas pedidos presentes na lista de faturados serão considerados.</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Cruzamento restrito: apenas pedidos presentes na lista de faturados serão considerados (os demais serão descartados).</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -87,9 +87,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* PAINEL DE CRUZAMENTO DE VENDAS E FATURADOS */}
+      {/* PAINEL 1: CRUZAMENTO DE VENDAS E FATURADOS */}
       <form onSubmit={handleSubmitVendas} style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
-        <h2 style={{ fontSize: '18px', color: '#2ea043', marginBottom: '15px' }}>1. Upload e Cruzamento (Canal x Faturados)</h2>
+        <h2 style={{ fontSize: '18px', color: '#2ea043', marginBottom: '15px' }}>1. Validação de Pedidos Faturados vs Canal</h2>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
           <div>
@@ -97,7 +97,7 @@ export default function Home() {
             <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCanal(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Fixa de Pedidos Faturados:</label>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Fixa de Pedidos Faturados (Lista Oficial):</label>
             <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
           </div>
         </div>
@@ -134,11 +134,11 @@ export default function Home() {
         </div>
 
         <button type="submit" disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '12px 24px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-          {carregando ? 'A filtrar e cruzar...' : 'Executar Filtro de Faturados e Calcular'}
+          {carregando ? 'A filtrar e cruzar...' : 'Executar Cruzamento de Faturados'}
         </button>
       </form>
 
-      {/* PAINEL DE CUSTOS */}
+      {/* PAINEL 2: CUSTOS */}
       <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
         <h2 style={{ fontSize: '18px', color: '#58a6ff', marginBottom: '15px' }}>2. Painel de Base de Custos (Fixo)</h2>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
