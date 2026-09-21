@@ -28,7 +28,7 @@ export default function Home() {
   const handleProcessarTudo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fileMl || !fileFaturados) {
-      setErro('Envie pelo menos a planilha do Mercado Livre e a planilha de Faturados.');
+      setErro('Envie pelo menos a planilha do Mercado Livre e a de Faturados.');
       return;
     }
 
@@ -44,7 +44,7 @@ export default function Home() {
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar os dados.');
+      if (!response.ok) throw new Error(data.erro || 'Erro ao processar.');
 
       setResultado(data);
     } catch (err: any) {
@@ -56,7 +56,7 @@ export default function Home() {
 
   const handleProcessarCustos = async () => {
     if (!fileCustos) {
-      setErro('Selecione a planilha de base de custos.');
+      setErro('Selecione a planilha de custos.');
       return;
     }
 
@@ -82,7 +82,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão segregada de planilhas: Mercado Livre, Faturados, Cancelados e Custos.</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de 4 bases: Mercado Livre, Faturados, Cancelados e Custos.</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -90,61 +90,42 @@ export default function Home() {
         </div>
       )}
 
-      {/* BLOCO 1: PLANILHA DE VENDAS DO MERCADO LIVRE */}
+      {/* 1. MERCADO LIVRE */}
       <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '20px' }}>
         <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>1. Planilha Bruta de Vendas (Mercado Livre)</h2>
         <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileMl(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '15px' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID no ML:</label>
-            <input type="text" value={mapping.colunaIdMl} onChange={(e) => setMapping({...mapping, colunaIdMl: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna SKU:</label>
-            <input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Preço:</label>
-            <input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Frete:</label>
-            <input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Rebate:</label>
-            <input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Comissão:</label>
-            <input type="text" value={mapping.comissao} onChange={(e) => setMapping({...mapping, comissao: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID no ML:</label><input type="text" value={mapping.colunaIdMl} onChange={(e) => setMapping({...mapping, colunaIdMl: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna SKU:</label><input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Preço:</label><input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Frete:</label><input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Rebate:</label><input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
+          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Comissão:</label><input type="text" value={mapping.comissao} onChange={(e) => setMapping({...mapping, comissao: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
         </div>
       </div>
 
-      {/* BLOCO 2 & 3: FATURADOS E CANCELADOS */}
+      {/* 2 & 3. FATURADOS E CANCELADOS */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
         <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h2 style={{ fontSize: '16px', color: '#2ea043', marginBottom: '12px' }}>2. Planilha de Pedidos Faturados</h2>
+          <h2 style={{ fontSize: '16px', color: '#2ea043', marginBottom: '12px' }}>2. Pedidos Faturados</h2>
           <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
-          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID Faturado:</label>
+          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID:</label>
           <input type="text" value={mapping.colunaIdFaturado} onChange={(e) => setMapping({...mapping, colunaIdFaturado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
         </div>
 
         <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Planilha de Pedidos Cancelados (Opcional)</h2>
+          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Pedidos Cancelados</h2>
           <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCancelados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
-          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID Cancelado:</label>
+          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID:</label>
           <input type="text" value={mapping.colunaIdCancelado} onChange={(e) => setMapping({...mapping, colunaIdCancelado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
         </div>
       </div>
 
-      {/* BOTÃO DE PROCESSAMENTO DAS VENDAS */}
       <button onClick={handleProcessarTudo} disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '14px 28px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginBottom: '30px', fontSize: '16px' }}>
-        {carregando ? 'A processar e cruzar bases...' : 'Processar Cruzamento (ML x Faturados x Cancelados)'}
+        {carregando ? 'A processar...' : 'Processar Cruzamento (ML x Faturados x Cancelados)'}
       </button>
 
-      {/* BLOCO 4: BASE DE CUSTOS */}
+      {/* 4. CUSTOS */}
       <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
         <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>4. Base de Custos (Fixo)</h2>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
@@ -156,7 +137,6 @@ export default function Home() {
         {resultadoCustos && <p style={{ color: '#2ea043', marginTop: '10px', fontWeight: 'bold' }}>{resultadoCustos.mensagem}</p>}
       </div>
 
-      {/* TABELA DE RESULTADOS */}
       {resultado && (
         <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d' }}>
           <h3 style={{ color: '#2ea043', marginBottom: '10px' }}>{resultado.mensagem}</h3>
