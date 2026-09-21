@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 
 export default function Home() {
-  const [fileCanal, setFileCanal] = useState<File | null>(null);
+  const [fileMl, setFileMl] = useState<File | null>(null);
   const [fileFaturados, setFileFaturados] = useState<File | null>(null);
+  const [fileCancelados, setFileCancelados] = useState<File | null>(null);
   const [fileCustos, setFileCustos] = useState<File | null>(null);
   
   const [resultado, setResultado] = useState<any>(null);
@@ -14,8 +15,9 @@ export default function Home() {
   const [erro, setErro] = useState<string | null>(null);
 
   const [mapping, setMapping] = useState({
-    colunaIdCanal: 'Número da venda',
+    colunaIdMl: 'Número da venda',
     colunaIdFaturado: 'Pedido',
+    colunaIdCancelado: 'Pedido',
     sku: 'SKU',
     precoVenda: 'Preço de Venda',
     frete: 'Frete',
@@ -23,10 +25,10 @@ export default function Home() {
     comissao: 'Comissão'
   });
 
-  const handleSubmitVendas = async (e: React.FormEvent) => {
+  const handleProcessarTudo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileCanal || !fileFaturados) {
-      setErro('Por favor, selecione tanto a planilha do canal quanto a planilha de pedidos faturados.');
+    if (!fileMl || !fileFaturados) {
+      setErro('Envie pelo menos a planilha do Mercado Livre e a planilha de Faturados.');
       return;
     }
 
@@ -35,13 +37,14 @@ export default function Home() {
 
     try {
       const formData = new FormData();
-      formData.append('fileCanal', fileCanal);
+      formData.append('fileMl', fileMl);
       formData.append('fileFaturados', fileFaturados);
+      if (fileCancelados) formData.append('fileCancelados', fileCancelados);
       formData.append('mapping', JSON.stringify(mapping));
 
       const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar as vendas.');
+      if (!response.ok) throw new Error(data.erro || 'Erro ao processar os dados.');
 
       setResultado(data);
     } catch (err: any) {
@@ -51,9 +54,9 @@ export default function Home() {
     }
   };
 
-  const handleSubmitCustos = async () => {
+  const handleProcessarCustos = async () => {
     if (!fileCustos) {
-      setErro('Por favor, selecione a planilha de base de custos.');
+      setErro('Selecione a planilha de base de custos.');
       return;
     }
 
@@ -79,7 +82,7 @@ export default function Home() {
   return (
     <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
       <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Cruzamento restrito: apenas pedidos presentes na lista de faturados serão considerados (os demais serão descartados).</p>
+      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão segregada de planilhas: Mercado Livre, Faturados, Cancelados e Custos.</p>
 
       {erro && (
         <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
@@ -87,64 +90,67 @@ export default function Home() {
         </div>
       )}
 
-      {/* PAINEL 1: CRUZAMENTO DE VENDAS E FATURADOS */}
-      <form onSubmit={handleSubmitVendas} style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
-        <h2 style={{ fontSize: '18px', color: '#2ea043', marginBottom: '15px' }}>1. Validação de Pedidos Faturados vs Canal</h2>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+      {/* BLOCO 1: PLANILHA DE VENDAS DO MERCADO LIVRE */}
+      <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '20px' }}>
+        <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>1. Planilha Bruta de Vendas (Mercado Livre)</h2>
+        <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileMl(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '15px' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
           <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Bruta do Canal (Mercado Livre):</label>
-            <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCanal(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID no ML:</label>
+            <input type="text" value={mapping.colunaIdMl} onChange={(e) => setMapping({...mapping, colunaIdMl: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Planilha Fixa de Pedidos Faturados (Lista Oficial):</label>
-            <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%' }} />
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px' }}>Coluna ID no Canal:</label>
-            <input type="text" value={mapping.colunaIdCanal} onChange={(e) => setMapping({...mapping, colunaIdCanal: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna SKU:</label>
+            <input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#00ffcc', marginBottom: '5px' }}>Coluna ID nos Faturados:</label>
-            <input type="text" value={mapping.colunaIdFaturado} onChange={(e) => setMapping({...mapping, colunaIdFaturado: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Preço:</label>
+            <input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna SKU:</label>
-            <input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Frete:</label>
+            <input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna Preço:</label>
-            <input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Rebate:</label>
+            <input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna Frete:</label>
-            <input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna Rebate:</label>
-            <input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Coluna Comissão:</label>
-            <input type="text" value={mapping.comissao} onChange={(e) => setMapping({...mapping, comissao: e.target.value})} style={{ width: '100%', padding: '8px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+            <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Comissão:</label>
+            <input type="text" value={mapping.comissao} onChange={(e) => setMapping({...mapping, comissao: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
           </div>
         </div>
+      </div>
 
-        <button type="submit" disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '12px 24px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-          {carregando ? 'A filtrar e cruzar...' : 'Executar Cruzamento de Faturados'}
-        </button>
-      </form>
+      {/* BLOCO 2 & 3: FATURADOS E CANCELADOS */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+        <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
+          <h2 style={{ fontSize: '16px', color: '#2ea043', marginBottom: '12px' }}>2. Planilha de Pedidos Faturados</h2>
+          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
+          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID Faturado:</label>
+          <input type="text" value={mapping.colunaIdFaturado} onChange={(e) => setMapping({...mapping, colunaIdFaturado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+        </div>
 
-      {/* PAINEL 2: CUSTOS */}
-      <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
-        <h2 style={{ fontSize: '18px', color: '#58a6ff', marginBottom: '15px' }}>2. Painel de Base de Custos (Fixo)</h2>
+        <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
+          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Planilha de Pedidos Cancelados (Opcional)</h2>
+          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCancelados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
+          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID Cancelado:</label>
+          <input type="text" value={mapping.colunaIdCancelado} onChange={(e) => setMapping({...mapping, colunaIdCancelado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
+        </div>
+      </div>
+
+      {/* BOTÃO DE PROCESSAMENTO DAS VENDAS */}
+      <button onClick={handleProcessarTudo} disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '14px 28px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginBottom: '30px', fontSize: '16px' }}>
+        {carregando ? 'A processar e cruzar bases...' : 'Processar Cruzamento (ML x Faturados x Cancelados)'}
+      </button>
+
+      {/* BLOCO 4: BASE DE CUSTOS */}
+      <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
+        <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>4. Base de Custos (Fixo)</h2>
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
           <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCustos(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', flex: 1 }} />
-          <button type="button" onClick={handleSubmitCustos} disabled={carregandoCustos} style={{ background: '#1f6feb', color: '#fff', padding: '12px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-            {carregandoCustos ? 'A processar...' : 'Processar Base de Custos'}
+          <button type="button" onClick={handleProcessarCustos} disabled={carregandoCustos} style={{ background: '#1f6feb', color: '#fff', padding: '12px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+            {carregandoCustos ? 'A guardar...' : 'Guardar Custos'}
           </button>
         </div>
         {resultadoCustos && <p style={{ color: '#2ea043', marginTop: '10px', fontWeight: 'bold' }}>{resultadoCustos.mensagem}</p>}
