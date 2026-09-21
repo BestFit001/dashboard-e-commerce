@@ -8,7 +8,7 @@ export async function POST(request) {
     const mappingString = formData.get('mapping');
 
     if (!file) {
-      return NextResponse.json({ sucesso: false, erro: 'Nenhum ficheiro de vendas enviado.' }, { status: 400 });
+      return NextResponse.json({ sucesso: false, erro: 'Nenhum ficheiro enviado.' }, { status: 400 });
     }
 
     const mapping = mappingString ? JSON.parse(mappingString) : {};
@@ -20,7 +20,15 @@ export async function POST(request) {
     
     const linhas = XLSX.utils.sheet_to_json(sheet);
 
-    const dadosProcessados = linhas.map((linha, index) => {
+    // Filtra estritamente apenas os pedidos faturados se a coluna de status estiver definida
+    const linhasFiltradas = linhas.filter((linha) => {
+      if (!mapping.status) return true;
+      const statusLinha = String(linha[mapping.status] || '').trim().toLowerCase();
+      const statusDesejado = String(mapping.statusDesejado || '').trim().toLowerCase();
+      return statusLinha.includes(statusDesejado);
+    });
+
+    const dadosProcessados = linhasFiltradas.map((linha, index) => {
       const sku = String(linha[mapping.sku] || linha['SKU'] || linha['Código'] || '').trim();
       const precoVenda = Number(linha[mapping.precoVenda] || linha['Preço'] || linha['Preço de Venda'] || 0);
       const frete = Number(linha[mapping.frete] || linha['Frete'] || 0);
@@ -42,7 +50,7 @@ export async function POST(request) {
 
     return NextResponse.json({ 
       sucesso: true, 
-      mensagem: `Planilha de vendas processada! Total de ${dadosProcessados.length} registos.`,
+      mensagem: `Filtro aplicado! ${dadosProcessados.length} pedidos faturados processados.`,
       dados: dadosProcessados 
     });
 
