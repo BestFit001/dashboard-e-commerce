@@ -1,180 +1,105 @@
 'use client';
+import React, { useState, useMemo } from 'react';
+import { useAppContext, CHANNELS, BRAZIL_STATES } from '@/context/AppContext';
 
-import React, { useState } from 'react';
-
-export default function Home() {
-  const [fileMl, setFileMl] = useState<File | null>(null);
-  const [fileFaturados, setFileFaturados] = useState<File | null>(null);
-  const [fileCancelados, setFileCancelados] = useState<File | null>(null);
-  const [fileCustos, setFileCustos] = useState<File | null>(null);
+export default function DashboardPage() {
+  const { sales, cancelledOrders, adsData, flexData, products, goals, addLog } = useAppContext();
   
-  const [resultado, setResultado] = useState<any>(null);
-  const [resultadoCustos, setResultadoCustos] = useState<any>(null);
-  const [carregando, setCarregando] = useState(false);
-  const [carregandoCustos, setCarregandoCustos] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const [selectedState, setSelectedState] = useState('TODOS');
+  const [appliedStateFilter, setAppliedStateFilter] = useState('TODOS');
+  const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
+  const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const [mapping, setMapping] = useState({
-    colunaIdMl: 'A',
-    colunaIdFaturado: 'A',
-    colunaIdCancelado: 'A',
-    sku: 'W',
-    precoVenda: 'I',
-    frete: 'N',
-    rebate: 'Q',
-    retornoLiquido: 'S'
-  });
-
-  const handleProcessarTudo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErro(null);
-
-    // Validação estrita apenas para os 2 obrigatórios
-    if (!fileMl) {
-      setErro('Por favor, selecione a planilha do Mercado Livre (Item 1).');
-      return;
-    }
-    if (!fileFaturados) {
-      setErro('Por favor, selecione a planilha de Pedidos Faturados (Item 2).');
-      return;
-    }
-
-    setCarregando(true);
-
-    try {
-      const formData = new FormData();
-      formData.append('fileMl', fileMl);
-      formData.append('fileFaturados', fileFaturados);
-      if (fileCancelados) {
-        formData.append('fileCancelados', fileCancelados);
-      }
-      formData.append('mapping', JSON.stringify(mapping));
-
-      const response = await fetch('/api/processar-vendas', { method: 'POST', body: formData });
-      const data = await response.json();
-      
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar.');
-
-      setResultado(data);
-    } catch (err: any) {
-      setErro(err.message);
-    } finally {
-      setCarregando(false);
-    }
+  const handleRecalculate = () => {
+    setIsRecalculating(true);
+    setTimeout(() => {
+      setAppliedStateFilter(selectedState);
+      setAppliedChannelFilter(selectedChannelFilter);
+      setIsRecalculating(false);
+      addLog(`Dashboard recalculado. UF: [${selectedState}], Canal: [${selectedChannelFilter}]`, 'success');
+    }, 300);
   };
 
-  const handleProcessarCustos = async () => {
-    if (!fileCustos) {
-      setErro('Selecione a planilha de custos.');
-      return;
-    }
+  const filteredSales = useMemo(() => {
+    return sales.filter((s: any) => {
+      const matchesState = appliedStateFilter === 'TODOS' || s.estado === appliedStateFilter;
+      const matchesChannel = appliedChannelFilter === 'TODOS' || s.canal === appliedChannelFilter;
+      const matchesSearch = searchQuery === '' || s.id_pedido.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesState && matchesChannel && matchesSearch;
+    });
+  }, [sales, appliedStateFilter, appliedChannelFilter, searchQuery]);
 
-    setCarregandoCustos(true);
-    setErro(null);
+  // Cálculos de KPIs resumidos
+  const kpis = useMemo(() => {
+    const faturamentoBrutoVendas = filteredSales.reduce((sum: number, s: any) => sum + ((Number(s.preco_venda) || 0) * (Number(s.quantidade) || 1)), 0);
+    const faturamentoLiquidoRepasse = filteredSales.reduce((sum: number, s: any) => sum + (Number(s.faturamento_liquido_final) || 0), 0);
+    
+    let custoTotal = 0;
+    filteredSales.forEach((s: any) => {
+      const prod = products.find((p: any) => p.sku === s.sku);
+      if(prod) custoTotal += ((Number(prod.preco_custo) + Number(prod.custo_embalagem)) * (Number(s.quantidade) || 1));
+    });
 
-    try {
-      const formData = new FormData();
-      formData.append('file', fileCustos);
+    const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotal - adsData.reduce((acc: number, a: any) => acc + a.custo_ads, 0);
 
-      const response = await fetch('/api/processar-custos', { method: 'POST', body: formData });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.erro || 'Erro ao processar custos.');
-
-      setResultadoCustos(data);
-    } catch (err: any) {
-      setErro(err.message);
-    } finally {
-      setCarregandoCustos(false);
-    }
-  };
+    return { faturamentoBrutoVendas, faturamentoLiquidoRepasse, custoTotal, lucroLiquidoReal, totalPedidos: filteredSales.length };
+  }, [filteredSales, products, adsData]);
 
   return (
-    <main style={{ padding: '40px', fontFamily: 'Arial, sans-serif', background: '#0b0f19', color: '#fff', minHeight: '100vh' }}>
-      <h1 style={{ color: '#00ffcc', marginBottom: '8px' }}>Dashboard de E-commerce & Liquidez</h1>
-      <p style={{ color: '#888', marginBottom: '30px' }}>Gestão de bases: Mercado Livre (com Retorno Líquido), Faturados, Cancelados (Opcional) e Custos.</p>
-
-      {erro && (
-        <div style={{ background: '#5d0000', padding: '15px', borderRadius: '8px', margin: '20px 0', border: '1px solid #ff4d4d' }}>
-          <strong>Aviso:</strong> {erro}
-        </div>
-      )}
-
-      {/* 1. MERCADO LIVRE */}
-      <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>1. Planilha Bruta de Vendas (Mercado Livre)</h2>
-        <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileMl(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '15px' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID no ML:</label><input type="text" value={mapping.colunaIdMl} onChange={(e) => setMapping({...mapping, colunaIdMl: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna SKU:</label><input type="text" value={mapping.sku} onChange={(e) => setMapping({...mapping, sku: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Preço:</label><input type="text" value={mapping.precoVenda} onChange={(e) => setMapping({...mapping, precoVenda: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Frete:</label><input type="text" value={mapping.frete} onChange={(e) => setMapping({...mapping, frete: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#aaa' }}>Coluna Rebate:</label><input type="text" value={mapping.rebate} onChange={(e) => setMapping({...mapping, rebate: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-          <div><label style={{ fontSize: '11px', color: '#00ffcc' }}>Retorno Líquido:</label><input type="text" value={mapping.retornoLiquido} onChange={(e) => setMapping({...mapping, retornoLiquido: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} /></div>
-        </div>
-      </div>
-
-      {/* 2 & 3. FATURADOS E CANCELADOS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-        <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h2 style={{ fontSize: '16px', color: '#2ea043', marginBottom: '12px' }}>2. Pedidos Faturados</h2>
-          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileFaturados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
-          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID:</label>
-          <input type="text" value={mapping.colunaIdFaturado} onChange={(e) => setMapping({...mapping, colunaIdFaturado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-        </div>
-
-        <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h2 style={{ fontSize: '16px', color: '#f85149', marginBottom: '12px' }}>3. Pedidos Cancelados (Opcional)</h2>
-          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCancelados(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', width: '100%', marginBottom: '10px' }} />
-          <label style={{ fontSize: '11px', color: '#aaa' }}>Coluna ID:</label>
-          <input type="text" value={mapping.colunaIdCancelado} onChange={(e) => setMapping({...mapping, colunaIdCancelado: e.target.value})} style={{ width: '100%', padding: '6px', background: '#0d1117', border: '1px solid #30363d', color: '#fff', borderRadius: '4px' }} />
-        </div>
-      </div>
-
-      <button onClick={handleProcessarTudo} disabled={carregando} style={{ background: '#238636', color: '#fff', padding: '14px 28px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', width: '100%', marginBottom: '30px', fontSize: '16px' }}>
-        {carregando ? 'A processar cruzamento...' : 'Processar Cruzamento (ML x Faturados)'}
-      </button>
-
-      {/* 4. CUSTOS */}
-      <div style={{ background: '#161b22', padding: '25px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '30px' }}>
-        <h2 style={{ fontSize: '16px', color: '#58a6ff', marginBottom: '12px' }}>4. Base de Custos (Fixo)</h2>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-          <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => setFileCustos(e.target.files?.[0] || null)} style={{ color: '#fff', padding: '10px', background: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', flex: 1 }} />
-          <button type="button" onClick={handleProcessarCustos} disabled={carregandoCustos} style={{ background: '#1f6feb', color: '#fff', padding: '12px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
-            {carregandoCustos ? 'A guardar...' : 'Guardar Custos'}
+    <div className="space-y-6">
+      <div className="flex flex-col lg:flex-row justify-between bg-slate-900 p-5 rounded-2xl border border-slate-800">
+        <div><h2 className="text-xl font-bold text-white tracking-tight">Painel Executivo de Vendas</h2></div>
+        <div className="flex gap-3">
+          <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-purple-300 font-bold text-xs rounded-lg px-2 py-1">
+            <option value="TODOS">Todos os Canais</option>
+            {CHANNELS.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+          </select>
+          <button onClick={handleRecalculate} className="px-4 py-2 bg-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-lg">
+            {isRecalculating ? 'A calcular...' : 'Recalcular'}
           </button>
         </div>
-        {resultadoCustos && <p style={{ color: '#2ea043', marginTop: '10px', fontWeight: 'bold' }}>{resultadoCustos.mensagem}</p>}
       </div>
 
-      {resultado && (
-        <div style={{ background: '#161b22', padding: '30px', borderRadius: '12px', border: '1px solid #30363d' }}>
-          <h3 style={{ color: '#2ea043', marginBottom: '10px' }}>{resultado.mensagem}</h3>
-          <div style={{ overflowX: 'auto', marginTop: '20px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #30363d', color: '#888' }}>
-                  <th style={{ padding: '10px' }}>ID Venda</th>
-                  <th style={{ padding: '10px' }}>SKU</th>
-                  <th style={{ padding: '10px' }}>Preço Venda</th>
-                  <th style={{ padding: '10px' }}>Retorno Líquido</th>
-                  <th style={{ padding: '10px', color: '#00ffcc' }}>Liquidez Final</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resultado.dados?.slice(0, 15).map((item: any, idx: number) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '10px' }}>{item.id}</td>
-                    <td style={{ padding: '10px' }}>{item.sku}</td>
-                    <td style={{ padding: '10px' }}>R$ {Number(item.precoVenda).toFixed(2)}</td>
-                    <td style={{ padding: '10px' }}>R$ {Number(item.retornoLiquido).toFixed(2)}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#2ea043' }}>R$ {Number(item.liquidezBruta).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+          <span className="text-xs font-semibold text-slate-400 uppercase">Fat. Bruto</span>
+          <h3 className="text-2xl font-black text-white">R$ {kpis.faturamentoBrutoVendas.toFixed(2)}</h3>
         </div>
-      )}
-    </main>
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+          <span className="text-xs font-semibold text-slate-400 uppercase">Repasse Líquido</span>
+          <h3 className="text-2xl font-black text-purple-400">R$ {kpis.faturamentoLiquidoRepasse.toFixed(2)}</h3>
+        </div>
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+          <span className="text-xs font-semibold text-slate-400 uppercase">Custo Produtos</span>
+          <h3 className="text-2xl font-black text-amber-400">R$ {kpis.custoTotal.toFixed(2)}</h3>
+        </div>
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+          <span className="text-xs font-semibold text-slate-400 uppercase">Lucro Líquido Real</span>
+          <h3 className="text-2xl font-black text-emerald-400">R$ {kpis.lucroLiquidoReal.toFixed(2)}</h3>
+        </div>
+      </div>
+
+      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
+        <h3 className="font-bold text-white text-base mb-4">Pedidos Faturados</h3>
+        <table className="w-full text-left text-xs text-slate-200">
+          <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
+            <tr><th className="py-3 pl-3">ID</th><th>Canal</th><th>SKU</th><th>Preço Venda</th><th className="text-right pr-3">Líquido</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60 font-medium">
+            {filteredSales.map((s: any) => (
+              <tr key={s.id_pedido} className="hover:bg-slate-800/40">
+                <td className="py-2.5 pl-3 font-bold text-indigo-400">{s.id_pedido}</td>
+                <td className="py-2.5">{s.canal}</td>
+                <td className="py-2.5 font-mono">{s.sku}</td>
+                <td className="py-2.5">R$ {s.preco_venda.toFixed(2)}</td>
+                <td className="py-2.5 pr-3 text-right font-bold text-emerald-400">R$ {s.faturamento_liquido_final.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
