@@ -7,8 +7,8 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  // Autenticação
-  const [users, setUsers] = useState([{ username: 'admin', password: '123' }]);
+  // Autenticação com o novo utilizador padrão
+  const [users, setUsers] = useState([{ username: 'Gisele@usebestfit.com.br', password: 'Best2026**' }]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
@@ -33,7 +33,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const savedUsers = localStorage.getItem('apex_users');
     const savedSession = localStorage.getItem('apex_session');
-    if (savedUsers) setUsers(JSON.parse(savedUsers));
+    
+    if (savedUsers) {
+      const parsedUsers = JSON.parse(savedUsers);
+      // Impede que o 'admin' antigo sobreponha o novo login caso já esteja no cache do seu navegador
+      if (parsedUsers.length === 1 && parsedUsers[0].username === 'admin') {
+         localStorage.removeItem('apex_users'); // Força a limpeza
+      } else {
+         setUsers(parsedUsers);
+      }
+    }
     if (savedSession) setCurrentUser(JSON.parse(savedSession));
     setIsAuthLoaded(true);
   }, []);
