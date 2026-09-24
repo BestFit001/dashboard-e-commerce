@@ -11,7 +11,10 @@ export default function RegrasPage() {
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
-    if (!editingChannel || !canais.includes(editingChannel)) return;
+    if (!editingChannel || !canais.includes(editingChannel)) {
+      if (canais.length > 0) setEditingChannel(canais[0]);
+      return;
+    }
     const existing = channelRules.find((r: any) => r.canal === editingChannel);
     const logoBase64 = channelLogos[editingChannel] || '';
     const currentMonth = new Date().toISOString().slice(0, 7); 
@@ -72,6 +75,16 @@ export default function RegrasPage() {
     }
   };
 
+  const excluirCanal = () => {
+    if (confirm(`Tem a certeza que deseja excluir o canal "${editingChannel}"?`)) {
+      const novosCanais = canais.filter((c: string) => c !== editingChannel);
+      setCanais(novosCanais);
+      setChannelRules((prev: any[]) => prev.filter(r => r.canal !== editingChannel));
+      setEditingChannel(novosCanais[0] || '');
+      addLog(`Canal [${editingChannel}] excluído com sucesso.`, 'warning');
+    }
+  };
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -93,6 +106,9 @@ export default function RegrasPage() {
           <button onClick={adicionarCanal} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">Criar</button>
           <button onClick={saveRule} className={`px-4 py-2.5 font-bold text-xs rounded-xl transition flex items-center gap-2 ${isSaved ? 'bg-emerald-500 text-white shadow-lg' : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg'}`}>
             {isSaved ? <><i className="fa-solid fa-check"></i> Salvo!</> : 'Salvar Regra'}
+          </button>
+          <button onClick={excluirCanal} className="px-4 py-2.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-900 font-bold text-xs rounded-xl transition ml-2" title="Excluir Canal Atual">
+            <i className="fa-solid fa-trash"></i>
           </button>
         </div>
       </div>

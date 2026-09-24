@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase';
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
 
-// Lojas atualizadas: removida Loja física, mantidas Clube Hebraica e Paineiras
-export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Paineiras'];
+// Lojas oficiais atualizadas
+export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
 
 const AppContext = createContext<any>(null);
 
@@ -62,14 +62,31 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       if (stored) { try { setter(JSON.parse(stored)); } catch (e) {} }
     };
 
-    loadLocal('bestfit_canais', setCanais);
-    
-    // Força a remoção da "Loja física" das regras locais caso exista no cache
+    // Filtro agressivo para limpar o cache da Loja física e injetar os clubes
+    const storedCanais = localStorage.getItem('bestfit_canais');
+    if (storedCanais) {
+      try {
+        const parsedCanais = JSON.parse(storedCanais);
+        const canaisValidos = parsedCanais.filter((c: string) => c !== 'Loja física' && c !== 'Loja fisica' && c !== 'Paineiras');
+        if (!canaisValidos.includes('Clube Paineiras')) canaisValidos.push('Clube Paineiras');
+        if (!canaisValidos.includes('Clube Hebraica')) canaisValidos.push('Clube Hebraica');
+        setCanais(canaisValidos);
+      } catch (e) {}
+    }
+
     const storedRules = localStorage.getItem('bestfit_rules');
     if (storedRules) {
       try {
         const parsedRules = JSON.parse(storedRules);
-        setChannelRules(parsedRules.filter((r: any) => r.canal !== 'Loja física'));
+        const regrasValidas = parsedRules.filter((r: any) => r.canal !== 'Loja física' && r.canal !== 'Loja fisica' && r.canal !== 'Paineiras');
+        
+        if (!regrasValidas.find((r: any) => r.canal === 'Clube Paineiras')) {
+          regrasValidas.push({ canal: 'Clube Paineiras', responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'D', colRebate: 'C', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
+        }
+        if (!regrasValidas.find((r: any) => r.canal === 'Clube Hebraica')) {
+          regrasValidas.push({ canal: 'Clube Hebraica', responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'D', colRebate: 'C', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
+        }
+        setChannelRules(regrasValidas);
       } catch (e) {}
     }
 
@@ -98,13 +115,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (!isLoaded) return; 
     
-    // Garante que a "Loja física" não volte a ser gravada no cache
-    const canaisLimpos = canais.filter(c => c !== 'Loja física');
-    localStorage.setItem('bestfit_canais', JSON.stringify(canaisLimpos));
-    
-    const regrasLimpas = channelRules.filter((r: any) => r.canal !== 'Loja física');
-    localStorage.setItem('bestfit_rules', JSON.stringify(regrasLimpas));
-    
+    localStorage.setItem('bestfit_canais', JSON.stringify(canais));
+    localStorage.setItem('bestfit_rules', JSON.stringify(channelRules));
     localStorage.setItem('bestfit_products', JSON.stringify(products));
     localStorage.setItem('bestfit_sales', JSON.stringify(sales));
     localStorage.setItem('bestfit_ads', JSON.stringify(adsData));
