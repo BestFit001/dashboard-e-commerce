@@ -9,7 +9,11 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  const [users, setUsers] = useState([{ username: 'Gisele@usebestfit.com.br', password: 'Best2026**' }]);
+  // Usuários com controle de nível ('admin' ou 'user')
+  const [users, setUsers] = useState([
+    { username: 'Gisele@usebestfit.com.br', password: 'Best2026**', role: 'admin' },
+    { username: 'usuario@usebestfit.com.br', password: '123', role: 'user' }
+  ]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
@@ -27,7 +31,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sistema de alta performance inicializado.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Dashboard Best Fit inicializado com sucesso.', type: 'info' }]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   const addLog = (message: string, type = 'info') => {
@@ -35,18 +39,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    const savedUsers = localStorage.getItem('apex_users');
-    const savedSession = localStorage.getItem('apex_session');
+    const savedUsers = localStorage.getItem('bestfit_users');
+    const savedSession = localStorage.getItem('bestfit_session');
     
     if (savedUsers) {
-      const parsedUsers = JSON.parse(savedUsers);
-      if (parsedUsers.length === 1 && parsedUsers[0].username === 'admin') {
-         localStorage.removeItem('apex_users'); 
-      } else {
-         setUsers(parsedUsers);
-      }
+      try { setUsers(JSON.parse(savedUsers)); } catch(e) {}
     }
-    if (savedSession) setCurrentUser(JSON.parse(savedSession));
+    if (savedSession) {
+      try { setCurrentUser(JSON.parse(savedSession)); } catch(e) {}
+    }
     setIsAuthLoaded(true);
 
     const loadLocal = (key: string, setter: any) => {
@@ -54,15 +55,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       if (stored) { try { setter(JSON.parse(stored)); } catch (e) {} }
     };
 
-    loadLocal('apex_canais', setCanais);
-    loadLocal('apex_rules', setChannelRules);
-    loadLocal('apex_products', setProducts);
-    loadLocal('apex_sales', setSales);
-    loadLocal('apex_ads', setAdsData);
-    loadLocal('apex_flex', setFlexData);
-    loadLocal('apex_faturados', setFaturados);
-    loadLocal('apex_cancelados', setCancelados);
-    loadLocal('apex_logos', setChannelLogos);
+    loadLocal('bestfit_canais', setCanais);
+    loadLocal('bestfit_rules', setChannelRules);
+    loadLocal('bestfit_products', setProducts);
+    loadLocal('bestfit_sales', setSales);
+    loadLocal('bestfit_ads', setAdsData);
+    loadLocal('bestfit_flex', setFlexData);
+    loadLocal('bestfit_faturados', setFaturados);
+    loadLocal('bestfit_cancelados', setCancelados);
+    loadLocal('bestfit_logos', setChannelLogos);
 
     setIsLoaded(true);
 
@@ -94,27 +95,27 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (isAuthLoaded) localStorage.setItem('apex_users', JSON.stringify(users));
+    if (isAuthLoaded) localStorage.setItem('bestfit_users', JSON.stringify(users));
   }, [users, isAuthLoaded]);
 
   useEffect(() => {
     if (isAuthLoaded) {
-      if (currentUser) localStorage.setItem('apex_session', JSON.stringify(currentUser));
-      else localStorage.removeItem('apex_session');
+      if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser));
+      else localStorage.removeItem('bestfit_session');
     }
   }, [currentUser, isAuthLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return; 
-    localStorage.setItem('apex_canais', JSON.stringify(canais));
-    localStorage.setItem('apex_rules', JSON.stringify(channelRules));
-    localStorage.setItem('apex_products', JSON.stringify(products));
-    localStorage.setItem('apex_sales', JSON.stringify(sales));
-    localStorage.setItem('apex_ads', JSON.stringify(adsData));
-    localStorage.setItem('apex_flex', JSON.stringify(flexData));
-    localStorage.setItem('apex_faturados', JSON.stringify(faturados));
-    localStorage.setItem('apex_cancelados', JSON.stringify(cancelados));
-    localStorage.setItem('apex_logos', JSON.stringify(channelLogos));
+    localStorage.setItem('bestfit_canais', JSON.stringify(canais));
+    localStorage.setItem('bestfit_rules', JSON.stringify(channelRules));
+    localStorage.setItem('bestfit_products', JSON.stringify(products));
+    localStorage.setItem('bestfit_sales', JSON.stringify(sales));
+    localStorage.setItem('bestfit_ads', JSON.stringify(adsData));
+    localStorage.setItem('bestfit_flex', JSON.stringify(flexData));
+    localStorage.setItem('bestfit_faturados', JSON.stringify(faturados));
+    localStorage.setItem('bestfit_cancelados', JSON.stringify(cancelados));
+    localStorage.setItem('bestfit_logos', JSON.stringify(channelLogos));
   }, [canais, channelRules, products, sales, adsData, flexData, faturados, cancelados, channelLogos, isLoaded]);
 
   return (
