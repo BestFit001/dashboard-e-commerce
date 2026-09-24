@@ -25,10 +25,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       (u: any) => u.username.toLowerCase().trim() === inputUser && u.password === password
     );
 
-    // 2. Fallback de Segurança: Garante que o Felipe consiga aceder imediatamente 
-    // mesmo que a memória local (cache) tenha sido apagada nas atualizações anteriores.
+    // 2. Fallback corrigido para 'user' (Visualizador)
     if (!validUser && inputUser === 'felipe.camargo@usebestfit.com.br') {
-       validUser = { username: 'felipe.camargo@usebestfit.com.br', role: 'admin' };
+       validUser = { username: 'felipe.camargo@usebestfit.com.br', role: 'user' };
     }
 
     if (validUser) {
@@ -42,7 +41,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans">
       <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col items-center">
         
-        {/* Logo BF Atualizado */}
         <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-purple-500/30">
           <span className="text-white font-black text-3xl tracking-tighter">BF</span>
         </div>
