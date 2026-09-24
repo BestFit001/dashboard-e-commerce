@@ -6,92 +6,77 @@ import { useAppContext } from '@/context/AppContext';
 
 export default function Navigation() {
   const pathname = usePathname();
-  const { currentUser, setCurrentUser, setIsAdminUnlocked } = useAppContext();
+  const { currentUser, setCurrentUser } = useAppContext();
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setIsAdminUnlocked(false);
-  };
+  // Se não houver utilizador logado, oculta a barra de navegação
+  if (!currentUser) return null;
 
-  const navLinks = [
-    { href: '/', label: 'Dashboard', icon: 'fa-chart-line' },
-    { href: '/regras', label: 'Regras Canal', icon: 'fa-calculator' },
-    { href: '/admin', label: 'Admin', icon: 'fa-lock' },
-    { href: '/usuarios', label: 'Usuários', icon: 'fa-users' },
-  ];
+  const isAdmin = currentUser.role === 'admin';
 
   return (
-    <nav className="bg-slate-900 border-b border-slate-800 fixed w-full z-50 top-0 left-0">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <i className="fa-solid fa-chart-pie text-white text-sm"></i>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-sm tracking-tight leading-none">ApexMetrics Pro</h1>
-              <span className="text-[10px] text-slate-400 font-medium">Painel Executivo Omnichannel</span>
-            </div>
-          </div>
-
-          <div className="hidden md:flex space-x-2">
-            {navLinks.map((link) => {
-              const isActive = pathname === link.href;
-              return (
-                <Link 
-                  key={link.href} 
-                  href={link.href}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${
-                    isActive 
-                      ? 'bg-indigo-600/10 text-indigo-400' 
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                  }`}
-                >
-                  <i className={`fa-solid ${link.icon}`}></i>
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-4">
-            {currentUser && (
-              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
-                <i className="fa-solid fa-circle text-[8px] text-emerald-500"></i>
-                <span className="font-bold">{currentUser.username}</span>
-              </div>
-            )}
-            
-            <button 
-              onClick={handleLogout} 
-              className="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-xl font-bold text-xs transition"
-            >
-              Sair
-            </button>
-          </div>
-          
+    <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-50 shadow-md">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-purple-600/30">
+          BF
+        </div>
+        <div>
+          <h1 className="font-black text-white text-base tracking-tight">ApexMetrics Pro</h1>
+          <p className="text-[10px] text-slate-400 font-medium">Painel Executivo Omnichannel</p>
         </div>
       </div>
-      
-      {/* Menu mobile em baixo (opcional, mas bom para ecrãs pequenos) */}
-      <div className="md:hidden border-t border-slate-800 bg-slate-950 flex justify-around p-2">
-        {navLinks.map((link) => {
-          const isActive = pathname === link.href;
-          return (
+
+      <nav className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 overflow-x-auto max-w-full">
+        <Link 
+          href="/" 
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+        >
+          <i className="fa-solid fa-chart-pie"></i> Dashboard
+        </Link>
+
+        {isAdmin && (
+          <>
             <Link 
-              key={link.href} 
-              href={link.href}
-              className={`p-2 rounded-lg text-xs font-bold transition flex flex-col items-center gap-1 ${
-                isActive ? 'text-indigo-400' : 'text-slate-500'
-              }`}
+              href="/skus" 
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/skus' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
             >
-              <i className={`fa-solid ${link.icon}`}></i>
-              <span className="text-[10px]">{link.label}</span>
+              <i className="fa-solid fa-tags"></i> SKUs & Custos
             </Link>
-          );
-        })}
+            <Link 
+              href="/regras" 
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              <i className="fa-solid fa-calculator"></i> Regras Canal
+            </Link>
+            <Link 
+              href="/admin" 
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              <i className="fa-solid fa-lock"></i> Admin
+            </Link>
+            <Link 
+              href="/usuarios" 
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/usuarios' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              <i className="fa-solid fa-users"></i> Usuários
+            </Link>
+          </>
+        )}
+      </nav>
+
+      <div className="flex items-center gap-4">
+        <div className="text-right hidden sm:block">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">
+            {currentUser.role === 'admin' ? 'Administrador' : 'Visualizador'}
+          </span>
+          <span className="text-xs font-bold text-slate-200">{currentUser.username}</span>
+        </div>
+        <button 
+          onClick={() => setCurrentUser(null)} 
+          className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs rounded-xl transition flex items-center gap-2"
+        >
+          <i className="fa-solid fa-right-from-bracket"></i> Sair
+        </button>
       </div>
-    </nav>
+    </header>
   );
 }
