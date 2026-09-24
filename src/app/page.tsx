@@ -7,24 +7,68 @@ export default function DashboardPage() {
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
+  
+  // Filtros de Data
+  const [dateFilter, setDateFilter] = useState('TUDO');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  
+  const [appliedDateFilter, setAppliedDateFilter] = useState('TUDO');
+  const [appliedStartDate, setAppliedStartDate] = useState('');
+  const [appliedEndDate, setAppliedEndDate] = useState('');
+
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   const handleRecalculate = () => {
     setIsRecalculating(true);
     setTimeout(() => {
       setAppliedChannelFilter(selectedChannelFilter);
+      setAppliedDateFilter(dateFilter);
+      setAppliedStartDate(customStartDate);
+      setAppliedEndDate(customEndDate);
       setIsRecalculating(false);
-      addLog(`Dashboard recalculado. Canal: [${selectedChannelFilter}]`, 'success');
+      addLog(`Dashboard recalculado. Canal: [${selectedChannelFilter}] | Período: [${dateFilter}]`, 'success');
     }, 300);
   };
 
   const enrichedSales = useMemo(() => {
-    return sales.filter((s: any) => appliedChannelFilter === 'TODOS' || s.canal === appliedChannelFilter)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return sales.filter((s: any) => {
+        // 1. Filtro de Canal
+        if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
+
+        // 2. Filtro de Data
+        if (appliedDateFilter !== 'TUDO' && s.data_faturamento) {
+           const d = new Date(s.data_faturamento + 'T00:00:00');
+           d.setHours(0, 0, 0, 0);
+           
+           if (appliedDateFilter === 'HOJE') {
+              if (d.getTime() !== today.getTime()) return false;
+           } else if (appliedDateFilter === 'SEMANA') {
+              const limit = new Date(today); limit.setDate(limit.getDate() - 7);
+              if (d < limit || d > today) return false;
+           } else if (appliedDateFilter === 'QUINZENA') {
+              const limit = new Date(today); limit.setDate(limit.getDate() - 15);
+              if (d < limit || d > today) return false;
+           } else if (appliedDateFilter === 'MES') {
+              const limit = new Date(today); limit.setDate(limit.getDate() - 30);
+              if (d < limit || d > today) return false;
+           } else if (appliedDateFilter === 'PERSONALIZADO') {
+              if (appliedStartDate && appliedEndDate) {
+                 const start = new Date(appliedStartDate + 'T00:00:00');
+                 const end = new Date(appliedEndDate + 'T23:59:59');
+                 if (d < start || d > end) return false;
+              }
+           }
+        }
+        return true;
+      })
       .map((s: any) => {
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
         const custoUn = (prod.preco_custo || 0) + (prod.custo_embalagem || 0);
         
-        // CMV: (Custo + Embalagem) x Quantidade Vendida
         const custoCMV = custoUn * (s.quantidade || 1);
 
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
@@ -36,16 +80,13 @@ export default function DashboardPage() {
 
         return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido };
       });
-  }, [sales, appliedChannelFilter, products, flexData]);
+  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
-  // KPIs Globais
   const kpis = useMemo(() => {
-    // PDV já representa o Faturamento Bruto (sem multiplicar pela qtd)
     const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
     const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (s.repasse_liquido || 0), 0);
     const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (s.custoCMV || 0), 0);
     
-    // Filtra custos de ADS aplicáveis ao Dashboard atual
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (a.custo_ads || 0), 0);
     
@@ -71,10 +112,8 @@ export default function DashboardPage() {
 
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
       
-      // Metas baseadas no Faturamento Bruto (PDV)
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
       
-      // Margens (%)
       const ganhoBrutoCanal = repasseTotal - cmvCanal;
       const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
@@ -85,17 +124,44 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Painel Executivo Omnichannel</h2>
           <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Ganho Real: Repasse - CMV(Emb+Prod) - Fretes Flex - ADS</p>
         </div>
-        <div className="flex gap-3">
-          <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-purple-300 font-bold text-xs rounded-lg px-3 py-2">
-            <option value="TODOS">Todos os Canais</option>
-            {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
-          </select>
-          <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-lg">
+        
+        <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          {/* 1. Filtro de Datas */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
+            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="TUDO">Todo o Período</option>
+              <option value="HOJE">Hoje</option>
+              <option value="SEMANA">Últimos 7 dias</option>
+              <option value="QUINZENA">Últimos 15 dias</option>
+              <option value="MES">Últimos 30 dias</option>
+              <option value="PERSONALIZADO">Personalizado</option>
+            </select>
+          </div>
+
+          {dateFilter === 'PERSONALIZADO' && (
+            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+              <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
+              <span className="text-slate-500 text-xs font-bold">até</span>
+              <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
+            </div>
+          )}
+
+          {/* 2. Filtro de Canais */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
+            <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="TODOS">Todos os Canais</option>
+              {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
+            </select>
+          </div>
+
+          <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg">
             {isRecalculating ? 'A calcular...' : 'Recalcular'}
           </button>
         </div>
@@ -150,7 +216,8 @@ export default function DashboardPage() {
         <table className="w-full text-left text-xs text-slate-200">
           <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
             <tr>
-              <th className="py-3 pl-3">ID Pedido</th>
+              <th className="py-3 pl-3">Data</th>
+              <th>ID Pedido</th>
               <th>Canal</th>
               <th>SKU (Qtd)</th>
               <th>PDV (Fat. Bruto)</th>
@@ -164,7 +231,8 @@ export default function DashboardPage() {
           <tbody className="divide-y divide-slate-800/60 font-medium">
             {enrichedSales.map((s: any) => (
               <tr key={s.id_pedido} className="hover:bg-slate-800/40">
-                <td className="py-2.5 pl-3 font-bold text-indigo-400">{s.id_pedido}</td>
+                <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
+                <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
                 <td className="py-2.5">{s.canal}</td>
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toFixed(2).replace('.', ',')}</td>
