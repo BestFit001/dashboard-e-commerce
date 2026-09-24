@@ -34,8 +34,8 @@ export default function UsuariosPage() {
         <p className="text-xs text-slate-400 mb-6">Cadastre quem pode acessar o sistema.</p>
 
         <form onSubmit={handleAddUser} className="flex flex-col sm:flex-row gap-4 mb-8 bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <input type="text" placeholder="Nome de usuário" value={newUsername} onChange={e => setNewUsername(e.target.value)} className="flex-1 p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none" required />
-          <input type="password" placeholder="Senha" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="flex-1 p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none" required />
+          <input type="text" placeholder="Nome de usuário (ex: Leila@usebestfit.com.br)" value={newUsername} onChange={e => setNewUsername(e.target.value)} className="flex-1 p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-indigo-500 transition" required />
+          <input type="password" placeholder="Senha" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="flex-1 p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-indigo-500 transition" required />
           <button type="submit" className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition">Adicionar</button>
         </form>
 
