@@ -11,8 +11,11 @@ export default function AdminPage() {
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState(canais[0]);
-  const [colFaturados, setColFaturados] = useState('A');
-  const [colCancelados, setColCancelados] = useState('A');
+  
+  // Colunas configuradas conforme o seu ERP
+  const [colFaturadosId, setColFaturadosId] = useState('AI'); // Observações
+  const [colFaturadosData, setColFaturadosData] = useState('D'); // Data emissão
+  const [colCancelados, setColCancelados] = useState('AI');
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +29,6 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  // Melhorada para ignorar textos como "R$" ou espaços que possam quebrar a leitura
   const parseBrFloat = (val: any) => {
     if (!val) return 0;
     if (typeof val === 'number') return val;
@@ -34,19 +36,31 @@ export default function AdminPage() {
     return parseFloat(strVal) || 0;
   };
 
-  const extractIds = (rows: any[], colLet: string) => {
-    const idx = colToIdx(colLet);
-    const ids: string[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row) continue;
-      let val = row[idx];
-      if (val === undefined && typeof row[0] === 'string' && row[0].includes(';')) val = row[0].split(';')[idx];
-      const rawId = String(val || '').trim();
-      const idStr = rawId.split(/[\s;|,\|]+/)[0];
-      if (idStr && !['id', 'pedido', 'venda', 'código', 'undefined'].includes(idStr.toLowerCase())) ids.push(idStr);
+  // Função para tratar datas do Excel (números de série) ou Strings normais
+  const parseExcelDate = (val: any) => {
+    if (!val) return new Date().toISOString().slice(0, 10);
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return date.toISOString().slice(0, 10);
     }
-    return ids;
+    // Caso já venha como texto (ex: 2026-09-24)
+    return String(val).trim().substring(0, 10);
+  };
+
+  // Filtro inteligente para extrair IDs limpos do meio de textos do ERP
+  const extractCleanId = (rawStr: string) => {
+    const rawId = String(rawStr || '').trim();
+    // Procura por "número " e captura tudo o que for número ou hífen a seguir
+    const regexMatch = rawId.match(/n[úu]mero\s+([0-9\-]+)/i);
+    
+    let finalId = '';
+    if (regexMatch && regexMatch[1]) {
+      finalId = regexMatch[1];
+    } else {
+      // Fallback: se não tiver a palavra número, apenas pega a primeira palavra da célula
+      finalId = rawId.split(/[\s;|,\|]+/)[0];
+    }
+    return finalId;
   };
 
   const evaluateExcelFormula = (formulaStr: string, row: any) => {
@@ -75,25 +89,37 @@ export default function AdminPage() {
 
       const newSales = rows.slice(1).map((row, i) => {
         if (!row || !row.length) return null;
-        const rawId = String(row[colToIdx(rule.colIdPedido)] || '').trim();
-        const id_pedido = rawId.split(/[\s;|,\|]+/)[0];
+        const id_pedido = extractCleanId(row[colToIdx(rule.colIdPedido)]);
 
-        if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined'].includes(id_pedido.toLowerCase())) return null;
+        if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes'].includes(id_pedido.toLowerCase())) return null;
 
-        if (faturados.length > 0 && !faturados.includes(id_pedido)) { bloqueadosFaturados++; return null; }
-        if (cancelados.includes(id_pedido)) { bloqueadosCancelados++; return null; }
+        // VERIFICA FATURADOS (Agora cruza com o objeto que guarda a Data de Emissão)
+        const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
+        if (faturados.length > 0 && !faturadoMatch) { 
+          bloqueadosFaturados++; 
+          return null; 
+        }
+
+        // VERIFICA CANCELADOS
+        if (cancelados.find((c: any) => c.id === id_pedido)) { 
+          bloqueadosCancelados++; 
+          return null; 
+        }
 
         const repasse = evaluateExcelFormula(rule.formulaExcel, row);
         const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
+        
+        // Atribui a data real de emissão da NFe do ERP (Se não existir, usa a data atual)
+        const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
 
         return {
           id_pedido,
-          data_faturamento: new Date().toISOString().slice(0, 10),
+          data_faturamento: dataFaturamento,
           canal: selectedChannel,
           sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
           quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
-          preco_venda: parseBrFloat(precoVendaRaw), // Este é o Faturamento Bruto (PDV)
-          repasse_liquido: repasse // Este é o resultado da fórmula (Taxa do Canal)
+          preco_venda: parseBrFloat(precoVendaRaw),
+          repasse_liquido: repasse 
         };
       }).filter(Boolean);
       
@@ -106,6 +132,73 @@ export default function AdminPage() {
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
+  };
+
+  const handleUploadFaturados = (e: any) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      
+      const novosFaturados: any[] = [];
+      const idxId = colToIdx(colFaturadosId);
+      const idxData = colToIdx(colFaturadosData);
+
+      for (let i = 1; i < (rows as any[]).length; i++) {
+        const row = (rows as any[])[i];
+        if (!row) continue;
+        const id_pedido = extractCleanId(row[idxId]);
+        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
+          novosFaturados.push({
+            id: id_pedido,
+            data: parseExcelDate(row[idxData])
+          });
+        }
+      }
+
+      if(novosFaturados.length > 0){
+        // Remove duplicados pelo ID
+        setFaturados((prev: any) => {
+          const map = new Map();
+          [...prev, ...novosFaturados].forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+        addLog(`${novosFaturados.length} Faturados lidos com filtro aplicado.`, 'success');
+      }
+    };
+    reader.readAsArrayBuffer(file); e.target.value = '';
+  };
+
+  const handleUploadCancelados = (e: any) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      
+      const novosCancelados: any[] = [];
+      const idxId = colToIdx(colCancelados);
+
+      for (let i = 1; i < (rows as any[]).length; i++) {
+        const row = (rows as any[])[i];
+        if (!row) continue;
+        const id_pedido = extractCleanId(row[idxId]);
+        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
+          novosCancelados.push({ id: id_pedido });
+        }
+      }
+
+      if(novosCancelados.length > 0){
+        setCancelados((prev: any) => {
+          const map = new Map();
+          [...prev, ...novosCancelados].forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+        addLog(`${novosCancelados.length} Cancelados lidos com filtro aplicado.`, 'warning');
+      }
+    };
+    reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
   const handleUploadMetas = (e: any) => { 
@@ -161,24 +254,29 @@ export default function AdminPage() {
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
            <h3 className="font-bold text-emerald-400 text-sm mb-2">Faturados</h3>
-           <input type="text" value={colFaturados} onChange={e => setColFaturados(e.target.value.toUpperCase())} className="w-16 p-2 bg-slate-950 text-emerald-300 font-bold text-center border mr-2" />
-           <label className="cursor-pointer px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={(e)=>{
-             const file=e.target.files[0]; if(!file)return; const reader=new FileReader();
-             reader.onload=(evt)=>{ const wb=XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer),{type:'array'}); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}); const ids=extractIds(rows,colFaturados); if(ids.length>0){setFaturados((p:any)=>[...new Set([...p,...ids])]); addLog(`${ids.length} Faturados carregados.`,'success');} }
-             reader.readAsArrayBuffer(file); e.target.value='';
-           }}/>Subir Faturados</label>
-           <p className="text-[10px] text-slate-400 mt-2">IDs: {faturados.length}</p>
+           <div className="flex gap-2 mb-3">
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
+                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data Emissão</span>
+                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
+           </div>
+           
+           <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {faturados.length}</p>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
            <h3 className="font-bold text-rose-400 text-sm mb-2">Cancelados</h3>
-           <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-16 p-2 bg-slate-950 text-rose-300 font-bold text-center border mr-2" />
-           <label className="cursor-pointer px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={(e)=>{
-             const file=e.target.files[0]; if(!file)return; const reader=new FileReader();
-             reader.onload=(evt)=>{ const wb=XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer),{type:'array'}); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}); const ids=extractIds(rows,colCancelados); if(ids.length>0){setCancelados((p:any)=>[...new Set([...p,...ids])]); addLog(`${ids.length} Cancelados carregados.`,'warning');} }
-             reader.readAsArrayBuffer(file); e.target.value='';
-           }}/>Subir Cancelados</label>
-           <p className="text-[10px] text-slate-400 mt-2">IDs: {cancelados.length}</p>
+           <div className="mb-3">
+              <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
+              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" />
+           </div>
+           <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {cancelados.length}</p>
          </div>
        </div>
 
@@ -209,6 +307,7 @@ export default function AdminPage() {
          </div>
        </div>
 
+       {/* ZONA DE EXPURGO (Limpeza de Dados) */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6">
           <h3 className="font-bold text-rose-400 text-sm mb-4"><i className="fa-solid fa-trash mr-2"></i>Zona de Limpeza (Expurgo de Dados)</h3>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
