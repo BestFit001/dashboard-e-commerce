@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, channelLogos, addLog } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -116,36 +116,23 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, canais, appliedChannelFilter]);
 
-  // Função para renderizar as logos dos marketplaces dinamicamente
+  // Função dinâmica: lê o upload primeiro, se não existir, usa ícone genérico
   const renderChannelLogo = (canal: string) => {
-    const c = canal.toLowerCase();
-    let src = '';
-    
-    if (c.includes('mercado livre')) src = 'https://upload.wikimedia.org/wikipedia/commons/d/d4/MercadoLibre_logo.PNG';
-    else if (c.includes('amazon')) src = 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg';
-    else if (c.includes('magalu') || c.includes('magazine')) src = 'https://upload.wikimedia.org/wikipedia/commons/b/b5/Magalu_logo.svg';
-    else if (c.includes('shopee')) src = 'https://upload.wikimedia.org/wikipedia/commons/f/fe/Shopee.svg';
-    else if (c.includes('tiktok')) src = 'https://upload.wikimedia.org/wikipedia/en/a/a9/TikTok_logo.svg';
-    else if (c.includes('shein')) src = 'https://upload.wikimedia.org/wikipedia/commons/2/22/Shein_logo.svg';
-    else if (c.includes('netshoes')) src = 'https://upload.wikimedia.org/wikipedia/commons/e/e2/Netshoes_logo.svg';
-    else if (c.includes('centauro')) src = 'https://upload.wikimedia.org/wikipedia/commons/9/90/Centauro_logo.svg';
-
-    if (src) {
+    if (channelLogos[canal]) {
       return (
-        <div className="w-10 h-10 bg-white rounded-lg p-1.5 flex items-center justify-center shrink-0">
-          <img src={src} alt={canal} className="max-w-full max-h-full object-contain" />
+        <div className="w-10 h-10 bg-white rounded-lg p-1 flex items-center justify-center shrink-0">
+          <img src={channelLogos[canal]} alt={canal} className="max-w-full max-h-full object-contain rounded" />
         </div>
       );
     }
-    
-    // Fallbacks visuais para canais internos
+
+    const c = canal.toLowerCase();
     if (c.includes('site') || c.includes('e-commerce')) {
       return <div className="w-10 h-10 bg-indigo-500/20 text-indigo-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-globe text-xl"></i></div>;
     }
     if (c.includes('física') || c.includes('fisica')) {
       return <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-store text-xl"></i></div>;
     }
-    
     return <div className="w-10 h-10 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-box text-xl"></i></div>;
   };
 
