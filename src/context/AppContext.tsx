@@ -15,10 +15,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [adsData, setAdsData] = useState<any[]>([]);
   const [flexData, setFlexData] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
+  
+  // Arrays para armazenar IDs de cruzamento do ERP
+  const [faturados, setFaturados] = useState<string[]>([]);
+  const [cancelados, setCancelados] = useState<string[]>([]);
+
   const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sistema de alta performance inicializado.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor de conciliação ERP x Marketplace ativado.', type: 'info' }]);
 
   const addLog = (message: string, type = 'info') => {
     setLogs((prev: any[]) => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), message, type }, ...prev.slice(0, 49)]);
@@ -27,6 +32,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   return (
     <AppContext.Provider value={{
       canais, setCanais, products, setProducts, sales, setSales, adsData, setAdsData, flexData, setFlexData, goals, setGoals,
+      faturados, setFaturados, cancelados, setCancelados,
       channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog
     }}>
       {children}
