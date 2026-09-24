@@ -20,17 +20,19 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [faturados, setFaturados] = useState<string[]>([]);
   const [cancelados, setCancelados] = useState<string[]>([]);
 
-  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
+  // Adicionada a propriedade colValorBruto para o Faturamento Bruto
+  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ 
+    canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', colValorBruto: 'F', formulaExcel: 'F2 - (F2 * 12%)' 
+  })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor de Persistência Total ativado (LocalStorage + Supabase).', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor ativado: Leitura independente de Valor Bruto e Deduções configurada.', type: 'info' }]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   const addLog = (message: string, type = 'info') => {
     setLogs((prev: any[]) => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), message, type }, ...prev.slice(0, 49)]);
   };
 
-  // 1. CARREGAR DADOS AO ABRIR (F5) - Prioriza LocalStorage para não ficar tela branca
   useEffect(() => {
     const loadLocal = (key: string, setter: any) => {
       const stored = localStorage.getItem(key);
@@ -45,13 +47,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     loadLocal('apex_flex', setFlexData);
     loadLocal('apex_faturados', setFaturados);
     loadLocal('apex_cancelados', setCancelados);
+    loadLocal('apex_goals', setGoals);
 
     setIsLoaded(true);
 
-    // 2. Sincronizar com Supabase em segundo plano
     async function fetchDb() {
       try {
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return; // Aborta se faltar as credenciais
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
         const { data: produtosDb } = await supabase.from('tb_produtos').select('*');
         if (produtosDb && produtosDb.length > 0) setProducts(produtosDb);
 
@@ -59,20 +61,20 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         if (regrasDb && regrasDb.length > 0) {
           setChannelRules(regrasDb.map((r: any) => ({
              canal: r.canal, colIdPedido: r.col_id_pedido, colSku: r.col_sku, 
-             colEstado: r.col_estado, colQuantidade: r.col_quantidade, formulaExcel: r.formula_excel
+             colEstado: r.col_estado, colQuantidade: r.col_quantidade, colPdv: r.col_pdv || 'E', 
+             colValorBruto: r.col_valor_bruto || 'F', formulaExcel: r.formula_excel
           })));
           setCanais(regrasDb.map((r: any) => r.canal));
         }
       } catch (e) {
-        console.error("Falha ao comunicar com Supabase", e);
+        console.error("Falha Supabase", e);
       }
     }
     fetchDb();
   }, []);
 
-  // 3. SALVAR TUDO IMEDIATAMENTE APÓS QUALQUER MUDANÇA
   useEffect(() => {
-    if (!isLoaded) return; // Não sobrescreve antes de carregar o F5
+    if (!isLoaded) return;
     localStorage.setItem('apex_canais', JSON.stringify(canais));
     localStorage.setItem('apex_rules', JSON.stringify(channelRules));
     localStorage.setItem('apex_products', JSON.stringify(products));
@@ -81,7 +83,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     localStorage.setItem('apex_flex', JSON.stringify(flexData));
     localStorage.setItem('apex_faturados', JSON.stringify(faturados));
     localStorage.setItem('apex_cancelados', JSON.stringify(cancelados));
-  }, [canais, channelRules, products, sales, adsData, flexData, faturados, cancelados, isLoaded]);
+    localStorage.setItem('apex_goals', JSON.stringify(goals));
+  }, [canais, channelRules, products, sales, adsData, flexData, faturados, cancelados, goals, isLoaded]);
 
   return (
     <AppContext.Provider value={{
