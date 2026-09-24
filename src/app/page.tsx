@@ -21,10 +21,14 @@ export default function DashboardPage() {
   const enrichedSales = useMemo(() => {
     return sales.filter((s: any) => appliedChannelFilter === 'TODOS' || s.canal === appliedChannelFilter)
       .map((s: any) => {
+        // Encontra o SKU na base e soma Produto + Embalagem
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
         const custoUn = (prod.preco_custo || 0) + (prod.custo_embalagem || 0);
+        
+        // Multiplica o Custo pela Quantidade vendida (O PDV não é multiplicado)
         const custoCMV = custoUn * (s.quantidade || 1);
 
+        // Deduções FLEX e Apuração Bruta/Líquida
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
 
@@ -36,7 +40,6 @@ export default function DashboardPage() {
       });
   }, [sales, appliedChannelFilter, products, flexData]);
 
-  // KPIs usam s.faturamento_bruto
   const kpis = useMemo(() => {
     const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (s.faturamento_bruto || 0), 0);
     const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
@@ -56,7 +59,6 @@ export default function DashboardPage() {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0, responsavel: 'N/A' };
 
-      // Soma do Faturamento Bruto (Baseado na coluna Valor Bruto)
       const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (s.faturamento_bruto || 0), 0);
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + a.custo_ads, 0);
@@ -102,7 +104,7 @@ export default function DashboardPage() {
           <h3 className="text-2xl font-black text-purple-400">R$ {kpis.faturamentoLiquidoRepasse.toFixed(2).replace('.', ',')}</h3>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU)</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
           <h3 className="text-2xl font-black text-amber-400">R$ {kpis.custoTotalCMV.toFixed(2).replace('.', ',')}</h3>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20">
@@ -143,7 +145,7 @@ export default function DashboardPage() {
               <th className="py-3 pl-3">ID Pedido</th>
               <th>Canal</th>
               <th>SKU (Qtd)</th>
-              <th>Fat. Bruto</th>
+              <th>PDV (Fat. Bruto)</th>
               <th>Repasse (Fórmula)</th>
               <th>CMV do Pedido</th>
               <th className="text-indigo-300">Ganho Bruto</th>

@@ -20,13 +20,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [faturados, setFaturados] = useState<string[]>([]);
   const [cancelados, setCancelados] = useState<string[]>([]);
 
-  // Adicionada a propriedade colValorBruto para o Faturamento Bruto
+  // Mantidas apenas as 5 colunas essenciais
   const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ 
-    canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', colValorBruto: 'F', formulaExcel: 'F2 - (F2 * 12%)' 
+    canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', formulaExcel: 'E2 - (E2 * 12%)' 
   })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor ativado: Leitura independente de Valor Bruto e Deduções configurada.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor ativado: Tratamento de Carrinhos e Dedução de CMV por Quantidade.', type: 'info' }]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   const addLog = (message: string, type = 'info') => {
@@ -62,7 +62,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           setChannelRules(regrasDb.map((r: any) => ({
              canal: r.canal, colIdPedido: r.col_id_pedido, colSku: r.col_sku, 
              colEstado: r.col_estado, colQuantidade: r.col_quantidade, colPdv: r.col_pdv || 'E', 
-             colValorBruto: r.col_valor_bruto || 'F', formulaExcel: r.formula_excel
+             formulaExcel: r.formula_excel
           })));
           setCanais(regrasDb.map((r: any) => r.canal));
         }

@@ -16,9 +16,7 @@ export default function AdminPage() {
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === INITIAL_ADMIN_PASS) { 
-      setIsAdminUnlocked(true); addLog('Sessão desbloqueada.', 'success'); 
-    }
+    if (password === INITIAL_ADMIN_PASS) { setIsAdminUnlocked(true); addLog('Sessão desbloqueada.', 'success'); }
   };
 
   const colToIdx = (colStr: string) => {
@@ -41,7 +39,11 @@ export default function AdminPage() {
       if (!row) continue;
       let val = row[idx];
       if (val === undefined && typeof row[0] === 'string' && row[0].includes(';')) val = row[0].split(';')[idx];
-      const idStr = String(val || '').trim();
+      const rawId = String(val || '').trim();
+      
+      // Regra de carrinho: Isola o primeiro ID antes de espaços, vírgulas ou barras
+      const idStr = rawId.split(/[\s;|,\|]+/)[0];
+
       if (idStr && !['id', 'pedido', 'venda', 'código', 'undefined'].includes(idStr.toLowerCase())) ids.push(idStr);
     }
     return ids;
@@ -73,15 +75,20 @@ export default function AdminPage() {
 
       const newSales = rows.slice(1).map((row, i) => {
         if (!row || !row.length) return null;
-        const id_pedido = String(row[colToIdx(rule.colIdPedido)] || '').trim();
-        if(!id_pedido || id_pedido.toLowerCase() === 'id pedido' || id_pedido.toLowerCase() === 'coluna id pedido') return null;
+        const rawId = String(row[colToIdx(rule.colIdPedido)] || '').trim();
+        
+        // TRATAMENTO DE CARRINHOS: Se o ML jogar vários IDs ou nomes na mesma célula, pegamos apenas a primeira sequência.
+        const id_pedido = rawId.split(/[\s;|,\|]+/)[0];
+
+        if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined'].includes(id_pedido.toLowerCase())) return null;
 
         if (faturados.length > 0 && !faturados.includes(id_pedido)) { bloqueadosFaturados++; return null; }
         if (cancelados.includes(id_pedido)) { bloqueadosCancelados++; return null; }
 
         const repasse = evaluateExcelFormula(rule.formulaExcel, row);
+        
+        // O PDV (Total Venda) é o faturamento bruto exato. Não é mais multiplicado por quantidade!
         const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
-        const valorBrutoRaw = row[colToIdx(rule.colValorBruto || 'F')];
 
         return {
           id_pedido,
@@ -89,8 +96,7 @@ export default function AdminPage() {
           canal: selectedChannel,
           sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
           quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
-          preco_venda: parseBrFloat(precoVendaRaw), // Mantido para referência opcional
-          faturamento_bruto: parseBrFloat(valorBrutoRaw), // VALOR BRUTO REAL PARA OS KPIS
+          faturamento_bruto: parseBrFloat(precoVendaRaw), // Usado nos KPIs globais
           repasse_liquido: repasse
         };
       }).filter(Boolean);

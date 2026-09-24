@@ -15,14 +15,14 @@ export default function RegrasPage() {
     if (canais.length > 0 && !editingChannel) {
       setEditingChannel(canais[0]);
       const existing = channelRules.find((r: any) => r.canal === canais[0]);
-      setRuleFormData(existing || { canal: canais[0], colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', colValorBruto: 'F', formulaExcel: 'F2 - (F2 * 12%)' });
+      setRuleFormData(existing || { canal: canais[0], colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', formulaExcel: 'E2 - (E2 * 12%)' });
     }
   }, [canais, channelRules, editingChannel]);
 
   const handleSelectChannel = (ch: string) => {
     setEditingChannel(ch);
     const existing = channelRules.find((r: any) => r.canal === ch);
-    setRuleFormData(existing || { canal: ch, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', colValorBruto: 'F', formulaExcel: 'F2 - (F2 * 12%)' });
+    setRuleFormData(existing || { canal: ch, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', formulaExcel: 'E2 - (E2 * 12%)' });
     setIsSaved(false);
   };
 
@@ -41,7 +41,7 @@ export default function RegrasPage() {
         await supabase.from('tb_regras_canais').upsert([{
           canal: newData.canal, col_id_pedido: newData.colIdPedido, col_sku: newData.colSku,
           col_estado: newData.colEstado, col_quantidade: newData.colQuantidade, 
-          col_pdv: newData.colPdv, col_valor_bruto: newData.colValorBruto, formula_excel: newData.formulaExcel
+          col_pdv: newData.colPdv, formula_excel: newData.formulaExcel
         }]);
       }
     } catch (e) {}
@@ -55,7 +55,7 @@ export default function RegrasPage() {
     if (novoCanal.trim() && !canais.includes(novoCanal.trim())) {
       const nome = novoCanal.trim();
       setCanais([...canais, nome]);
-      const newRule = { canal: nome, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', colValorBruto: 'F', formulaExcel: 'F2' };
+      const newRule = { canal: nome, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colQuantidade: 'D', colPdv: 'E', formulaExcel: 'E2' };
       setChannelRules([...channelRules, newRule]);
       setNovoCanal('');
       addLog(`Canal criado: ${nome}`, 'success');
@@ -88,18 +88,17 @@ export default function RegrasPage() {
         
         <div className="pt-4 border-t border-slate-800">
            <label className="block text-xs font-bold text-slate-200 mb-2">Expressão Excel ({editingChannel}):</label>
-           <input type="text" value={ruleFormData.formulaExcel || ''} onChange={e => setRuleFormData({...ruleFormData, formulaExcel: e.target.value})} placeholder="Ex: F2 - (F2 * 12%)" className="w-full p-3.5 bg-slate-950 border border-purple-500/40 rounded-xl font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-400" />
+           <input type="text" value={ruleFormData.formulaExcel || ''} onChange={e => setRuleFormData({...ruleFormData, formulaExcel: e.target.value})} placeholder="Ex: E2 - (E2 * 12%)" className="w-full p-3.5 bg-slate-950 border border-purple-500/40 rounded-xl font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-400" />
         </div>
 
         <div className="pt-4 border-t border-slate-800 space-y-3">
           <h4 className="text-xs font-bold text-slate-300 uppercase">Mapeamento das Colunas:</h4>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">ID Pedido</label><input type="text" value={ruleFormData.colIdPedido || 'A'} onChange={e => setRuleFormData({...ruleFormData, colIdPedido: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono text-center" /></div>
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">SKU</label><input type="text" value={ruleFormData.colSku || 'B'} onChange={e => setRuleFormData({...ruleFormData, colSku: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono text-center" /></div>
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">Estado (UF)</label><input type="text" value={ruleFormData.colEstado || 'C'} onChange={e => setRuleFormData({...ruleFormData, colEstado: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono text-center" /></div>
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">Quantidade</label><input type="text" value={ruleFormData.colQuantidade || 'D'} onChange={e => setRuleFormData({...ruleFormData, colQuantidade: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono text-center" /></div>
-            <div><label className="block text-[11px] font-bold text-slate-400 mb-1">PDV (Unitário/Ref)</label><input type="text" value={ruleFormData.colPdv || 'E'} onChange={e => setRuleFormData({...ruleFormData, colPdv: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 font-mono text-center" /></div>
-            <div><label className="block text-[11px] font-bold text-emerald-400 mb-1">Valor Bruto (KPI)</label><input type="text" value={ruleFormData.colValorBruto || 'F'} onChange={e => setRuleFormData({...ruleFormData, colValorBruto: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 font-mono text-center" /></div>
+            <div><label className="block text-[11px] font-bold text-emerald-400 mb-1">PDV (Total Venda)</label><input type="text" value={ruleFormData.colPdv || 'E'} onChange={e => setRuleFormData({...ruleFormData, colPdv: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 font-mono text-center" /></div>
           </div>
         </div>
       </div>
