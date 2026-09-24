@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { useAppContext, CHANNELS, BRAZIL_STATES } from '@/context/AppContext';
+import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
   const { canais, sales, adsData, flexData, products, goals, addLog } = useAppContext();
@@ -21,14 +21,12 @@ export default function DashboardPage() {
   const enrichedSales = useMemo(() => {
     return sales.filter((s: any) => appliedChannelFilter === 'TODOS' || s.canal === appliedChannelFilter)
       .map((s: any) => {
-        // Encontra o SKU na base e soma Produto + Embalagem
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
         const custoUn = (prod.preco_custo || 0) + (prod.custo_embalagem || 0);
         
-        // Multiplica o Custo pela Quantidade vendida (O PDV não é multiplicado)
+        // CMV: (Custo + Embalagem) x Quantidade Vendida
         const custoCMV = custoUn * (s.quantidade || 1);
 
-        // Deduções FLEX e Apuração Bruta/Líquida
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
 
@@ -40,17 +38,23 @@ export default function DashboardPage() {
       });
   }, [sales, appliedChannelFilter, products, flexData]);
 
+  // KPIs Globais
   const kpis = useMemo(() => {
-    const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (s.faturamento_bruto || 0), 0);
-    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
-    const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
-    const totalAdsCost = adsData.reduce((sum: number, a: any) => sum + a.custo_ads, 0);
-    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+    // PDV já representa o Faturamento Bruto (sem multiplicar pela qtd)
+    const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
+    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (s.repasse_liquido || 0), 0);
+    const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (s.custoCMV || 0), 0);
+    
+    // Filtra custos de ADS aplicáveis ao Dashboard atual
+    const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
+    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (a.custo_ads || 0), 0);
+    
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (s.custoFlex || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
 
     return { faturamentoBrutoVendas, faturamentoLiquidoRepasse, custoTotalCMV, lucroLiquidoReal, totalPedidos: enrichedSales.length };
-  }, [enrichedSales, adsData]);
+  }, [enrichedSales, adsData, appliedChannelFilter]);
 
   const channelAnalytics = useMemo(() => {
     const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? canais : canais.filter((c:string) => c === appliedChannelFilter);
@@ -59,16 +63,20 @@ export default function DashboardPage() {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0, responsavel: 'N/A' };
 
-      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (s.faturamento_bruto || 0), 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
-      const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + a.custo_ads, 0);
-      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
-      const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (s.repasse_liquido || 0), 0);
+      const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + (a.custo_ads || 0), 0);
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (s.custoCMV || 0), 0);
+      const flexCanal = chSales.reduce((sum: number, s: any) => sum + (s.custoFlex || 0), 0);
 
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
-      const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoLiquido / goalObj.meta_valor) * 100 : 0;
       
-      const margemBrutaPct = faturadoBruto > 0 ? ((repasseTotal - cmvCanal) / faturadoBruto) * 100 : 0;
+      // Metas baseadas no Faturamento Bruto (PDV)
+      const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
+      
+      // Margens (%)
+      const ganhoBrutoCanal = repasseTotal - cmvCanal;
+      const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       return { canal: channelName, responsavel: goalObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct };
@@ -80,7 +88,7 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Painel Executivo Omnichannel</h2>
-          <p className="text-xs text-slate-400 mt-1">Cálculo real de Lucratividade: Repasse - CMV(Emb+Prod) - Fretes Flex - ADS</p>
+          <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Ganho Real: Repasse - CMV(Emb+Prod) - Fretes Flex - ADS</p>
         </div>
         <div className="flex gap-3">
           <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-purple-300 font-bold text-xs rounded-lg px-3 py-2">
@@ -159,12 +167,12 @@ export default function DashboardPage() {
                 <td className="py-2.5 pl-3 font-bold text-indigo-400">{s.id_pedido}</td>
                 <td className="py-2.5">{s.canal}</td>
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
-                <td className="py-2.5">R$ {(s.faturamento_bruto || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5">R$ {s.repasse_liquido.toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5 text-amber-300">- R$ {s.custoCMV.toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5 font-bold text-indigo-300">R$ {s.ganhoBruto.toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5 text-rose-300">- R$ {s.custoFlex.toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5 pr-3 text-right font-extrabold text-emerald-400">R$ {s.ganhoLiquido.toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5">R$ {(s.preco_venda || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 font-bold text-indigo-300">R$ {(s.ganhoBruto || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 pr-3 text-right font-extrabold text-emerald-400">R$ {(s.ganhoLiquido || 0).toFixed(2).replace('.', ',')}</td>
               </tr>
             ))}
           </tbody>

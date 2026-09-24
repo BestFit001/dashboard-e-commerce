@@ -26,9 +26,12 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
+  // Melhorada para ignorar textos como "R$" ou espaços que possam quebrar a leitura
   const parseBrFloat = (val: any) => {
     if (!val) return 0;
-    return parseFloat(String(val).replace(',', '.')) || 0;
+    if (typeof val === 'number') return val;
+    const strVal = String(val).replace(/[^0-9,-]/g, '').replace(',', '.');
+    return parseFloat(strVal) || 0;
   };
 
   const extractIds = (rows: any[], colLet: string) => {
@@ -40,10 +43,7 @@ export default function AdminPage() {
       let val = row[idx];
       if (val === undefined && typeof row[0] === 'string' && row[0].includes(';')) val = row[0].split(';')[idx];
       const rawId = String(val || '').trim();
-      
-      // Regra de carrinho: Isola o primeiro ID antes de espaços, vírgulas ou barras
       const idStr = rawId.split(/[\s;|,\|]+/)[0];
-
       if (idStr && !['id', 'pedido', 'venda', 'código', 'undefined'].includes(idStr.toLowerCase())) ids.push(idStr);
     }
     return ids;
@@ -76,8 +76,6 @@ export default function AdminPage() {
       const newSales = rows.slice(1).map((row, i) => {
         if (!row || !row.length) return null;
         const rawId = String(row[colToIdx(rule.colIdPedido)] || '').trim();
-        
-        // TRATAMENTO DE CARRINHOS: Se o ML jogar vários IDs ou nomes na mesma célula, pegamos apenas a primeira sequência.
         const id_pedido = rawId.split(/[\s;|,\|]+/)[0];
 
         if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined'].includes(id_pedido.toLowerCase())) return null;
@@ -86,8 +84,6 @@ export default function AdminPage() {
         if (cancelados.includes(id_pedido)) { bloqueadosCancelados++; return null; }
 
         const repasse = evaluateExcelFormula(rule.formulaExcel, row);
-        
-        // O PDV (Total Venda) é o faturamento bruto exato. Não é mais multiplicado por quantidade!
         const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
 
         return {
@@ -96,8 +92,8 @@ export default function AdminPage() {
           canal: selectedChannel,
           sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
           quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
-          faturamento_bruto: parseBrFloat(precoVendaRaw), // Usado nos KPIs globais
-          repasse_liquido: repasse
+          preco_venda: parseBrFloat(precoVendaRaw), // Este é o Faturamento Bruto (PDV)
+          repasse_liquido: repasse // Este é o resultado da fórmula (Taxa do Canal)
         };
       }).filter(Boolean);
       
@@ -133,20 +129,20 @@ export default function AdminPage() {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
       const data = rows.slice(1).map(mapper).filter((i:any) => i.val > 0);
-      if(data.length > 0) { setter((p:any)=>[...data.map((d:any)=>d.obj), ...p]); addLog(`${data.length} registros de ${type} inseridos.`, 'success'); }
+      if(data.length > 0) { setter((p:any)=>[...data.map((d:any)=>d.obj), ...p]); addLog(`${data.length} registos de ${type} inseridos.`, 'success'); }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
   const clearData = (type: string) => {
-    if(confirm(`Tem certeza que deseja apagar a base de ${type.toUpperCase()}?`)) {
+    if(confirm(`Tem a certeza que deseja apagar a base de ${type.toUpperCase()}?`)) {
       if(type === 'faturados') setFaturados([]);
       if(type === 'cancelados') setCancelados([]);
       if(type === 'vendas') setSales([]);
       if(type === 'flex') setFlexData([]);
       if(type === 'ads') setAdsData([]);
       if(type === 'metas') setGoals([]);
-      addLog(`Base de ${type.toUpperCase()} deletada da memória.`, 'warning');
+      addLog(`Base de ${type.toUpperCase()} apagada da memória.`, 'warning');
     }
   };
 
@@ -213,7 +209,6 @@ export default function AdminPage() {
          </div>
        </div>
 
-       {/* ZONA DE EXPURGO (Limpeza de Dados) */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6">
           <h3 className="font-bold text-rose-400 text-sm mb-4"><i className="fa-solid fa-trash mr-2"></i>Zona de Limpeza (Expurgo de Dados)</h3>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
