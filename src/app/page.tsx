@@ -1,16 +1,15 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { useAppContext, CHANNELS } from '@/context/AppContext';
+import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
-  const { sales, adsData, flexData, products, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, addLog } = useAppContext();
 
   const [selectedState, setSelectedState] = useState('TODOS');
   const [appliedStateFilter, setAppliedStateFilter] = useState('TODOS');
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleRecalculate = () => {
     setIsRecalculating(true);
@@ -26,10 +25,9 @@ export default function DashboardPage() {
     return sales.filter((s: any) => {
       const matchesState = appliedStateFilter === 'TODOS' || s.estado === appliedStateFilter;
       const matchesChannel = appliedChannelFilter === 'TODOS' || s.canal === appliedChannelFilter;
-      const matchesSearch = searchQuery === '' || s.id_pedido.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesState && matchesChannel && matchesSearch;
+      return matchesState && matchesChannel;
     });
-  }, [sales, appliedStateFilter, appliedChannelFilter, searchQuery]);
+  }, [sales, appliedStateFilter, appliedChannelFilter]);
 
   const kpis = useMemo(() => {
     const faturamentoBrutoVendas = filteredSales.reduce((sum: number, s: any) => sum + ((Number(s.preco_venda) || 0) * (Number(s.quantidade) || 1)), 0);
@@ -55,6 +53,49 @@ export default function DashboardPage() {
     return { faturamentoBrutoVendas, faturamentoLiquidoRepasse, custoTotal, custoFlexTotal, custoAdsTotal, lucroLiquidoReal, totalPedidos: filteredSales.length };
   }, [filteredSales, products, adsData, flexData, appliedChannelFilter]);
 
+  const channelAnalytics = useMemo(() => {
+    const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? canais : canais.filter((c: string) => c === appliedChannelFilter);
+
+    return channelsToAnalyze.map((channelName: string) => {
+      const channelSales = filteredSales.filter((s: any) => s.canal === channelName);
+      const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0, responsavel: 'Não atribuído' };
+
+      const faturadoBruto = channelSales.reduce((sum: number, s: any) => sum + ((Number(s.preco_venda) || 0) * (Number(s.quantidade) || 1)), 0);
+      const repasseBase = channelSales.reduce((sum: number, s: any) => sum + (Number(s.faturamento_liquido_final) || 0), 0);
+
+      const custoAdsCanal = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
+      
+      let custoFlexCanal = 0;
+      let custoCMVCanal = 0;
+
+      channelSales.forEach((s: any) => {
+         const flexMatch = flexData.find((f: any) => f.id_pedido === s.id_pedido);
+         if (flexMatch) custoFlexCanal += Number(flexMatch.valor_frete);
+
+         const prod = products.find((p: any) => p.sku === s.sku);
+         if (prod) custoCMVCanal += ((Number(prod.preco_custo) + Number(prod.custo_embalagem)) * (Number(s.quantidade) || 1));
+      });
+
+      const faturadoLiquido = Math.max(0, repasseBase - custoAdsCanal - custoFlexCanal);
+      const lucroBruto = repasseBase - custoCMVCanal;
+      const margemBrutaPct = faturadoBruto > 0 ? (lucroBruto / faturadoBruto) * 100 : 0;
+      const lucroLiquido = faturadoLiquido - custoCMVCanal;
+      const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquido / faturadoBruto) * 100 : 0;
+      const metaValor = Number(goalObj.meta_valor) || 0;
+      const progressoMetaPct = metaValor > 0 ? (faturadoLiquido / metaValor) * 100 : 0;
+
+      return {
+        canal: channelName,
+        faturadoBruto,
+        faturadoLiquido,
+        margemBrutaPct: margemBrutaPct.toFixed(1),
+        margemLiquidaPct: margemLiquidaPct.toFixed(1),
+        progressoMetaPct: progressoMetaPct.toFixed(1),
+        totalPedidos: channelSales.length
+      };
+    });
+  }, [filteredSales, canais, goals, adsData, flexData, products, appliedChannelFilter]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between bg-slate-900 p-5 rounded-2xl border border-slate-800">
@@ -62,7 +103,7 @@ export default function DashboardPage() {
         <div className="flex gap-3">
           <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-purple-300 font-bold text-xs rounded-lg px-2 py-1">
             <option value="TODOS">Todos os Canais</option>
-            {CHANNELS.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+            {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
           </select>
           <button onClick={handleRecalculate} className="px-4 py-2 bg-indigo-600 text-white font-extrabold text-xs rounded-xl shadow-lg">
             {isRecalculating ? 'A calcular...' : 'Recalcular'}
@@ -93,6 +134,39 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {channelAnalytics.map((item) => (
+          <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <h4 className="font-black text-white text-base">{item.canal}</h4>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${Number(item.progressoMetaPct) >= 100 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'}`}>
+                {item.progressoMetaPct}% Meta
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Fat. Bruto</span>
+                <strong className="text-sm font-black text-slate-100">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase text-purple-300 block">Fat. Líquido</span>
+                <strong className="text-sm font-black text-purple-400">R$ {item.faturadoLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/40">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
+                <strong className="text-xs font-black text-indigo-400">{item.margemBrutaPct}%</strong>
+              </div>
+              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/40">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Líquida</span>
+                <strong className="text-xs font-black text-emerald-400">{item.margemLiquidaPct}%</strong>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
         <h3 className="font-bold text-white text-base mb-4">Pedidos Faturados</h3>
         <div className="overflow-x-auto">
@@ -101,7 +175,7 @@ export default function DashboardPage() {
               <tr><th className="py-3 pl-3">ID Pedido</th><th>Canal</th><th>SKU</th><th>Preço Venda</th><th className="text-right pr-3">Repasse Líquido</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
-              {filteredSales.map((s: any) => (
+              {filteredSales.slice(0, 50).map((s: any) => (
                 <tr key={s.id_pedido} className="hover:bg-slate-800/40">
                   <td className="py-2.5 pl-3 font-bold text-indigo-400">{s.id_pedido}</td>
                   <td className="py-2.5">{s.canal}</td>
@@ -110,9 +184,6 @@ export default function DashboardPage() {
                   <td className="py-2.5 pr-3 text-right font-bold text-emerald-400">R$ {s.faturamento_liquido_final.toFixed(2)}</td>
                 </tr>
               ))}
-              {filteredSales.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-slate-500">Nenhum pedido processado até o momento.</td></tr>
-              )}
             </tbody>
           </table>
         </div>
