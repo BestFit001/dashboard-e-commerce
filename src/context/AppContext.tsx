@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase';
 
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
-export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Loja física'];
+
+// Lojas corrigidas
+export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Clube Hebraica', 'Paineiras'];
 
 const AppContext = createContext<any>(null);
 
@@ -27,7 +29,20 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [cancelados, setCancelados] = useState<any[]>([]);
   
   const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
-  const [channelRules, setChannelRules] = useState(CHANNELS.map(c => ({ canal: c, responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
+  
+  // Regras padrão atualizadas com PDV, Rebate e Líquido
+  const [channelRules, setChannelRules] = useState(CHANNELS.map(c => ({ 
+    canal: c, 
+    responsavel: 'Equipe Best Fit', 
+    colIdPedido: 'A', 
+    colSku: 'B', 
+    colPrecoVenda: 'C', // Coluna PDV
+    colRebate: 'D', 
+    colLiquido: 'E',
+    colEstado: 'F', 
+    colQuantidade: 'G', 
+    formulaExcel: 'E2' 
+  })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Dashboard Best Fit inicializado com sucesso.', type: 'info' }]);
@@ -61,37 +76,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     loadLocal('bestfit_logos', setChannelLogos);
 
     setIsLoaded(true);
-
-    async function fetchDb() {
-      try {
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return; 
-        const { data: produtosDb } = await supabase.from('tb_produtos').select('*');
-        if (produtosDb && produtosDb.length > 0) setProducts(produtosDb);
-
-        const { data: regrasDb } = await supabase.from('tb_regras_canais').select('*');
-        if (regrasDb && regrasDb.length > 0) {
-          setChannelRules(regrasDb.map((r: any) => ({
-             canal: r.canal, 
-             responsavel: r.responsavel || 'Equipe Best Fit',
-             colIdPedido: r.col_id_pedido, 
-             colSku: r.col_sku, 
-             colEstado: r.col_estado, 
-             colQuantidade: r.col_quantidade, 
-             formulaExcel: r.formula_excel
-          })));
-          setCanais(regrasDb.map((r: any) => r.canal));
-          
-          const logosMap: Record<string, string> = {};
-          regrasDb.forEach((r: any) => {
-             if (r.logo_url) logosMap[r.canal] = r.logo_url;
-          });
-          setChannelLogos(logosMap);
-        }
-      } catch (e) {
-        console.error("Falha ao comunicar com Supabase", e);
-      }
-    }
-    fetchDb();
   }, []);
 
   useEffect(() => {

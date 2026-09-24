@@ -3,19 +3,17 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function RegrasPage() {
-  const { canais, setCanais, channelRules, setChannelRules, addLog } = useAppContext();
+  const { canais, setCanais, channelRules, setChannelRules, channelLogos, setChannelLogos, addLog } = useAppContext();
   
   const [editingChannel, setEditingChannel] = useState(canais[0]);
   const [ruleFormData, setRuleFormData] = useState<any>({});
   const [novoCanal, setNovoCanal] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
-  // Carrega os dados do canal selecionado
   useEffect(() => {
     if (!editingChannel || !canais.includes(editingChannel)) return;
     const existing = channelRules.find((r: any) => r.canal === editingChannel);
-    
-    // Define o mês atual como padrão (YYYY-MM) se não houver um salvo
+    const logoBase64 = channelLogos[editingChannel] || '';
     const currentMonth = new Date().toISOString().slice(0, 7); 
 
     setRuleFormData(existing || { 
@@ -23,10 +21,12 @@ export default function RegrasPage() {
       responsavel: '',
       meta_valor: '',
       mes_referencia: currentMonth,
-      formulaExcel: 'C2 - (C2 * 12%)',
-      colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G' 
+      formulaExcel: 'E2 - D2',
+      colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'C', colRebate: 'D', colLiquido: 'E'
     });
-  }, [editingChannel, channelRules, canais]);
+    
+    setRuleFormData((prev: any) => ({ ...prev, logo_url: logoBase64 }));
+  }, [editingChannel, channelRules, canais, channelLogos]);
 
   const handleSelectChannel = (ch: string) => {
     setEditingChannel(ch);
@@ -37,7 +37,6 @@ export default function RegrasPage() {
     setChannelRules((prev: any[]) => {
       const idx = prev.findIndex(r => r.canal === editingChannel);
       const newData = { ...ruleFormData, canal: editingChannel };
-      
       if (idx >= 0) { 
          const updated = [...prev]; 
          updated[idx] = newData; 
@@ -45,6 +44,10 @@ export default function RegrasPage() {
       }
       return [...prev, newData];
     });
+
+    if (ruleFormData.logo_url) {
+      setChannelLogos((prev: any) => ({ ...prev, [editingChannel]: ruleFormData.logo_url }));
+    }
     
     addLog(`Regras, Meta e Responsável salvos para [${editingChannel}].`, 'success');
     setIsSaved(true);
@@ -58,24 +61,26 @@ export default function RegrasPage() {
       
       const newRule = { 
         canal: nome, responsavel: '', meta_valor: '', mes_referencia: new Date().toISOString().slice(0, 7),
-        colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2' 
+        colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'C', colRebate: 'D', colLiquido: 'E', formulaExcel: 'E2' 
       };
       setChannelRules([...channelRules, newRule]);
       
       setNovoCanal('');
       addLog(`Novo canal criado com sucesso: ${nome}`, 'success');
-      
       setEditingChannel(nome);
       setIsSaved(false);
     }
   };
 
-  // Preview local do upload de Logo
+  // Conversão para Base64 (resolve o problema da imagem sumir/quebrar)
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if(file) {
-      const tempUrl = URL.createObjectURL(file);
-      setRuleFormData({...ruleFormData, logo_url: tempUrl});
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setRuleFormData({ ...ruleFormData, logo_url: reader.result as string });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -119,9 +124,7 @@ export default function RegrasPage() {
           ))}
         </div>
         
-        {/* BLOCO 1: Identidade e Gestão Comercial */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4 border-t border-slate-800">
-           {/* Identidade */}
            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-200 mb-2">Logo do Canal ({editingChannel})</label>
@@ -129,7 +132,7 @@ export default function RegrasPage() {
                   <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center overflow-hidden border border-slate-700 p-1">
                       {ruleFormData.logo_url ? <img src={ruleFormData.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <span className="text-slate-400 text-[10px] font-bold">LOGO</span>}
                   </div>
-                  <input type="file" onChange={handleLogoUpload} className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer" />
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-700 cursor-pointer" />
                 </div>
               </div>
               
@@ -137,13 +140,12 @@ export default function RegrasPage() {
                 <label className="block text-xs font-bold text-slate-200 mb-2">Responsável pelo Canal:</label>
                 <input 
                   type="text" value={ruleFormData.responsavel || ''} onChange={e => setRuleFormData({...ruleFormData, responsavel: e.target.value})} 
-                  placeholder="Ex: Teste / Gisele" 
+                  placeholder="Ex: Gisele" 
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500" 
                 />
               </div>
            </div>
 
-           {/* Metas Comerciais */}
            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-200 mb-2">Mês de Referência (Histórico):</label>
@@ -164,35 +166,37 @@ export default function RegrasPage() {
            </div>
         </div>
 
-        {/* BLOCO 2: Fórmula */}
         <div className="pt-4 border-t border-slate-800">
            <label className="block text-xs font-bold text-slate-200 mb-2">Expressão Excel de Cálculo ({editingChannel}):</label>
            <input 
              type="text" value={ruleFormData?.formulaExcel || ''} onChange={e => setRuleFormData({...ruleFormData, formulaExcel: e.target.value})} 
-             placeholder="Ex: C2 - (C2 * 12%)" 
+             placeholder="Ex: E2 - D2" 
              className="w-full p-3.5 bg-slate-950 border border-purple-500/40 rounded-xl font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-400" 
            />
         </div>
 
-        {/* BLOCO 3: Colunas */}
         <div className="pt-4 border-t border-slate-800 space-y-3">
           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mapeamento das Colunas:</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna ID Pedido</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">ID Pedido</label>
               <input type="text" value={ruleFormData?.colIdPedido || 'A'} onChange={e => setRuleFormData({...ruleFormData, colIdPedido: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna SKU</label>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">SKU</label>
               <input type="text" value={ruleFormData?.colSku || 'B'} onChange={e => setRuleFormData({...ruleFormData, colSku: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna Estado (UF)</label>
-              <input type="text" value={ruleFormData?.colEstado || 'E'} onChange={e => setRuleFormData({...ruleFormData, colEstado: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" />
+              <label className="block text-[11px] font-bold text-amber-500 mb-1">PDV (Preço Venda)</label>
+              <input type="text" value={ruleFormData?.colPrecoVenda || 'C'} onChange={e => setRuleFormData({...ruleFormData, colPrecoVenda: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-amber-500/50 rounded-xl text-xs text-amber-400 font-mono font-bold uppercase text-center" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna Quantidade</label>
-              <input type="text" value={ruleFormData?.colQuantidade || 'G'} onChange={e => setRuleFormData({...ruleFormData, colQuantidade: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" />
+              <label className="block text-[11px] font-bold text-rose-400 mb-1">Cupom / Rebate</label>
+              <input type="text" value={ruleFormData?.colRebate || 'D'} onChange={e => setRuleFormData({...ruleFormData, colRebate: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-rose-400 font-mono font-bold uppercase text-center" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-emerald-400 mb-1">Valor Líquido</label>
+              <input type="text" value={ruleFormData?.colLiquido || 'E'} onChange={e => setRuleFormData({...ruleFormData, colLiquido: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-emerald-500/50 rounded-xl text-xs text-emerald-400 font-mono font-bold uppercase text-center" />
             </div>
           </div>
         </div>
