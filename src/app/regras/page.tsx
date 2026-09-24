@@ -36,18 +36,23 @@ export default function RegrasPage() {
     const fileExt = file.name.split('.').pop();
     const fileName = `${editingChannel.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.${fileExt}`;
 
+    // 1. Upload para o Storage do Supabase
     const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file);
     if (uploadError) {
-      addLog(`Erro ao enviar imagem: ${uploadError.message}`, 'error');
+      alert(`FALHA NO UPLOAD DO STORAGE:\n${uploadError.message}\n\nConfirme se o bucket "logos" é público e se aplicou as políticas RLS no SQL.`);
+      addLog(`Erro upload: ${uploadError.message}`, 'error');
       setIsUploading(false);
       return;
     }
 
+    // 2. Resgata URL Público
     const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
 
+    // 3. Atualiza na tabela tb_regras_canais
     const { error: dbError } = await supabase.from('tb_regras_canais').update({ logo_url: publicUrl }).eq('canal', editingChannel);
     if (dbError) {
-      addLog(`Erro ao registar URL no banco: ${dbError.message}`, 'error');
+      alert(`IMAGEM SALVA NO STORAGE, MAS FALHOU NO BANCO:\n${dbError.message}`);
+      addLog(`Erro BD: ${dbError.message}`, 'error');
       setIsUploading(false);
       return;
     }
@@ -101,7 +106,10 @@ export default function RegrasPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
-        <h2 className="text-xl font-bold text-white">Parametrização de Fórmulas</h2>
+        <div>
+          <h2 className="text-xl font-bold text-white">Parametrização de Fórmulas & Canais</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Configure colunas, fórmulas de repasse e identidades visuais por canal.</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
           <input type="text" placeholder="Nome do Novo Canal..." value={novoCanal} onChange={e => setNovoCanal(e.target.value)} className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 flex-1 sm:flex-none" />
           <button onClick={adicionarCanal} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">Criar Canal</button>
@@ -111,31 +119,32 @@ export default function RegrasPage() {
         </div>
       </div>
       
-      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-6">
+      <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6">
         <div className="flex flex-wrap gap-2">
           {canais.map((ch: string) => (
-            <button key={ch} onClick={() => handleSelectChannel(ch)} className={`py-2 px-3 rounded-xl text-xs font-bold transition border ${editingChannel === ch ? 'bg-purple-600 text-white border-purple-500 shadow-md' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'}`}>
+            <button key={ch} onClick={() => handleSelectChannel(ch)} className={`py-2 px-3.5 rounded-xl text-xs font-bold transition border ${editingChannel === ch ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30' : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'}`}>
               {ch}
             </button>
           ))}
         </div>
         
-        <div className="pt-4 border-t border-slate-800 flex items-center gap-4">
+        <div className="pt-4 border-t border-slate-800 flex items-center gap-5">
            {channelLogos[editingChannel] ? (
-             <img src={channelLogos[editingChannel]} alt="Logo" className="w-16 h-16 rounded-xl bg-white object-contain p-1 border border-slate-700" />
+             <img src={channelLogos[editingChannel]} alt="Logo" className="w-16 h-16 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow-md" />
            ) : (
              <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 text-[10px] font-bold">Sem Logo</div>
            )}
            <div>
-             <label className="block text-[11px] font-bold text-slate-400 mb-1">Logo do Canal (JPG, PNG)</label>
+             <label className="block text-xs font-bold text-slate-300 mb-1">Logo do Canal ({editingChannel})</label>
              <input type="file" accept="image/*" onChange={handleUploadLogo} disabled={isUploading} className="text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600/20 file:text-indigo-400 hover:file:bg-indigo-600/30 cursor-pointer" />
-             {isUploading && <span className="text-[10px] text-indigo-400 ml-2 animate-pulse">Enviando...</span>}
+             {isUploading && <span className="text-[10px] text-indigo-400 ml-2 animate-pulse font-bold">Enviando para o Supabase...</span>}
            </div>
         </div>
 
         <div className="pt-4 border-t border-slate-800">
-           <label className="block text-xs font-bold text-slate-200 mb-2">Expressão Excel ({editingChannel}):</label>
+           <label className="block text-xs font-bold text-slate-200 mb-2">Expressão Excel de Cálculo ({editingChannel}):</label>
            <input type="text" value={ruleFormData.formulaExcel || ''} onChange={e => setRuleFormData({...ruleFormData, formulaExcel: e.target.value})} placeholder="Ex: C2 - (C2 * 12%)" className="w-full p-3.5 bg-slate-950 border border-purple-500/40 rounded-xl font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-400" />
+           <p className="text-[10px] text-slate-500 mt-1">Utilize letras correspondentes às colunas da planilha (ex: C2, I2, etc).</p>
         </div>
 
         <div className="pt-4 border-t border-slate-800 space-y-3">
