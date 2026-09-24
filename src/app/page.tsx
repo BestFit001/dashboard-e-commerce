@@ -8,7 +8,6 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  // Filtros de Data
   const [dateFilter, setDateFilter] = useState('TUDO');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -36,10 +35,8 @@ export default function DashboardPage() {
     today.setHours(0, 0, 0, 0);
 
     return sales.filter((s: any) => {
-        // 1. Filtro de Canal
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
-        // 2. Filtro de Data
         if (appliedDateFilter !== 'TUDO' && s.data_faturamento) {
            const d = new Date(s.data_faturamento + 'T00:00:00');
            d.setHours(0, 0, 0, 0);
@@ -75,10 +72,11 @@ export default function DashboardPage() {
         const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
 
         const repasse = s.repasse_liquido || 0;
-        const ganhoBruto = repasse - custoCMV; 
-        const ganhoLiquido = ganhoBruto - custoFlex;
+        
+        // O Ganho Líquido Real é o Repasse deduzido do CMV e do Flex
+        const ganhoLiquido = repasse - custoCMV - custoFlex;
 
-        return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido };
+        return { ...s, custoCMV, custoFlex, ganhoLiquido };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
@@ -114,10 +112,7 @@ export default function DashboardPage() {
       
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
       
-      // NOVA LÓGICA DE MARGENS:
-      // Margem Bruta = Repasse / Faturamento Bruto (O que a plataforma nos entrega em % da venda)
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
-      // Margem Líquida = Lucro Real / Faturamento Bruto (O que sobra no bolso em % da venda)
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       return { canal: channelName, responsavel: goalObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct };
@@ -133,7 +128,6 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* 1. Filtro de Datas */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -154,7 +148,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 2. Filtro de Canais */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -223,9 +216,8 @@ export default function DashboardPage() {
               <th>Canal</th>
               <th>SKU (Qtd)</th>
               <th>PDV (Fat. Bruto)</th>
-              <th>Repasse (Fórmula)</th>
+              <th className="text-purple-300">Repasse (Ganho Bruto)</th>
               <th>CMV do Pedido</th>
-              <th className="text-indigo-300">Ganho Bruto</th>
               <th className="text-rose-300">FLEX</th>
               <th className="text-emerald-400 font-extrabold pr-3 text-right">Ganho Líquido Real</th>
             </tr>
@@ -238,9 +230,8 @@ export default function DashboardPage() {
                 <td className="py-2.5">{s.canal}</td>
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 font-bold text-purple-300">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5 font-bold text-indigo-300">R$ {(s.ganhoBruto || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 pr-3 text-right font-extrabold text-emerald-400">R$ {(s.ganhoLiquido || 0).toFixed(2).replace('.', ',')}</td>
               </tr>
