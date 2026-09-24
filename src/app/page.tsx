@@ -114,8 +114,10 @@ export default function DashboardPage() {
       
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
       
-      const ganhoBrutoCanal = repasseTotal - cmvCanal;
-      const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
+      // NOVA LÓGICA DE MARGENS:
+      // Margem Bruta = Repasse / Faturamento Bruto (O que a plataforma nos entrega em % da venda)
+      const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
+      // Margem Líquida = Lucro Real / Faturamento Bruto (O que sobra no bolso em % da venda)
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       return { canal: channelName, responsavel: goalObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct };
@@ -204,7 +206,7 @@ export default function DashboardPage() {
                <div><span className="text-[10px] text-purple-300 block">Lucro Líquido Real</span><strong className="text-sm text-purple-400">R$ {item.faturadoLiquido.toFixed(2).replace('.', ',')}</strong></div>
              </div>
              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-                <div><span className="text-[10px] text-slate-500 block">Margem Bruta</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
+                <div><span className="text-[10px] text-slate-500 block">Margem Bruta (Repasse/Fat)</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
                 <div><span className="text-[10px] text-slate-500 block">Margem Líquida</span><strong className="text-xs text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong></div>
              </div>
           </div>
