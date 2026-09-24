@@ -1,106 +1,140 @@
 'use client';
 import React, { useState } from 'react';
 import { useAppContext } from '@/context/AppContext';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
 export default function SkusPage() {
   const { products, setProducts, addLog } = useAppContext();
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+  const [isSaving, setIsSaving] = useState(false);
+  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '', preco_venda: '' });
 
-  // Abre modal para criar novo
   const openNewModal = () => {
-    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '', preco_venda: '' });
     setIsEditing(false);
     setShowModal(true);
   };
 
-  // Abre modal para editar existente
   const openEditModal = (prod: any) => {
     setNewProduct({
       sku: prod.sku,
       titulo: prod.titulo,
       preco_custo: String(prod.preco_custo || 0),
-      custo_embalagem: String(prod.custo_embalagem || 0)
+      custo_embalagem: String(prod.custo_embalagem || 0),
+      preco_venda: String(prod.preco_venda || 0)
     });
     setIsEditing(true);
     setShowModal(true);
   };
 
-  // Guardar Produto (Novo ou Edição)
-  const handleSaveProduct = (e: React.FormEvent) => {
+  // GRAVAR PRODUTO NO SUPABASE
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const item = {
-      sku: newProduct.sku.toUpperCase(),
+    setIsSaving(true);
+
+    const dbItem = {
+      sku: newProduct.sku.toUpperCase().trim(),
       titulo: newProduct.titulo,
       preco_custo: parseFloat(newProduct.preco_custo) || 0,
       custo_embalagem: parseFloat(newProduct.custo_embalagem) || 0,
-      preco_venda: 0,
-      faturamento: 0,
-      pedidos: 0
+      preco_venda: parseFloat(newProduct.preco_venda) || 0
     };
 
+    if (!isEditing && products.some((p: any) => p.sku === dbItem.sku)) {
+      addLog(`O SKU [${dbItem.sku}] já existe na base.`, 'error');
+      setIsSaving(false);
+      return;
+    }
+
+    // 1. Envia para o Supabase
+    const { error } = await supabase.from('tb_produtos').upsert([dbItem]);
+
+    if (error) {
+      addLog(`Erro Supabase: ${error.message}`, 'error');
+      setIsSaving(false);
+      return;
+    }
+
+    // 2. Atualiza o painel visual
     if (isEditing) {
-      setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
-      addLog(`SKU [${item.sku}] atualizado com sucesso.`, 'success');
+      setProducts((prev: any[]) => prev.map(p => p.sku === dbItem.sku ? dbItem : p));
+      addLog(`SKU [${dbItem.sku}] atualizado com sucesso.`, 'success');
     } else {
-      if (products.some((p: any) => p.sku === item.sku)) {
-        addLog(`O SKU [${item.sku}] já existe na base.`, 'error');
-        return;
-      }
-      setProducts((prev: any[]) => [item, ...prev]);
-      addLog(`Novo SKU [${item.sku}] cadastrado manualmente.`, 'success');
+      setProducts((prev: any[]) => [dbItem, ...prev]);
+      addLog(`Novo SKU [${dbItem.sku}] cadastrado.`, 'success');
     }
     
+    setIsSaving(false);
     setShowModal(false);
   };
 
-  // Excluir Produto
-  const handleDeleteProduct = (sku: string) => {
+  // APAGAR PRODUTO NO SUPABASE
+  const handleDeleteProduct = async (sku: string) => {
     if (confirm(`Tem a certeza que deseja excluir o SKU: ${sku}?`)) {
+      
+      const { error } = await supabase.from('tb_produtos').delete().eq('sku', sku);
+      
+      if (error) {
+        addLog(`Erro ao excluir no Supabase: ${error.message}`, 'error');
+        return;
+      }
+
       setProducts((prev: any[]) => prev.filter(p => p.sku !== sku));
       addLog(`SKU [${sku}] removido da base de custos.`, 'warning');
     }
   };
 
-  // Importação em Massa de Custos via Planilha
-  const handleUploadCustos = (e: any) => {
+  // IMPORTAÇÃO EM MASSA VIA EXCEL PARA O SUPABASE
+  const handleUploadCustos = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        const novosCustos: any[] = [];
+        const novosCustosDb: any[] = [];
         rows.slice(1).forEach((r) => {
           if (!r[0]) return;
-          novosCustos.push({
+          novosCustosDb.push({
             sku: String(r[0]).trim().toUpperCase(),
             titulo: String(r[1] || 'Produto Importado'),
             preco_custo: parseFloat(r[2]) || 0,
             custo_embalagem: parseFloat(r[3]) || 0,
-            preco_venda: parseFloat(r[4]) || 0,
-            faturamento: 0, pedidos: 0
+            preco_venda: parseFloat(r[4]) || 0
           });
         });
 
-        // Atualiza e insere sem duplicar
+        if (novosCustosDb.length === 0) return;
+
+        addLog(`Sincronizando ${novosCustosDb.length} SKUs com o Supabase...`, 'info');
+
+        // Envia o lote inteiro para o Supabase
+        const { error } = await supabase.from('tb_produtos').upsert(novosCustosDb);
+
+        if (error) {
+          addLog(`Erro na importação em massa: ${error.message}`, 'error');
+          return;
+        }
+
+        // Atualiza a tabela visual
         setProducts((prev: any[]) => {
           const map = new Map(prev.map(p => [p.sku, p]));
-          novosCustos.forEach(nc => map.set(nc.sku, nc));
+          novosCustosDb.forEach(nc => map.set(nc.sku, nc));
           return Array.from(map.values());
         });
 
-        addLog(`Importação concluída: ${novosCustos.length} SKUs sincronizados via Excel.`, 'success');
+        addLog(`Importação concluída: ${novosCustosDb.length} SKUs sincronizados com sucesso.`, 'success');
       } catch (err: any) {
-        addLog(`Erro ao importar custos: ${err.message}`, 'error');
+        addLog(`Erro ao processar ficheiro: ${err.message}`, 'error');
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = ''; // Reseta o input
+    e.target.value = '';
   };
 
   return (
@@ -181,7 +215,6 @@ export default function SkusPage() {
                    disabled={isEditing} 
                    className={`w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-mono ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`} 
                  />
-                 {isEditing && <span className="text-[9px] text-amber-400 mt-1">O código SKU não pode ser alterado durante a edição.</span>}
                </div>
                <div>
                  <label className="block text-xs font-bold text-slate-400 mb-1">Descrição / Título *</label>
@@ -199,7 +232,9 @@ export default function SkusPage() {
                </div>
                <div className="flex gap-2 justify-end pt-3">
                  <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold transition">Cancelar</button>
-                 <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition">Salvar SKU</button>
+                 <button type="submit" disabled={isSaving} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition">
+                   {isSaving ? 'A Guardar...' : 'Salvar SKU'}
+                 </button>
                </div>
              </form>
           </div>
