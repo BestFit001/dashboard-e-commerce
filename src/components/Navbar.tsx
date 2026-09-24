@@ -24,20 +24,23 @@ export default function Navbar() {
         </div>
       </div>
 
-      <nav className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800/80">
-        <Link href="/" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+      <nav className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 overflow-x-auto max-w-full">
+        <Link href="/" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
           <i className="fa-solid fa-chart-pie"></i> Dashboard
         </Link>
 
         {isAdmin && (
           <>
-            <Link href="/regras" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+            <Link href="/skus" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/skus' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+              <i className="fa-solid fa-tags"></i> SKUs & Custos
+            </Link>
+            <Link href="/regras" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-calculator"></i> Regras Canal
             </Link>
-            <Link href="/admin" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+            <Link href="/admin" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-lock"></i> Admin
             </Link>
-            <Link href="/usuarios" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${pathname === '/usuarios' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+            <Link href="/usuarios" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/usuarios' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-users"></i> Usuários
             </Link>
           </>
