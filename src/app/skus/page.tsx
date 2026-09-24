@@ -9,10 +9,17 @@ export default function SkusPage() {
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '', preco_venda: '' });
+  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+
+  // Função auxiliar para converter vírgula em ponto (Ex: 137,54 -> 137.54)
+  const parseBrFloat = (val: string | number) => {
+    if (!val) return 0;
+    const strVal = String(val).replace(',', '.');
+    return parseFloat(strVal) || 0;
+  };
 
   const openNewModal = () => {
-    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '', preco_venda: '' });
+    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
     setIsEditing(false);
     setShowModal(true);
   };
@@ -21,15 +28,14 @@ export default function SkusPage() {
     setNewProduct({
       sku: prod.sku,
       titulo: prod.titulo,
-      preco_custo: String(prod.preco_custo || 0),
-      custo_embalagem: String(prod.custo_embalagem || 0),
-      preco_venda: String(prod.preco_venda || 0)
+      preco_custo: String(prod.preco_custo || 0).replace('.', ','),
+      custo_embalagem: String(prod.custo_embalagem || 0).replace('.', ',')
     });
     setIsEditing(true);
     setShowModal(true);
   };
 
-  // GRAVAR PRODUTO NO SUPABASE
+  // GRAVAR PRODUTO (SALVA LOCALMENTE PRIMEIRO, DEPOIS SUPABASE)
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -37,9 +43,8 @@ export default function SkusPage() {
     const dbItem = {
       sku: newProduct.sku.toUpperCase().trim(),
       titulo: newProduct.titulo,
-      preco_custo: parseFloat(newProduct.preco_custo) || 0,
-      custo_embalagem: parseFloat(newProduct.custo_embalagem) || 0,
-      preco_venda: parseFloat(newProduct.preco_venda) || 0
+      preco_custo: parseBrFloat(newProduct.preco_custo),
+      custo_embalagem: parseBrFloat(newProduct.custo_embalagem)
     };
 
     if (!isEditing && products.some((p: any) => p.sku === dbItem.sku)) {
@@ -48,16 +53,7 @@ export default function SkusPage() {
       return;
     }
 
-    // 1. Envia para o Supabase
-    const { error } = await supabase.from('tb_produtos').upsert([dbItem]);
-
-    if (error) {
-      addLog(`Erro Supabase: ${error.message}`, 'error');
-      setIsSaving(false);
-      return;
-    }
-
-    // 2. Atualiza o painel visual
+    // 1. Atualiza o painel visual imediatamente (Sobrevive ao F5 graças ao LocalStorage)
     if (isEditing) {
       setProducts((prev: any[]) => prev.map(p => p.sku === dbItem.sku ? dbItem : p));
       addLog(`SKU [${dbItem.sku}] atualizado com sucesso.`, 'success');
@@ -66,27 +62,39 @@ export default function SkusPage() {
       addLog(`Novo SKU [${dbItem.sku}] cadastrado.`, 'success');
     }
     
+    // 2. Tenta enviar para o Supabase em segundo plano
+    try {
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        await supabase.from('tb_produtos').upsert([dbItem]);
+      }
+    } catch (error: any) {
+      console.warn("Supabase não salvou, mas os dados estão seguros localmente.", error);
+    }
+
     setIsSaving(false);
     setShowModal(false);
   };
 
-  // APAGAR PRODUTO NO SUPABASE
+  // APAGAR PRODUTO
   const handleDeleteProduct = async (sku: string) => {
     if (confirm(`Tem a certeza que deseja excluir o SKU: ${sku}?`)) {
       
-      const { error } = await supabase.from('tb_produtos').delete().eq('sku', sku);
-      
-      if (error) {
-        addLog(`Erro ao excluir no Supabase: ${error.message}`, 'error');
-        return;
-      }
-
+      // Remove visualmente e da memória
       setProducts((prev: any[]) => prev.filter(p => p.sku !== sku));
       addLog(`SKU [${sku}] removido da base de custos.`, 'warning');
+
+      // Tenta remover do Supabase
+      try {
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          await supabase.from('tb_produtos').delete().eq('sku', sku);
+        }
+      } catch (error) {
+        console.warn("Falha ao apagar no Supabase, mas apagado localmente.");
+      }
     }
   };
 
-  // IMPORTAÇÃO EM MASSA VIA EXCEL PARA O SUPABASE
+  // IMPORTAÇÃO EM MASSA VIA EXCEL (SEM PREÇO DE VENDA)
   const handleUploadCustos = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -98,37 +106,34 @@ export default function SkusPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const novosCustosDb: any[] = [];
+        
+        // Colunas esperadas: A(SKU), B(Título), C(Custo Prod), D(Custo Emb)
         rows.slice(1).forEach((r) => {
           if (!r[0]) return;
           novosCustosDb.push({
             sku: String(r[0]).trim().toUpperCase(),
             titulo: String(r[1] || 'Produto Importado'),
-            preco_custo: parseFloat(r[2]) || 0,
-            custo_embalagem: parseFloat(r[3]) || 0,
-            preco_venda: parseFloat(r[4]) || 0
+            preco_custo: parseBrFloat(r[2]),
+            custo_embalagem: parseBrFloat(r[3])
           });
         });
 
         if (novosCustosDb.length === 0) return;
 
-        addLog(`Sincronizando ${novosCustosDb.length} SKUs com o Supabase...`, 'info');
-
-        // Envia o lote inteiro para o Supabase
-        const { error } = await supabase.from('tb_produtos').upsert(novosCustosDb);
-
-        if (error) {
-          addLog(`Erro na importação em massa: ${error.message}`, 'error');
-          return;
-        }
-
-        // Atualiza a tabela visual
+        // Atualiza a tabela visual imediatamente
         setProducts((prev: any[]) => {
           const map = new Map(prev.map(p => [p.sku, p]));
           novosCustosDb.forEach(nc => map.set(nc.sku, nc));
           return Array.from(map.values());
         });
 
-        addLog(`Importação concluída: ${novosCustosDb.length} SKUs sincronizados com sucesso.`, 'success');
+        addLog(`Importação concluída: ${novosCustosDb.length} SKUs adicionados localmente. Sincronizando com banco...`, 'success');
+
+        // Envia para o Supabase em segundo plano
+        if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          await supabase.from('tb_produtos').upsert(novosCustosDb);
+        }
+
       } catch (err: any) {
         addLog(`Erro ao processar ficheiro: ${err.message}`, 'error');
       }
@@ -142,7 +147,7 @@ export default function SkusPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Base de Custos & SKUs</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Gerencie manualmente ou importe em massa: A(SKU), B(Título), C(Custo Prod), D(Custo Emb), E(Preço Venda)</p>
+          <p className="text-xs text-slate-400 mt-0.5">Gerencie manualmente ou importe em massa: A(SKU), B(Título), C(Custo Produto), D(Custo Embalagem)</p>
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
@@ -174,9 +179,9 @@ export default function SkusPage() {
                 <tr key={p.sku} className="hover:bg-slate-800/40">
                   <td className="py-3 px-4 font-mono font-bold text-indigo-400">{p.sku}</td>
                   <td className="py-3 px-4 text-slate-200">{p.titulo}</td>
-                  <td className="py-3 px-4">R$ {(p.preco_custo || 0).toFixed(2)}</td>
-                  <td className="py-3 px-4">R$ {(p.custo_embalagem || 0).toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right font-bold text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2)}</td>
+                  <td className="py-3 px-4">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
+                  <td className="py-3 px-4">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
+                  <td className="py-3 px-4 text-right font-bold text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
                   <td className="py-3 px-4 flex justify-center gap-3">
                     <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar">
                       <i className="fa-solid fa-pen-to-square"></i>
@@ -218,16 +223,35 @@ export default function SkusPage() {
                </div>
                <div>
                  <label className="block text-xs font-bold text-slate-400 mb-1">Descrição / Título *</label>
-                 <input type="text" required value={newProduct.titulo} onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                 <input 
+                   type="text" 
+                   required 
+                   value={newProduct.titulo} 
+                   onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} 
+                   className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" 
+                 />
                </div>
                <div className="grid grid-cols-2 gap-3">
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1">Custo Produto (R$) *</label>
-                   <input type="number" step="0.01" required value={newProduct.preco_custo} onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   <input 
+                     type="text" 
+                     placeholder="Ex: 137,54"
+                     required 
+                     value={newProduct.preco_custo} 
+                     onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} 
+                     className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" 
+                   />
                  </div>
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1">Custo Embalagem (R$)</label>
-                   <input type="number" step="0.01" value={newProduct.custo_embalagem} onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   <input 
+                     type="text" 
+                     placeholder="Ex: 1,70"
+                     value={newProduct.custo_embalagem} 
+                     onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} 
+                     className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" 
+                   />
                  </div>
                </div>
                <div className="flex gap-2 justify-end pt-3">
