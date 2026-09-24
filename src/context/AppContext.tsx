@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase';
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
 
-// Lojas corrigidas
-export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Clube Hebraica', 'Paineiras'];
+// Lojas atualizadas: removida Loja física, mantidas Clube Hebraica e Paineiras
+export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Paineiras'];
 
 const AppContext = createContext<any>(null);
 
@@ -30,18 +30,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   
   const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
   
-  // Regras padrão atualizadas com PDV, Rebate e Líquido
   const [channelRules, setChannelRules] = useState(CHANNELS.map(c => ({ 
     canal: c, 
     responsavel: 'Equipe Best Fit', 
     colIdPedido: 'A', 
     colSku: 'B', 
-    colPrecoVenda: 'C', // Coluna PDV
-    colRebate: 'D', 
-    colLiquido: 'E',
-    colEstado: 'F', 
+    colPrecoVenda: 'D',
+    colRebate: 'C', 
     colQuantidade: 'G', 
-    formulaExcel: 'E2' 
+    formulaExcel: 'C2 - (C2 * 12%)' 
   })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -66,7 +63,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     loadLocal('bestfit_canais', setCanais);
-    loadLocal('bestfit_rules', setChannelRules);
+    
+    // Força a remoção da "Loja física" das regras locais caso exista no cache
+    const storedRules = localStorage.getItem('bestfit_rules');
+    if (storedRules) {
+      try {
+        const parsedRules = JSON.parse(storedRules);
+        setChannelRules(parsedRules.filter((r: any) => r.canal !== 'Loja física'));
+      } catch (e) {}
+    }
+
     loadLocal('bestfit_products', setProducts);
     loadLocal('bestfit_sales', setSales);
     loadLocal('bestfit_ads', setAdsData);
@@ -91,8 +97,14 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (!isLoaded) return; 
-    localStorage.setItem('bestfit_canais', JSON.stringify(canais));
-    localStorage.setItem('bestfit_rules', JSON.stringify(channelRules));
+    
+    // Garante que a "Loja física" não volte a ser gravada no cache
+    const canaisLimpos = canais.filter(c => c !== 'Loja física');
+    localStorage.setItem('bestfit_canais', JSON.stringify(canaisLimpos));
+    
+    const regrasLimpas = channelRules.filter((r: any) => r.canal !== 'Loja física');
+    localStorage.setItem('bestfit_rules', JSON.stringify(regrasLimpas));
+    
     localStorage.setItem('bestfit_products', JSON.stringify(products));
     localStorage.setItem('bestfit_sales', JSON.stringify(sales));
     localStorage.setItem('bestfit_ads', JSON.stringify(adsData));
