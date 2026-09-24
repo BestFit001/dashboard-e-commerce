@@ -72,8 +72,6 @@ export default function DashboardPage() {
         const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
 
         const repasse = s.repasse_liquido || 0;
-        
-        // O Ganho Líquido Real é o Repasse deduzido do CMV e do Flex
         const ganhoLiquido = repasse - custoCMV - custoFlex;
 
         return { ...s, custoCMV, custoFlex, ganhoLiquido };
@@ -111,13 +109,45 @@ export default function DashboardPage() {
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
       
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
-      
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       return { canal: channelName, responsavel: goalObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct };
     });
   }, [enrichedSales, goals, adsData, canais, appliedChannelFilter]);
+
+  // Função para renderizar as logos dos marketplaces dinamicamente
+  const renderChannelLogo = (canal: string) => {
+    const c = canal.toLowerCase();
+    let src = '';
+    
+    if (c.includes('mercado livre')) src = 'https://upload.wikimedia.org/wikipedia/commons/d/d4/MercadoLibre_logo.PNG';
+    else if (c.includes('amazon')) src = 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg';
+    else if (c.includes('magalu') || c.includes('magazine')) src = 'https://upload.wikimedia.org/wikipedia/commons/b/b5/Magalu_logo.svg';
+    else if (c.includes('shopee')) src = 'https://upload.wikimedia.org/wikipedia/commons/f/fe/Shopee.svg';
+    else if (c.includes('tiktok')) src = 'https://upload.wikimedia.org/wikipedia/en/a/a9/TikTok_logo.svg';
+    else if (c.includes('shein')) src = 'https://upload.wikimedia.org/wikipedia/commons/2/22/Shein_logo.svg';
+    else if (c.includes('netshoes')) src = 'https://upload.wikimedia.org/wikipedia/commons/e/e2/Netshoes_logo.svg';
+    else if (c.includes('centauro')) src = 'https://upload.wikimedia.org/wikipedia/commons/9/90/Centauro_logo.svg';
+
+    if (src) {
+      return (
+        <div className="w-10 h-10 bg-white rounded-lg p-1.5 flex items-center justify-center shrink-0">
+          <img src={src} alt={canal} className="max-w-full max-h-full object-contain" />
+        </div>
+      );
+    }
+    
+    // Fallbacks visuais para canais internos
+    if (c.includes('site') || c.includes('e-commerce')) {
+      return <div className="w-10 h-10 bg-indigo-500/20 text-indigo-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-globe text-xl"></i></div>;
+    }
+    if (c.includes('física') || c.includes('fisica')) {
+      return <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-store text-xl"></i></div>;
+    }
+    
+    return <div className="w-10 h-10 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-box text-xl"></i></div>;
+  };
 
   return (
     <div className="space-y-6">
@@ -185,15 +215,19 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => (
           <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
-             <div className="flex justify-between border-b border-slate-800 pb-2">
-                <div>
-                   <span className="text-[10px] uppercase font-bold text-slate-400">{item.responsavel}</span>
-                   <h4 className="font-black text-white">{item.canal}</h4>
+             <div className="flex justify-between items-start border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-3">
+                   {renderChannelLogo(item.canal)}
+                   <div>
+                     <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">{item.responsavel}</span>
+                     <h4 className="font-black text-white leading-tight">{item.canal}</h4>
+                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right mt-1">
                   <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">{item.progressoMetaPct.toFixed(1)}% Meta</span>
                 </div>
              </div>
+             
              <div className="grid grid-cols-2 gap-3">
                <div><span className="text-[10px] text-slate-400 block">Fat. Bruto</span><strong className="text-sm text-white">R$ {item.faturadoBruto.toFixed(2).replace('.', ',')}</strong></div>
                <div><span className="text-[10px] text-purple-300 block">Lucro Líquido Real</span><strong className="text-sm text-purple-400">R$ {item.faturadoLiquido.toFixed(2).replace('.', ',')}</strong></div>
