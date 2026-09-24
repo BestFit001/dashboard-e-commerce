@@ -16,14 +16,14 @@ export default function RegrasPage() {
     if (canais.length > 0 && !editingChannel) {
       setEditingChannel(canais[0]);
       const existing = channelRules.find((r: any) => r.canal === canais[0]);
-      setRuleFormData(existing || { canal: canais[0], colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
+      setRuleFormData(existing || { canal: canais[0], responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
     }
   }, [canais, channelRules, editingChannel]);
 
   const handleSelectChannel = (ch: string) => {
     setEditingChannel(ch);
     const existing = channelRules.find((r: any) => r.canal === ch);
-    setRuleFormData(existing || { canal: ch, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
+    setRuleFormData(existing || { canal: ch, responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
     setIsSaved(false);
   };
 
@@ -36,25 +36,20 @@ export default function RegrasPage() {
     const fileExt = file.name.split('.').pop();
     const fileName = `${editingChannel.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.${fileExt}`;
 
-    // 1. Upload para o Storage do Supabase
     const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file);
     if (uploadError) {
-      alert(`FALHA NO UPLOAD DO STORAGE:\n${uploadError.message}\n\nConfirme se o bucket "logos" é público e se aplicou as políticas RLS no SQL.`);
+      alert(`FALHA NO UPLOAD:\n${uploadError.message}`);
       addLog(`Erro upload: ${uploadError.message}`, 'error');
       setIsUploading(false);
       return;
     }
 
-    // 2. Resgata URL Público
     const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
 
-    // 3. Atualiza na tabela tb_regras_canais
     const { error: dbError } = await supabase.from('tb_regras_canais').update({ logo_url: publicUrl }).eq('canal', editingChannel);
     if (dbError) {
-      alert(`IMAGEM SALVA NO STORAGE, MAS FALHOU NO BANCO:\n${dbError.message}`);
-      addLog(`Erro BD: ${dbError.message}`, 'error');
-      setIsUploading(false);
-      return;
+      // Se a linha ainda não existir na tabela, faz upsert
+      await supabase.from('tb_regras_canais').upsert([{ canal: editingChannel, logo_url: publicUrl }]);
     }
 
     setChannelLogos((prev: any) => ({ ...prev, [editingChannel]: publicUrl }));
@@ -75,14 +70,22 @@ export default function RegrasPage() {
     try {
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
         const dbData = {
-          canal: newData.canal, col_id_pedido: newData.colIdPedido, col_sku: newData.colSku,
-          col_estado: newData.colEstado, col_quantidade: newData.colQuantidade, formula_excel: newData.formulaExcel
+          canal: newData.canal,
+          responsavel: newData.responsavel || 'Equipe Best Fit',
+          col_id_pedido: newData.colIdPedido,
+          col_sku: newData.colSku,
+          col_estado: newData.colEstado,
+          col_quantidade: newData.colQuantidade,
+          formula_excel: newData.formulaExcel,
+          logo_url: channelLogos[editingChannel] || null
         };
-        await supabase.from('tb_regras_canais').upsert([dbData]);
+        await supabase.from('tb_regras_canais').upsert([dbData], { onConflict: 'canal' });
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error(e);
+    }
     
-    addLog(`Regras salvas para [${editingChannel}].`, 'success');
+    addLog(`Regras e responsável salvos para [${editingChannel}].`, 'success');
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -91,10 +94,10 @@ export default function RegrasPage() {
     if (novoCanal.trim() && !canais.includes(novoCanal.trim())) {
       const nome = novoCanal.trim();
       setCanais([...canais, nome]);
-      const newRule = { canal: nome, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2' };
+      const newRule = { canal: nome, responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2' };
       setChannelRules([...channelRules, newRule]);
       setNovoCanal('');
-      addLog(`Novo canal criado com sucesso: ${nome}`, 'success');
+      addLog(`Novo canal criado: ${nome}`, 'success');
       setEditingChannel(nome);
       setRuleFormData(newRule);
       setIsSaved(false);
@@ -108,7 +111,7 @@ export default function RegrasPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Parametrização de Fórmulas & Canais</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Configure colunas, fórmulas de repasse e identidades visuais por canal.</p>
+          <p className="text-xs text-slate-400 mt-0.5">Configure colunas, responsáveis, fórmulas de repasse e identidades visuais.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
           <input type="text" placeholder="Nome do Novo Canal..." value={novoCanal} onChange={e => setNovoCanal(e.target.value)} className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 flex-1 sm:flex-none" />
@@ -127,28 +130,34 @@ export default function RegrasPage() {
             </button>
           ))}
         </div>
-        
-        <div className="pt-4 border-t border-slate-800 flex items-center gap-5">
-           {channelLogos[editingChannel] ? (
-             <img src={channelLogos[editingChannel]} alt="Logo" className="w-16 h-16 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow-md" />
-           ) : (
-             <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 text-[10px] font-bold">Sem Logo</div>
-           )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+           <div className="flex items-center gap-5">
+             {channelLogos[editingChannel] ? (
+               <img src={channelLogos[editingChannel]} alt="Logo" className="w-16 h-16 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow-md" />
+             ) : (
+               <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 text-[10px] font-bold">Sem Logo</div>
+             )}
+             <div>
+               <label className="block text-xs font-bold text-slate-300 mb-1">Logo do Canal ({editingChannel})</label>
+               <input type="file" accept="image/*" onChange={handleUploadLogo} disabled={isUploading} className="text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600/20 file:text-indigo-400 hover:file:bg-indigo-600/30 cursor-pointer" />
+               {isUploading && <span className="text-[10px] text-indigo-400 ml-2 animate-pulse font-bold">Enviando...</span>}
+             </div>
+           </div>
+
            <div>
-             <label className="block text-xs font-bold text-slate-300 mb-1">Logo do Canal ({editingChannel})</label>
-             <input type="file" accept="image/*" onChange={handleUploadLogo} disabled={isUploading} className="text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600/20 file:text-indigo-400 hover:file:bg-indigo-600/30 cursor-pointer" />
-             {isUploading && <span className="text-[10px] text-indigo-400 ml-2 animate-pulse font-bold">Enviando para o Supabase...</span>}
+             <label className="block text-xs font-bold text-slate-200 mb-1">Responsável pelo Canal:</label>
+             <input type="text" value={ruleFormData.responsavel || ''} onChange={e => setRuleFormData({...ruleFormData, responsavel: e.target.value})} placeholder="Ex: Gisele / Carlos Eduardo" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-purple-500" />
            </div>
         </div>
 
         <div className="pt-4 border-t border-slate-800">
            <label className="block text-xs font-bold text-slate-200 mb-2">Expressão Excel de Cálculo ({editingChannel}):</label>
            <input type="text" value={ruleFormData.formulaExcel || ''} onChange={e => setRuleFormData({...ruleFormData, formulaExcel: e.target.value})} placeholder="Ex: C2 - (C2 * 12%)" className="w-full p-3.5 bg-slate-950 border border-purple-500/40 rounded-xl font-mono text-purple-300 font-bold focus:outline-none focus:border-purple-400" />
-           <p className="text-[10px] text-slate-500 mt-1">Utilize letras correspondentes às colunas da planilha (ex: C2, I2, etc).</p>
         </div>
 
         <div className="pt-4 border-t border-slate-800 space-y-3">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Mapeamento das Colunas (Avançado):</h4>
+          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Mapeamento das Colunas:</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna ID Pedido</label><input type="text" value={ruleFormData.colIdPedido || 'A'} onChange={e => setRuleFormData({...ruleFormData, colIdPedido: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" /></div>
             <div><label className="block text-[11px] font-bold text-slate-400 mb-1">Coluna SKU</label><input type="text" value={ruleFormData.colSku || 'B'} onChange={e => setRuleFormData({...ruleFormData, colSku: e.target.value.toUpperCase()})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono font-bold uppercase text-center" /></div>
