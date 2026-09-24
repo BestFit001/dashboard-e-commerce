@@ -71,7 +71,8 @@ export default function DashboardPage() {
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquido / faturadoBruto) * 100 : 0;
       const progressoMetaPct = (Number(goalObj.meta_valor) || 0) > 0 ? (faturadoLiquido / Number(goalObj.meta_valor)) * 100 : 0;
 
-      const logoUrl = channelLogos[channelName] || null;
+      // Pega o logo prioritariamente do estado global, ou da regra salva no banco
+      const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
       const responsavel = ruleObj.responsavel || 'Equipe Best Fit';
 
       return {
@@ -134,7 +135,7 @@ export default function DashboardPage() {
                   {item.logoUrl ? (
                     <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" />
                   ) : (
-                    <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 text-[10px] font-bold">Logo</div>
+                    <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>
                   )}
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">{item.responsavel}</span>
