@@ -29,7 +29,6 @@ export default function Navbar() {
           <i className="fa-solid fa-chart-pie"></i> Dashboard
         </Link>
 
-        {/* Abas exclusivas para Admins */}
         {isAdmin && (
           <>
             <Link href="/regras" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>

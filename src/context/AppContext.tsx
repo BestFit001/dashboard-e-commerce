@@ -4,12 +4,11 @@ import { supabase } from '@/lib/supabase';
 
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
-const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Loja física'];
+export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Loja física'];
 
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  // Usuários com controle de nível ('admin' ou 'user')
   const [users, setUsers] = useState([
     { username: 'Gisele@usebestfit.com.br', password: 'Best2026**', role: 'admin' },
     { username: 'usuario@usebestfit.com.br', password: '123', role: 'user' }
@@ -17,7 +16,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
-  const [canais, setCanais] = useState<string[]>(INITIAL_CHANNELS);
+  const [canais, setCanais] = useState<string[]>(CHANNELS);
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [adsData, setAdsData] = useState<any[]>([]);
@@ -28,7 +27,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [cancelados, setCancelados] = useState<any[]>([]);
   
   const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
-  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
+  const [channelRules, setChannelRules] = useState(CHANNELS.map(c => ({ canal: c, responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Dashboard Best Fit inicializado com sucesso.', type: 'info' }]);
@@ -42,12 +41,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     const savedUsers = localStorage.getItem('bestfit_users');
     const savedSession = localStorage.getItem('bestfit_session');
     
-    if (savedUsers) {
-      try { setUsers(JSON.parse(savedUsers)); } catch(e) {}
-    }
-    if (savedSession) {
-      try { setCurrentUser(JSON.parse(savedSession)); } catch(e) {}
-    }
+    if (savedUsers) { try { setUsers(JSON.parse(savedUsers)); } catch(e) {} }
+    if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch(e) {} }
     setIsAuthLoaded(true);
 
     const loadLocal = (key: string, setter: any) => {
@@ -76,8 +71,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         const { data: regrasDb } = await supabase.from('tb_regras_canais').select('*');
         if (regrasDb && regrasDb.length > 0) {
           setChannelRules(regrasDb.map((r: any) => ({
-             canal: r.canal, colIdPedido: r.col_id_pedido, colSku: r.col_sku, 
-             colEstado: r.col_estado, colQuantidade: r.col_quantidade, formulaExcel: r.formula_excel
+             canal: r.canal, 
+             responsavel: r.responsavel || 'Equipe Best Fit',
+             colIdPedido: r.col_id_pedido, 
+             colSku: r.col_sku, 
+             colEstado: r.col_estado, 
+             colQuantidade: r.col_quantidade, 
+             formulaExcel: r.formula_excel
           })));
           setCanais(regrasDb.map((r: any) => r.canal));
           

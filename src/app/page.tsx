@@ -50,7 +50,8 @@ export default function DashboardPage() {
 
     return channelsToAnalyze.map(channelName => {
       const channelSales = filteredSales.filter((s: any) => s.canal === channelName);
-      const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0, responsavel: 'Equipe Best Fit' };
+      const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
+      const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0 };
 
       const faturadoBruto = channelSales.reduce((sum: number, s: any) => sum + ((Number(s.preco_venda) || 0) * (s.quantidade || 1)), 0);
       const repasseBase = channelSales.reduce((sum: number, s: any) => sum + (Number(s.faturamento_liquido_final) || 0), 0);
@@ -71,10 +72,11 @@ export default function DashboardPage() {
       const progressoMetaPct = (Number(goalObj.meta_valor) || 0) > 0 ? (faturadoLiquido / Number(goalObj.meta_valor)) * 100 : 0;
 
       const logoUrl = channelLogos[channelName] || null;
+      const responsavel = ruleObj.responsavel || 'Equipe Best Fit';
 
       return {
         canal: channelName, 
-        responsavel: goalObj.responsavel || 'Equipe Best Fit',
+        responsavel,
         faturadoBruto, faturadoLiquido,
         lucroLiquido,
         margemBrutaPct: parseFloat(margemBrutaPct.toFixed(1)),
@@ -87,9 +89,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Filtros */}
       <div className="flex flex-col lg:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
-        <div><h2 className="text-xl font-bold text-white tracking-tight">Painel Executivo de Vendas Best Fit</h2></div>
+        <div><h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2></div>
         <div className="flex flex-wrap items-center gap-3">
           <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-slate-950 border border-slate-700 text-purple-300 font-bold text-xs rounded-xl px-3 py-2">
             <option value="TODOS">Todos os Canais</option>
@@ -104,7 +105,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPIs Principais */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-xs font-semibold text-slate-400 uppercase">Faturamento Bruto</span>
@@ -124,7 +124,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Consolidado por Canal */}
       <div className="space-y-4">
         <h3 className="font-bold text-white text-base">Consolidado por Canal de Venda</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -171,7 +170,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Tabela de Pedidos */}
       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
         <h3 className="font-bold text-white text-base mb-4">Pedidos Faturados ({filteredSales.length})</h3>
         <div className="overflow-x-auto">
