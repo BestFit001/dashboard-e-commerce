@@ -1,25 +1,29 @@
 'use client';
 import React, { useState } from 'react';
-import { useAppContext, INITIAL_ADMIN_PASS } from '@/context/AppContext';
+import { useAppContext } from '@/context/AppContext';
 import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
   const { 
-    canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
+    canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, currentUser,
     setSales, setFlexData, setAdsData, setGoals, faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState(canais[0]);
   
-  // Colunas configuradas conforme o seu ERP
-  const [colFaturadosId, setColFaturadosId] = useState('AI'); // Observações
-  const [colFaturadosData, setColFaturadosData] = useState('D'); // Data emissão
+  const [colFaturadosId, setColFaturadosId] = useState('AI');
+  const [colFaturadosData, setColFaturadosData] = useState('D');
   const [colCancelados, setColCancelados] = useState('AI');
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === INITIAL_ADMIN_PASS) { setIsAdminUnlocked(true); addLog('Sessão desbloqueada.', 'success'); }
+    if (password === currentUser?.password) { 
+      setIsAdminUnlocked(true); 
+      addLog('Sessão de uploads desbloqueada.', 'success'); 
+    } else {
+      addLog('Senha incorreta.', 'error');
+    }
   };
 
   const colToIdx = (colStr: string) => {
@@ -36,28 +40,22 @@ export default function AdminPage() {
     return parseFloat(strVal) || 0;
   };
 
-  // Função para tratar datas do Excel (números de série) ou Strings normais
   const parseExcelDate = (val: any) => {
     if (!val) return new Date().toISOString().slice(0, 10);
     if (typeof val === 'number') {
       const date = new Date(Math.round((val - 25569) * 86400 * 1000));
       return date.toISOString().slice(0, 10);
     }
-    // Caso já venha como texto (ex: 2026-09-24)
     return String(val).trim().substring(0, 10);
   };
 
-  // Filtro inteligente para extrair IDs limpos do meio de textos do ERP
   const extractCleanId = (rawStr: string) => {
     const rawId = String(rawStr || '').trim();
-    // Procura por "número " e captura tudo o que for número ou hífen a seguir
     const regexMatch = rawId.match(/n[úu]mero\s+([0-9\-]+)/i);
-    
     let finalId = '';
     if (regexMatch && regexMatch[1]) {
       finalId = regexMatch[1];
     } else {
-      // Fallback: se não tiver a palavra número, apenas pega a primeira palavra da célula
       finalId = rawId.split(/[\s;|,\|]+/)[0];
     }
     return finalId;
@@ -93,14 +91,12 @@ export default function AdminPage() {
 
         if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes'].includes(id_pedido.toLowerCase())) return null;
 
-        // VERIFICA FATURADOS (Agora cruza com o objeto que guarda a Data de Emissão)
         const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
         if (faturados.length > 0 && !faturadoMatch) { 
           bloqueadosFaturados++; 
           return null; 
         }
 
-        // VERIFICA CANCELADOS
         if (cancelados.find((c: any) => c.id === id_pedido)) { 
           bloqueadosCancelados++; 
           return null; 
@@ -108,8 +104,6 @@ export default function AdminPage() {
 
         const repasse = evaluateExcelFormula(rule.formulaExcel, row);
         const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
-        
-        // Atribui a data real de emissão da NFe do ERP (Se não existir, usa a data atual)
         const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
 
         return {
@@ -158,7 +152,6 @@ export default function AdminPage() {
       }
 
       if(novosFaturados.length > 0){
-        // Remove duplicados pelo ID
         setFaturados((prev: any) => {
           const map = new Map();
           [...prev, ...novosFaturados].forEach(item => map.set(item.id, item));
@@ -241,9 +234,16 @@ export default function AdminPage() {
 
   if (!isAdminUnlocked) {
     return (
-      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center shadow-2xl">
+      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center shadow-2xl mt-12">
+        <div className="w-16 h-16 bg-indigo-600/20 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i className="fa-solid fa-lock text-2xl"></i>
+        </div>
         <h2 className="text-xl font-bold text-white mb-2">Área Restrita Admin</h2>
-        <form onSubmit={auth}><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha (Dash321)" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl mb-4 text-white" /><button className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl">Desbloquear</button></form>
+        <p className="text-xs text-slate-400 mb-6">Confirme a sua senha para enviar planilhas.</p>
+        <form onSubmit={auth}>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Sua senha de acesso" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl mb-4 text-white outline-none focus:border-indigo-500" required />
+          <button className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition">Desbloquear Área</button>
+        </form>
       </div>
     );
   }
@@ -257,15 +257,14 @@ export default function AdminPage() {
            <div className="flex gap-2 mb-3">
               <div>
                 <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
-                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg outline-none" />
               </div>
               <div>
                 <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data Emissão</span>
-                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg outline-none" />
               </div>
            </div>
-           
-           <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
+           <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
            <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {faturados.length}</p>
          </div>
 
@@ -273,50 +272,49 @@ export default function AdminPage() {
            <h3 className="font-bold text-rose-400 text-sm mb-2">Cancelados</h3>
            <div className="mb-3">
               <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
-              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" />
+              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border border-slate-700 rounded-lg outline-none" />
            </div>
-           <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
+           <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 hover:bg-rose-500 transition text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
            <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {cancelados.length}</p>
          </div>
        </div>
 
        <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 2: Vendas, Custos e Metas</h2>
        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-         <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30 flex flex-col">
            <h3 className="font-bold text-white text-sm mb-4">Planilha Vendas (Cruzar)</h3>
-           <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2 bg-slate-950 mb-3 text-purple-300 border font-bold">{canais.map((ch: string) => <option key={ch}>{ch}</option>)}</select>
-           <label className="cursor-pointer block py-2 bg-purple-600 text-white font-bold text-xs text-center rounded-xl"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendas}/>Importar Vendas</label>
+           <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2 bg-slate-950 mb-3 text-purple-300 border border-slate-700 rounded-lg font-bold outline-none">{canais.map((ch: string) => <option key={ch}>{ch}</option>)}</select>
+           <label className="cursor-pointer block py-2 bg-purple-600 hover:bg-purple-500 transition text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendas}/>Importar Vendas</label>
          </div>
 
-         <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30 flex flex-col">
            <h3 className="font-bold text-white text-sm mb-4">Débitos Frete FLEX</h3>
            <p className="text-[9px] text-slate-400 mb-2">A: ID | B: Valor</p>
-           <label className="cursor-pointer block py-2 bg-cyan-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
+           <label className="cursor-pointer block py-2 bg-cyan-600 hover:bg-cyan-500 transition text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
          </div>
 
-         <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30 flex flex-col">
            <h3 className="font-bold text-white text-sm mb-4">Custos de ADS</h3>
            <p className="text-[9px] text-slate-400 mb-2">A: Canal | B: Valor</p>
-           <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
+           <label className="cursor-pointer block py-2 bg-amber-600 hover:bg-amber-500 transition text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
          </div>
 
-         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 flex flex-col">
            <h3 className="font-bold text-white text-sm mb-4">Importar Metas</h3>
            <p className="text-[9px] text-slate-400 mb-2">A: Resp. | B: Canal | C: Valor</p>
-           <label className="cursor-pointer block py-2 bg-emerald-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadMetas} />Subir Metas</label>
+           <label className="cursor-pointer block py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadMetas} />Subir Metas</label>
          </div>
        </div>
 
-       {/* ZONA DE EXPURGO (Limpeza de Dados) */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6">
           <h3 className="font-bold text-rose-400 text-sm mb-4"><i className="fa-solid fa-trash mr-2"></i>Zona de Limpeza (Expurgo de Dados)</h3>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-            <button onClick={() => clearData('vendas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Vendas</button>
-            <button onClick={() => clearData('faturados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Faturados</button>
-            <button onClick={() => clearData('cancelados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Cancelados</button>
-            <button onClick={() => clearData('flex')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar FLEX</button>
-            <button onClick={() => clearData('ads')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar ADS</button>
-            <button onClick={() => clearData('metas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Metas</button>
+            <button onClick={() => clearData('vendas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Vendas</button>
+            <button onClick={() => clearData('faturados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Faturados</button>
+            <button onClick={() => clearData('cancelados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Cancelados</button>
+            <button onClick={() => clearData('flex')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar FLEX</button>
+            <button onClick={() => clearData('ads')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar ADS</button>
+            <button onClick={() => clearData('metas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900/40 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Metas</button>
           </div>
        </div>
 

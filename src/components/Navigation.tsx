@@ -1,42 +1,97 @@
 'use client';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAppContext } from '@/context/AppContext';
 
 export default function Navigation() {
   const pathname = usePathname();
-  const { isAdminUnlocked } = useAppContext();
+  const { currentUser, setCurrentUser, setIsAdminUnlocked } = useAppContext();
 
-  const getTabClass = (path: string, color: string) => 
-    `px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-      pathname === path ? `bg-${color}-600 text-white shadow-md` : 'text-slate-400 hover:text-slate-200'
-    }`;
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsAdminUnlocked(false);
+  };
+
+  const navLinks = [
+    { href: '/', label: 'Dashboard', icon: 'fa-chart-line' },
+    { href: '/regras', label: 'Regras Canal', icon: 'fa-calculator' },
+    { href: '/admin', label: 'Admin', icon: 'fa-lock' },
+    { href: '/usuarios', label: 'Usuários', icon: 'fa-users' },
+  ];
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 lg:px-8 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-          <i className="fa-solid fa-chart-pie text-lg"></i>
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent">
-              ApexMetrics Pro
-            </h1>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Engine V2.5</span>
+    <nav className="bg-slate-900 border-b border-slate-800 fixed w-full z-50 top-0 left-0">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+              <i className="fa-solid fa-chart-pie text-white text-sm"></i>
+            </div>
+            <div>
+              <h1 className="text-white font-bold text-sm tracking-tight leading-none">ApexMetrics Pro</h1>
+              <span className="text-[10px] text-slate-400 font-medium">Painel Executivo Omnichannel</span>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 hidden sm:block">Painel de Faturamento & Margens Omnichannel</p>
+
+          <div className="hidden md:flex space-x-2">
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <Link 
+                  key={link.href} 
+                  href={link.href}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 ${
+                    isActive 
+                      ? 'bg-indigo-600/10 text-indigo-400' 
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <i className={`fa-solid ${link.icon}`}></i>
+                  {link.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-4">
+            {currentUser && (
+              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400">
+                <i className="fa-solid fa-circle text-[8px] text-emerald-500"></i>
+                <span className="font-bold">{currentUser.username}</span>
+              </div>
+            )}
+            
+            <button 
+              onClick={handleLogout} 
+              className="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-xl font-bold text-xs transition"
+            >
+              Sair
+            </button>
+          </div>
+          
         </div>
       </div>
-
-      <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-        <Link href="/" className={getTabClass('/', 'indigo')}><i className="fa-solid fa-chart-line"></i> Dashboard</Link>
-        <Link href="/skus" className={getTabClass('/skus', 'indigo')}><i className="fa-solid fa-box"></i> SKUs & Custos</Link>
-        <Link href="/regras" className={getTabClass('/regras', 'purple')}><i className="fa-solid fa-calculator"></i> Regras Canal</Link>
-        <Link href="/admin" className={getTabClass('/admin', 'amber')}>
-          <i className={`fa-solid ${isAdminUnlocked ? 'fa-lock-open text-emerald-400' : 'fa-lock text-amber-400'}`}></i> Admin
-        </Link>
+      
+      {/* Menu mobile em baixo (opcional, mas bom para ecrãs pequenos) */}
+      <div className="md:hidden border-t border-slate-800 bg-slate-950 flex justify-around p-2">
+        {navLinks.map((link) => {
+          const isActive = pathname === link.href;
+          return (
+            <Link 
+              key={link.href} 
+              href={link.href}
+              className={`p-2 rounded-lg text-xs font-bold transition flex flex-col items-center gap-1 ${
+                isActive ? 'text-indigo-400' : 'text-slate-500'
+              }`}
+            >
+              <i className={`fa-solid ${link.icon}`}></i>
+              <span className="text-[10px]">{link.label}</span>
+            </Link>
+          );
+        })}
       </div>
-    </header>
+    </nav>
   );
 }
