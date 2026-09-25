@@ -8,9 +8,7 @@ export default function Navigation() {
   const pathname = usePathname();
   const { currentUser, setCurrentUser } = useAppContext();
 
-  // Se não houver utilizador logado, oculta a barra de navegação
   if (!currentUser) return null;
-
   const isAdmin = currentUser.role === 'admin';
 
   return (
@@ -20,43 +18,27 @@ export default function Navigation() {
           BF
         </div>
         <div>
-          <h1 className="font-black text-white text-base tracking-tight">ApexMetrics Pro</h1>
-          <p className="text-[10px] text-slate-400 font-medium">Painel Executivo Omnichannel</p>
+          <h1 className="font-black text-white text-base tracking-tight">Dashboard Best Fit</h1>
+          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Painel Executivo Omnichannel</p>
         </div>
       </div>
 
       <nav className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 overflow-x-auto max-w-full">
-        <Link 
-          href="/" 
-          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-        >
+        <Link href="/" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
           <i className="fa-solid fa-chart-pie"></i> Dashboard
         </Link>
-
         {isAdmin && (
           <>
-            <Link 
-              href="/skus" 
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/skus' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-            >
+            <Link href="/skus" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/skus' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-tags"></i> SKUs & Custos
             </Link>
-            <Link 
-              href="/regras" 
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-            >
+            <Link href="/regras" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-calculator"></i> Regras Canal
             </Link>
-            <Link 
-              href="/admin" 
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-            >
+            <Link href="/admin" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-lock"></i> Admin
             </Link>
-            <Link 
-              href="/usuarios" 
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/usuarios' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-            >
+            <Link href="/usuarios" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/usuarios' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-users"></i> Usuários
             </Link>
           </>
@@ -65,15 +47,10 @@ export default function Navigation() {
 
       <div className="flex items-center gap-4">
         <div className="text-right hidden sm:block">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">
-            {currentUser.role === 'admin' ? 'Administrador' : 'Visualizador'}
-          </span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">{currentUser.role === 'admin' ? 'Administrador' : 'Visualizador'}</span>
           <span className="text-xs font-bold text-slate-200">{currentUser.username}</span>
         </div>
-        <button 
-          onClick={() => setCurrentUser(null)} 
-          className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs rounded-xl transition flex items-center gap-2"
-        >
+        <button onClick={() => setCurrentUser(null)} className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs rounded-xl transition flex items-center gap-2">
           <i className="fa-solid fa-right-from-bracket"></i> Sair
         </button>
       </div>
