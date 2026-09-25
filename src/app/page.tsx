@@ -57,7 +57,6 @@ export default function DashboardPage() {
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        // Repasse Líquido vem da fórmula do Excel (Preço de Venda menos a taxa da plataforma)
         const repasse = Number(s.repasse_liquido) || 0; 
         const ganhoBruto = repasse - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
@@ -103,18 +102,11 @@ export default function DashboardPage() {
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
 
-      // Lucro Final (Para a Margem Líquida)
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = Number(goalObj.meta_valor) || 0;
-      
-      // 1. Correção: A Meta é calculada sobre o Faturamento Bruto PDV (Preço Final de Venda)
       const progressoMetaPct = metaBase > 0 ? (faturadoBruto / metaBase) * 100 : 0;
-      
-      // 2. Correção: Margem Bruta = (Repasse das Plataformas / Faturamento Bruto PDV)
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
-      
-      // 3. Correção: Margem Líquida = (Lucro Líquido Final / Faturamento Bruto PDV)
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
 
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
@@ -195,33 +187,48 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => (
-          <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between">
+          <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
              <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
                <div className="flex items-center gap-3">
                  {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
                  <div>
-                   <span className="text-[10px] uppercase font-bold text-slate-400 block">{item.responsavel || 'Equipe'}</span>
-                   <h4 className="font-black text-white text-sm">{item.canal}</h4>
+                   <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">{item.responsavel || 'Equipe'}</span>
+                   <h4 className="font-black text-white text-sm tracking-tight">{item.canal}</h4>
                  </div>
                </div>
                
                <div className="flex flex-col items-end gap-1">
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 whitespace-nowrap">
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 whitespace-nowrap">
                     {item.progressoMetaPct.toFixed(1)}% Meta
                   </span>
-                  <span className="text-[9px] font-bold text-slate-500 tracking-tight">
+                  <span className="text-[9px] font-bold text-slate-400 tracking-tight">
                     Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                </div>
-               
              </div>
-             <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
-               <div><span className="text-[10px] text-slate-400 block font-bold">FAT. BRUTO</span><strong className="text-xs text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
-               <div><span className="text-[10px] text-purple-300 block font-bold">LUCRO LÍQ.</span><strong className="text-xs text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+             
+             {/* Caixa central com maior contraste */}
+             <div className="grid grid-cols-2 gap-3 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
+               <div>
+                 <span className="text-[10px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
+                 <strong className="text-sm font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+               </div>
+               <div>
+                 <span className="text-[10px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
+                 <strong className="text-sm font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+               </div>
              </div>
-             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Bruta</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
-                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Líquida</span><strong className="text-xs text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong></div>
+             
+             {/* Rodapé das Margens com cores iluminadas */}
+             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
+                <div>
+                  <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
+                  <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Líquida</span>
+                  <strong className="text-sm font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
+                </div>
              </div>
           </div>
         ))}
