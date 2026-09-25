@@ -56,21 +56,24 @@ export default function DashboardPage() {
         const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
-        const ganhoBruto = (Number(s.repasse_liquido) || 0) - custoCMV; 
+        
+        // Repasse Líquido vem da fórmula do Excel (Preço de Venda menos a taxa da plataforma)
+        const repasse = Number(s.repasse_liquido) || 0; 
+        const ganhoBruto = repasse - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
-        return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido };
+        
+        return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido, repasse };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
-  // Identifica dinamicamente o Mês de Referência com base no filtro de datas
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
-    return new Date().toISOString().slice(0, 7); // Mês atual
+    return new Date().toISOString().slice(0, 7);
   }, [appliedDateFilter, appliedStartDate]);
 
   const kpis = useMemo(() => {
     const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
-    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
+    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse) || 0), 0);
     const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     
@@ -89,27 +92,30 @@ export default function DashboardPage() {
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
-      
-      // Busca a meta histórica do Mês selecionado no filtro
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
-                   || goals.find((g: any) => g.canal === channelName) // Fallback caso não haja meta para este mês
+                   || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
       const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse) || 0), 0);
+      
       const canalAds = adsData.find((a: any) => a.canal === channelName)?.custo_ads || 0;
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
 
-      const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
+      // Lucro Final (Para a Margem Líquida)
+      const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = Number(goalObj.meta_valor) || 0;
-      // Meta calculada com base no Faturamento Líquido (se preferir Bruto, basta trocar faturadoLiquido por faturadoBruto)
-      const progressoMetaPct = metaBase > 0 ? (faturadoLiquido / metaBase) * 100 : 0;
       
-      const ganhoBrutoCanal = repasseTotal - cmvCanal;
-      const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
-      const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
+      // 1. Correção: A Meta é calculada sobre o Faturamento Bruto PDV (Preço Final de Venda)
+      const progressoMetaPct = metaBase > 0 ? (faturadoBruto / metaBase) * 100 : 0;
+      
+      // 2. Correção: Margem Bruta = (Repasse das Plataformas / Faturamento Bruto PDV)
+      const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
+      
+      // 3. Correção: Margem Líquida = (Lucro Líquido Final / Faturamento Bruto PDV)
+      const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
 
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
 
@@ -118,7 +124,7 @@ export default function DashboardPage() {
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
         faturadoBruto, 
-        faturadoLiquido, 
+        lucroLiquidoFinal, 
         progressoMetaPct, 
         margemBrutaPct, 
         margemLiquidaPct, 
@@ -136,7 +142,6 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* Filtro Datas */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -155,7 +160,6 @@ export default function DashboardPage() {
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
             </div>
           )}
-          {/* Filtro Canais */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -201,7 +205,6 @@ export default function DashboardPage() {
                  </div>
                </div>
                
-               {/* FORMATAÇÃO DA META AQUI */}
                <div className="flex flex-col items-end gap-1">
                   <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 whitespace-nowrap">
                     {item.progressoMetaPct.toFixed(1)}% Meta
@@ -214,7 +217,7 @@ export default function DashboardPage() {
              </div>
              <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
                <div><span className="text-[10px] text-slate-400 block font-bold">FAT. BRUTO</span><strong className="text-xs text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
-               <div><span className="text-[10px] text-purple-300 block font-bold">LUCRO LÍQ.</span><strong className="text-xs text-purple-400">R$ {item.faturadoLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+               <div><span className="text-[10px] text-purple-300 block font-bold">LUCRO LÍQ.</span><strong className="text-xs text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
              </div>
              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
                 <div><span className="text-[10px] text-slate-500 block font-bold">Margem Bruta</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
@@ -238,7 +241,7 @@ export default function DashboardPage() {
                 <td className="py-2.5">{s.canal}</td>
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5">R$ {(s.repasse || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2.5 font-bold text-indigo-300">R$ {(s.ganhoBruto || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
