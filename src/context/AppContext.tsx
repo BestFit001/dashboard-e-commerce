@@ -5,106 +5,86 @@ import { supabase } from '@/lib/supabase';
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
 
-// Lojas oficiais atualizadas
-export const CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
+const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
 
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  const [users, setUsers] = useState([
-    { username: 'Gisele@usebestfit.com.br', password: 'Best2026**', role: 'admin' },
-    { username: 'usuario@usebestfit.com.br', password: '123', role: 'user' }
-  ]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
-
-  const [canais, setCanais] = useState<string[]>(CHANNELS);
+  // 1. Estados Locais
+  const [canais, setCanais] = useState<string[]>(INITIAL_CHANNELS);
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [adsData, setAdsData] = useState<any[]>([]);
   const [flexData, setFlexData] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
-  
-  const [faturados, setFaturados] = useState<any[]>([]);
-  const [cancelados, setCancelados] = useState<any[]>([]);
-  
-  const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
-  
-  const [channelRules, setChannelRules] = useState(CHANNELS.map(c => ({ 
-    canal: c, 
-    responsavel: 'Equipe Best Fit', 
-    colIdPedido: 'A', 
-    colSku: 'B', 
-    colPrecoVenda: 'D',
-    colRebate: 'C', 
-    colQuantidade: 'G', 
-    formulaExcel: 'C2 - (C2 * 12%)' 
-  })));
+  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colPdv: 'D', colQuantidade: 'G', formulaExcel: 'D2 - (D2 * 12%)' })));
+  const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Dashboard Best Fit inicializado com sucesso.', type: 'info' }]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sistema sincronizado com sucesso.', type: 'info' }]);
+
+  // 2. Autenticação e Gestão Dinâmica de Usuários (Restaurado)
+  const [users, setUsers] = useState<any[]>([
+    { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' },
+    { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' },
+    { username: 'leila@usebestfit.com.br', password: '123', role: 'admin' }
+  ]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
   const addLog = (message: string, type = 'info') => {
     setLogs((prev: any[]) => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), message, type }, ...prev.slice(0, 49)]);
   };
 
+  // 3. Efeito de Inicialização (Carregar LocalStorage + Supabase)
   useEffect(() => {
+    // A. Recupera os utilizadores dinâmicos gravados pela aba Usuários
     const savedUsers = localStorage.getItem('bestfit_users');
-    const savedSession = localStorage.getItem('bestfit_session');
+    if (savedUsers) {
+      try { setUsers(JSON.parse(savedUsers)); } catch (e) {}
+    }
     
-    if (savedUsers) { try { setUsers(JSON.parse(savedUsers)); } catch(e) {} }
-    if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch(e) {} }
+    // B. Mantém a sessão ativa
+    const savedSession = localStorage.getItem('bestfit_session');
+    if (savedSession) {
+      try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {}
+    }
     setIsAuthLoaded(true);
 
-    const loadLocal = (key: string, setter: any) => {
-      const stored = localStorage.getItem(key);
-      if (stored) { try { setter(JSON.parse(stored)); } catch (e) {} }
+    // C. Puxa os dados da Nuvem (Supabase)
+    const carregarBancoDeDados = async () => {
+      try {
+        const { data: skusData, error: skusError } = await supabase.from('tb_produtos').select('*');
+        if (!skusError && skusData && skusData.length > 0) setProducts(skusData);
+
+        const { data: regrasData, error: regrasError } = await supabase.from('tb_regras_canais').select('*');
+        if (!regrasError && regrasData && regrasData.length > 0) {
+          const regrasMapeadas = regrasData.map((r: any) => ({
+            canal: r.canal, colIdPedido: r.col_id_pedido || 'A', colSku: r.col_sku || 'B',
+            colEstado: r.col_estado || 'C', colPdv: r.col_pdv || 'D', colQuantidade: r.col_quantidade || 'G',
+            formulaExcel: r.formula_excel || '', responsavel: r.responsavel || '', logo_url: r.logo_url || ''
+          }));
+          setChannelRules(regrasMapeadas);
+          
+          const canaisSalvos = regrasData.map((r: any) => r.canal);
+          setCanais(Array.from(new Set([...INITIAL_CHANNELS, ...canaisSalvos])));
+        }
+      } catch (error) {
+        console.error("Erro ao puxar dados do Supabase:", error);
+      }
     };
 
-    // Filtro agressivo para limpar o cache da Loja física e injetar os clubes
-    const storedCanais = localStorage.getItem('bestfit_canais');
-    if (storedCanais) {
-      try {
-        const parsedCanais = JSON.parse(storedCanais);
-        const canaisValidos = parsedCanais.filter((c: string) => c !== 'Loja física' && c !== 'Loja fisica' && c !== 'Paineiras');
-        if (!canaisValidos.includes('Clube Paineiras')) canaisValidos.push('Clube Paineiras');
-        if (!canaisValidos.includes('Clube Hebraica')) canaisValidos.push('Clube Hebraica');
-        setCanais(canaisValidos);
-      } catch (e) {}
-    }
-
-    const storedRules = localStorage.getItem('bestfit_rules');
-    if (storedRules) {
-      try {
-        const parsedRules = JSON.parse(storedRules);
-        const regrasValidas = parsedRules.filter((r: any) => r.canal !== 'Loja física' && r.canal !== 'Loja fisica' && r.canal !== 'Paineiras');
-        
-        if (!regrasValidas.find((r: any) => r.canal === 'Clube Paineiras')) {
-          regrasValidas.push({ canal: 'Clube Paineiras', responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'D', colRebate: 'C', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
-        }
-        if (!regrasValidas.find((r: any) => r.canal === 'Clube Hebraica')) {
-          regrasValidas.push({ canal: 'Clube Hebraica', responsavel: 'Equipe Best Fit', colIdPedido: 'A', colSku: 'B', colPrecoVenda: 'D', colRebate: 'C', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' });
-        }
-        setChannelRules(regrasValidas);
-      } catch (e) {}
-    }
-
-    loadLocal('bestfit_products', setProducts);
-    loadLocal('bestfit_sales', setSales);
-    loadLocal('bestfit_ads', setAdsData);
-    loadLocal('bestfit_flex', setFlexData);
-    loadLocal('bestfit_faturados', setFaturados);
-    loadLocal('bestfit_cancelados', setCancelados);
-    loadLocal('bestfit_logos', setChannelLogos);
-
-    setIsLoaded(true);
+    carregarBancoDeDados();
   }, []);
 
+  // 4. Salvar Usuários automaticamente ao criar novos na aba Usuários
   useEffect(() => {
-    if (isAuthLoaded) localStorage.setItem('bestfit_users', JSON.stringify(users));
+    if (isAuthLoaded) {
+      localStorage.setItem('bestfit_users', JSON.stringify(users));
+    }
   }, [users, isAuthLoaded]);
 
+  // 5. Salvar Sessão ao fazer Login
   useEffect(() => {
     if (isAuthLoaded) {
       if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser));
@@ -112,26 +92,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentUser, isAuthLoaded]);
 
-  useEffect(() => {
-    if (!isLoaded) return; 
-    
-    localStorage.setItem('bestfit_canais', JSON.stringify(canais));
-    localStorage.setItem('bestfit_rules', JSON.stringify(channelRules));
-    localStorage.setItem('bestfit_products', JSON.stringify(products));
-    localStorage.setItem('bestfit_sales', JSON.stringify(sales));
-    localStorage.setItem('bestfit_ads', JSON.stringify(adsData));
-    localStorage.setItem('bestfit_flex', JSON.stringify(flexData));
-    localStorage.setItem('bestfit_faturados', JSON.stringify(faturados));
-    localStorage.setItem('bestfit_cancelados', JSON.stringify(cancelados));
-    localStorage.setItem('bestfit_logos', JSON.stringify(channelLogos));
-  }, [canais, channelRules, products, sales, adsData, flexData, faturados, cancelados, channelLogos, isLoaded]);
-
   return (
     <AppContext.Provider value={{
-      users, setUsers, currentUser, setCurrentUser, isAuthLoaded,
       canais, setCanais, products, setProducts, sales, setSales, adsData, setAdsData, flexData, setFlexData, goals, setGoals,
-      faturados, setFaturados, cancelados, setCancelados, channelLogos, setChannelLogos,
-      channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog
+      channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog,
+      currentUser, setCurrentUser, isAuthLoaded, users, setUsers, channelLogos, setChannelLogos
     }}>
       {children}
     </AppContext.Provider>
