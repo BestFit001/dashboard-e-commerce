@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
@@ -11,14 +11,30 @@ export default function SkusPage() {
   const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
   const [isSaving, setIsSaving] = useState(false);
 
-  // Abertura do modal para criar novo
+  // Estados para Busca e Paginação (50 por página)
+  const [searchSku, setSearchSku] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // Filtragem por SKU
+  const filteredProducts = useMemo(() => {
+    if (!searchSku.trim()) return products;
+    return products.filter((p: any) => p.sku.toLowerCase().includes(searchSku.toLowerCase()) || (p.titulo && p.titulo.toLowerCase().includes(searchSku.toLowerCase())));
+  }, [products, searchSku]);
+
+  // Paginação
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(start, start + itemsPerPage);
+  }, [filteredProducts, currentPage]);
+
   const openNewModal = () => {
     setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
     setIsEditing(false);
     setShowModal(true);
   };
 
-  // Abertura do modal para editar
   const openEditModal = (prod: any) => {
     setNewProduct({
       sku: prod.sku,
@@ -30,12 +46,10 @@ export default function SkusPage() {
     setShowModal(true);
   };
 
-  // Salvar Produto no Supabase (Novo ou Edição)
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     
-    // Tratamento para aceitar vírgulas nos valores (ex: 1,50 vira 1.50)
     const item = {
       sku: newProduct.sku.toUpperCase().trim(),
       titulo: newProduct.titulo.trim(),
@@ -44,11 +58,9 @@ export default function SkusPage() {
     };
 
     try {
-      // Grava no banco de dados Supabase
       const { error } = await supabase.from('tb_produtos').upsert([item]);
       if (error) throw error;
 
-      // Se der sucesso, atualiza a tela para o usuário ver instantaneamente
       if (isEditing) {
         setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
         addLog(`SKU [${item.sku}] atualizado com sucesso no banco de dados.`, 'success');
@@ -65,7 +77,6 @@ export default function SkusPage() {
     }
   };
 
-  // Excluir Produto do Supabase
   const handleDeleteProduct = async (sku: string) => {
     if (confirm(`Tem a certeza que deseja apagar definitivamente o SKU: ${sku} do banco de dados?`)) {
       try {
@@ -81,7 +92,6 @@ export default function SkusPage() {
     }
   };
 
-  // Importação em Massa de Custos via Planilha (Direto pro Supabase)
   const handleUploadCustos = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -107,11 +117,9 @@ export default function SkusPage() {
 
         addLog('A processar envio de SKUs para o banco de dados...', 'info');
 
-        // Dispara o lote inteiro para o Supabase
         const { error } = await supabase.from('tb_produtos').upsert(novosCustos);
         if (error) throw error;
 
-        // Atualiza a interface
         setProducts((prev: any[]) => {
           const map = new Map(prev.map(p => [p.sku, p]));
           novosCustos.forEach(nc => map.set(nc.sku, nc));
@@ -126,67 +134,86 @@ export default function SkusPage() {
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = ''; // Reseta o input
+    e.target.value = '';
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Cadastro de SKUs & Base de Custos</h2>
           <p className="text-xs text-emerald-400 font-bold mt-0.5"><i className="fa-solid fa-cloud"></i> Sincronizado em tempo real com o banco de dados (Supabase).</p>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <label className="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition text-center flex-1 sm:flex-none">
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          <input 
+            type="text" 
+            placeholder="Buscar por SKU ou Título..." 
+            value={searchSku} 
+            onChange={e => { setSearchSku(e.target.value); setCurrentPage(1); }} 
+            className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-64" 
+          />
+          <label className="cursor-pointer px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition text-center flex-1 sm:flex-none">
             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCustos} />
             <i className="fa-solid fa-file-arrow-up mr-2"></i>Importar Custos
           </label>
-          <button onClick={openNewModal} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex-1 sm:flex-none">
+          <button onClick={openNewModal} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex-1 sm:flex-none">
             <i className="fa-solid fa-plus mr-2"></i>Novo SKU
           </button>
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-            <tr>
-              <th className="py-4 px-5">SKU</th>
-              <th className="py-4 px-5">Descrição</th>
-              <th className="py-4 px-5">Custo Produto</th>
-              <th className="py-4 px-5">Custo Embalagem</th>
-              <th className="py-4 px-5 text-right">Custo Total Unitário</th>
-              <th className="py-4 px-5 text-center">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/60 font-medium text-slate-300">
-            {products.map((p: any) => (
-              <tr key={p.sku} className="hover:bg-slate-800/40 transition">
-                <td className="py-3 px-5 font-mono font-bold text-indigo-400">{p.sku}</td>
-                <td className="py-3 px-5 text-slate-200">{p.titulo}</td>
-                <td className="py-3 px-5">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-5">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-5 text-right font-black text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-5 flex justify-center gap-3">
-                  <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar">
-                    <i className="fa-solid fa-pen-to-square"></i>
-                  </button>
-                  <button onClick={() => handleDeleteProduct(p.sku)} className="text-slate-400 hover:text-rose-400 transition" title="Excluir">
-                    <i className="fa-solid fa-trash"></i>
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {products.length === 0 && (
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl space-y-4">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
               <tr>
-                <td colSpan={6} className="py-8 text-center text-slate-500 font-bold">
-                  Nenhum SKU registado. Clique em "Novo SKU" ou importe a sua planilha.
-                </td>
+                <th className="py-4 px-5">SKU</th>
+                <th className="py-4 px-5">Descrição</th>
+                <th className="py-4 px-5">Custo Produto</th>
+                <th className="py-4 px-5">Custo Embalagem</th>
+                <th className="py-4 px-5 text-right">Custo Total Unitário</th>
+                <th className="py-4 px-5 text-center">Ações</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-medium text-slate-300">
+              {paginatedProducts.length > 0 ? paginatedProducts.map((p: any) => (
+                <tr key={p.sku} className="hover:bg-slate-800/40 transition">
+                  <td className="py-3 px-5 font-mono font-bold text-indigo-400">{p.sku}</td>
+                  <td className="py-3 px-5 text-slate-200">{p.titulo}</td>
+                  <td className="py-3 px-5">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
+                  <td className="py-3 px-5">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
+                  <td className="py-3 px-5 text-right font-black text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
+                  <td className="py-3 px-5 flex justify-center gap-3">
+                    <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar">
+                      <i className="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button onClick={() => handleDeleteProduct(p.sku)} className="text-slate-400 hover:text-rose-400 transition" title="Excluir">
+                      <i className="fa-solid fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-500 font-bold">
+                    Nenhum SKU encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Controles de Paginação (50 por página) */}
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center p-4 border-t border-slate-800 text-xs">
+            <span className="text-slate-400">Página {currentPage} de {totalPages} ({filteredProducts.length} SKUs encontrados)</span>
+            <div className="flex gap-2">
+              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-40">Anterior</button>
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-40">Próxima</button>
+            </div>
+          </div>
+        )}
       </div>
       
       {showModal && (
@@ -228,7 +255,7 @@ export default function SkusPage() {
                  <button type="submit" disabled={isSaving} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition text-white shadow-lg ${isSaving ? 'bg-indigo-800 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'}`}>
                    {isSaving ? 'A guardar...' : 'Salvar Base'}
                  </button>
-               </div>
+                 </div>
              </form>
           </div>
         </div>
