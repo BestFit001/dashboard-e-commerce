@@ -23,7 +23,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização com Supabase ativa.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização com Supabase (Unrestricted) ativa.', type: 'info' }]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const [users, setUsers] = useState<any[]>([
@@ -50,7 +50,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        // Puxa exatamente como as abas que já funcionam (Produtos e Regras)
+        // Puxa todas as tabelas operacionais da nuvem do Supabase
         const [
           { data: usersData },
           { data: skusData },
