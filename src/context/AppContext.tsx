@@ -23,8 +23,9 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor Supabase Total ativado.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização global Supabase ativa.', type: 'info' }]);
 
+  // Gestão de Utilizadores Global
   const [users, setUsers] = useState<any[]>([
     { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' },
     { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' },
@@ -38,22 +39,25 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    const savedUsers = localStorage.getItem('bestfit_users');
-    if (savedUsers) { try { setUsers(JSON.parse(savedUsers)); } catch (e) {} }
-    
+    // Mantém apenas a sessão ativa localmente para não obrigar login a cada F5
     const savedSession = localStorage.getItem('bestfit_session');
     if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {} }
-
     setIsAuthLoaded(true);
 
-    // Carregamento de TODOS os dados do Supabase (Nuvem)
+    // Puxa TUDO da Nuvem (Supabase) para que qualquer app veja os mesmos dados
     const carregarBancoDeDados = async () => {
       try {
         if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
+        // 1. Utilizadores da Nuvem
+        const { data: usersData } = await supabase.from('tb_usuarios').select('*');
+        if (usersData && usersData.length > 0) setUsers(usersData);
+
+        // 2. Produtos e Custos
         const { data: skusData } = await supabase.from('tb_produtos').select('*');
         if (skusData) setProducts(skusData);
 
+        // 3. Regras de Canais
         const { data: regrasData } = await supabase.from('tb_regras_canais').select('*');
         if (regrasData && regrasData.length > 0) {
           const regrasMapeadas = regrasData.map((r: any) => ({
@@ -65,26 +69,27 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           setCanais(Array.from(new Set([...INITIAL_CHANNELS, ...regrasData.map((r: any) => r.canal)])));
         }
 
+        // 4. Metas
         const { data: metasData } = await supabase.from('tb_metas').select('*');
         if (metasData) setGoals(metasData);
 
-        // Puxar Vendas da Nuvem
+        // 5. Vendas (Admin)
         const { data: vendasData } = await supabase.from('tb_vendas').select('*');
         if (vendasData) setSales(vendasData);
 
-        // Puxar Faturados da Nuvem
+        // 6. Faturados (Admin)
         const { data: faturadosData } = await supabase.from('tb_faturados').select('*');
         if (faturadosData) setFaturados(faturadosData);
 
-        // Puxar Cancelados da Nuvem
+        // 7. Cancelados (Admin)
         const { data: canceladosData } = await supabase.from('tb_cancelados').select('*');
         if (canceladosData) setCancelados(canceladosData);
 
-        // Puxar Frete Flex da Nuvem
+        // 8. Frete Flex (Admin)
         const { data: flexDataDb } = await supabase.from('tb_flex').select('*');
         if (flexDataDb) setFlexData(flexDataDb);
 
-        // Puxar Ads da Nuvem
+        // 9. Ads (Admin)
         const { data: adsDataDb } = await supabase.from('tb_ads').select('*');
         if (adsDataDb) setAdsData(adsDataDb);
 
@@ -95,8 +100,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     carregarBancoDeDados();
   }, []);
 
-  useEffect(() => { if (isAuthLoaded) localStorage.setItem('bestfit_users', JSON.stringify(users)); }, [users, isAuthLoaded]);
-  useEffect(() => { if (isAuthLoaded) { if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser)); else localStorage.removeItem('bestfit_session'); } }, [currentUser, isAuthLoaded]);
+  // Salva sessão localmente
+  useEffect(() => { 
+    if (isAuthLoaded) { 
+      if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser)); 
+      else localStorage.removeItem('bestfit_session'); 
+    } 
+  }, [currentUser, isAuthLoaded]);
 
   return (
     <AppContext.Provider value={{
