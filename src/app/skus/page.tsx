@@ -12,36 +12,44 @@ export default function SkusPage() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const openNewModal = () => { setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' }); setIsEditing(false); setShowModal(true); };
-  const openEditModal = (prod: any) => { setNewProduct({ sku: prod.sku, titulo: prod.titulo, preco_custo: String(prod.preco_custo), custo_embalagem: String(prod.custo_embalagem) }); setIsEditing(true); setShowModal(true); };
+  const openEditModal = (prod: any) => { setNewProduct({ sku: prod.sku, titulo: prod.titulo, preco_custo: String(prod.preco_custo).replace('.', ','), custo_embalagem: String(prod.custo_embalagem).replace('.', ',') }); setIsEditing(true); setShowModal(true); };
+
+  // Função para converter vírgula brasileira para ponto matemático
+  const parseBrFloat = (val: string | number) => parseFloat(String(val).replace(',', '.')) || 0;
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
     
     const item = {
-      sku: newProduct.sku.toUpperCase(),
-      titulo: newProduct.titulo,
-      preco_custo: parseFloat(newProduct.preco_custo) || 0,
-      custo_embalagem: parseFloat(newProduct.custo_embalagem) || 0
+      sku: newProduct.sku.toUpperCase().trim(),
+      titulo: newProduct.titulo.trim(),
+      preco_custo: parseBrFloat(newProduct.preco_custo),
+      custo_embalagem: parseBrFloat(newProduct.custo_embalagem)
     };
 
-    // Salva no Supabase
-    const { error } = await supabase.from('tb_produtos').upsert([item], { onConflict: 'sku' });
-    
-    if (error) {
-      addLog(`Erro ao salvar no banco: ${error.message}`, 'error');
-    } else {
-      if (isEditing) {
-        setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
-        addLog(`SKU [${item.sku}] atualizado com sucesso.`, 'success');
+    try {
+      // Tenta gravar no Supabase
+      const { error } = await supabase.from('tb_produtos').upsert([item], { onConflict: 'sku' });
+      
+      if (error) {
+        alert(`BLOQUEIO DO SUPABASE:\n\n${error.message}\n\nSolução: Vá ao seu painel do Supabase, acesse a tabela 'tb_produtos' e desative o RLS (Row Level Security).`);
+        addLog(`Erro Supabase ao salvar SKU: ${error.message}`, 'error');
       } else {
-        if (!products.some((p: any) => p.sku === item.sku)) {
+        // Se gravar com sucesso, atualiza a tela
+        if (isEditing) {
+          setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
+          addLog(`SKU [${item.sku}] atualizado com sucesso.`, 'success');
+        } else {
           setProducts((prev: any[]) => [item, ...prev]);
+          addLog(`Novo SKU [${item.sku}] cadastrado.`, 'success');
         }
-        addLog(`Novo SKU [${item.sku}] cadastrado.`, 'success');
+        setShowModal(false);
       }
-      setShowModal(false);
+    } catch (err: any) {
+      alert(`Erro na Aplicação: ${err.message}`);
     }
+    
     setIsProcessing(false);
   };
 
@@ -49,6 +57,7 @@ export default function SkusPage() {
     if (confirm(`Tem a certeza que deseja excluir o SKU: ${sku}?`)) {
       const { error } = await supabase.from('tb_produtos').delete().eq('sku', sku);
       if (error) {
+        alert(`Erro ao excluir: ${error.message}`);
         addLog(`Erro ao excluir: ${error.message}`, 'error');
       } else {
         setProducts((prev: any[]) => prev.filter(p => p.sku !== sku));
@@ -73,14 +82,12 @@ export default function SkusPage() {
           novosCustos.push({
             sku: String(r[0]).trim().toUpperCase(),
             titulo: String(r[1] || 'Produto Importado'),
-            preco_custo: parseFloat(r[2]) || 0,
-            custo_embalagem: parseFloat(r[3]) || 0
+            preco_custo: parseBrFloat(r[2]),
+            custo_embalagem: parseBrFloat(r[3])
           });
         });
 
-        // Gravação em lote no Supabase
         const { error } = await supabase.from('tb_produtos').upsert(novosCustos, { onConflict: 'sku' });
-        
         if (error) throw error;
 
         setProducts((prev: any[]) => {
@@ -88,9 +95,9 @@ export default function SkusPage() {
           novosCustos.forEach(nc => map.set(nc.sku, nc));
           return Array.from(map.values());
         });
-
-        addLog(`Sincronização concluída: ${novosCustos.length} SKUs importados para o Supabase.`, 'success');
+        addLog(`Sincronização concluída: ${novosCustos.length} SKUs importados.`, 'success');
       } catch (err: any) {
+        alert(`Erro na importação: ${err.message}`);
         addLog(`Erro ao importar custos: ${err.message}`, 'error');
       } finally {
         setIsProcessing(false);
@@ -136,9 +143,9 @@ export default function SkusPage() {
               <tr key={p.sku} className="hover:bg-slate-800/40">
                 <td className="py-3 px-4 font-mono font-bold text-indigo-400">{p.sku}</td>
                 <td className="py-3 px-4 text-slate-200">{p.titulo}</td>
-                <td className="py-3 px-4">R$ {(p.preco_custo || 0).toFixed(2)}</td>
-                <td className="py-3 px-4">R$ {(p.custo_embalagem || 0).toFixed(2)}</td>
-                <td className="py-3 px-4 text-right font-bold text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2)}</td>
+                <td className="py-3 px-4">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-3 px-4">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-3 px-4 text-right font-bold text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
                 <td className="py-3 px-4 flex justify-center gap-2">
                   <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar"><i className="fa-solid fa-pen-to-square"></i></button>
                   <button onClick={() => handleDeleteProduct(p.sku)} className="text-slate-400 hover:text-rose-400 transition" title="Excluir"><i className="fa-solid fa-trash"></i></button>
@@ -168,11 +175,12 @@ export default function SkusPage() {
                <div className="grid grid-cols-2 gap-3">
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1">Custo Produto (R$) *</label>
-                   <input type="number" step="0.01" required value={newProduct.preco_custo} onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   {/* Alterado para tipo texto para permitir digitar vírgula tranquilamente */}
+                   <input type="text" required value={newProduct.preco_custo} onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} placeholder="0,00" className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
                  </div>
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1">Custo Embalagem (R$)</label>
-                   <input type="number" step="0.01" value={newProduct.custo_embalagem} onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   <input type="text" value={newProduct.custo_embalagem} onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} placeholder="0,00" className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
                  </div>
                </div>
                <div className="flex gap-2 justify-end pt-3">
