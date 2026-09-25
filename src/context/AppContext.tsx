@@ -4,8 +4,6 @@ import { supabase } from '@/lib/supabase';
 
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
-
-// Canais atualizados (Sem Loja Física, com Clube Hebraica e Clube Paineiras)
 const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
 
 const AppContext = createContext<any>(null);
@@ -100,7 +98,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const savedSession = localStorage.getItem('apex_session');
-    if (savedSession) setCurrentUser(JSON.parse(savedSession));
+    if (savedSession) {
+      try {
+        const parsedSession = JSON.parse(savedSession);
+        // TRAVA DE SEGURANÇA: Se for a Gisele na sessão cacheada, força o acesso Admin
+        if (parsedSession?.username?.toLowerCase() === 'gisele@usebestfit.com.br') {
+          parsedSession.role = 'admin';
+        }
+        setCurrentUser(parsedSession);
+      } catch(e) {}
+    }
     setIsAuthLoaded(true);
 
     fetchCloudData();
