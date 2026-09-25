@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    setSales, setFlexData, setAdsData, faturados, setFaturados, cancelados, setCancelados, addLog, logs 
+    setSales, setFlexData, setAdsData, faturados, setFaturados, cancelados, setCancelados, addLog, logs, setLogs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
@@ -195,7 +195,8 @@ export default function AdminPage() {
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  const readGeneric = (e: any, setter: any, type: string, mapper: Function) => {
+  // Corrigido o tipo Function para (row: any) => any, que é o que o .map() espera
+  const readGeneric = (e: any, setter: any, type: string, mapper: (row: any) => any) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {

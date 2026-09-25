@@ -56,8 +56,11 @@ export default function DashboardPage() {
         const custoCMV = ((prod.preco_custo || 0) + (prod.custo_embalagem || 0)) * (s.quantidade || 1);
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
-        const ganhoBruto = (s.repasse_liquido || 0) - custoCMV; 
+        
+        const repasseTotal = s.repasse_liquido || 0;
+        const ganhoBruto = repasseTotal - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
+        
         return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
@@ -102,8 +105,11 @@ export default function DashboardPage() {
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
       
-      const ganhoBrutoCanal = repasseTotal - cmvCanal;
-      const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
+      // NOVA FÓRMULA SOLICITADA
+      // Margem Bruta = Repasse / Preço de Venda Bruto
+      const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
+      
+      // Margem Líquida = Lucro Líquido Final / Preço de Venda Bruto
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       const logoUrl = channelLogos[channelName as keyof typeof channelLogos] || ruleObj.logo_url || null;
@@ -140,7 +146,6 @@ export default function DashboardPage() {
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
             </div>
           )}
-          {/* Filtro Canais Corrigido: Agora usa a lista global 'canais' */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -194,7 +199,7 @@ export default function DashboardPage() {
                <div><span className="text-[10px] text-purple-300 block font-bold">LUCRO LÍQ.</span><strong className="text-xs text-purple-400">R$ {item.faturadoLiquido.toFixed(2).replace('.', ',')}</strong></div>
              </div>
              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Bruta</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
+                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Bruta (Repasse %)</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
                 <div><span className="text-[10px] text-slate-500 block font-bold">Margem Líquida</span><strong className="text-xs text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong></div>
              </div>
           </div>
