@@ -4,7 +4,9 @@ import { supabase } from '@/lib/supabase';
 
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
-const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Loja física'];
+
+// Canais atualizados (Sem Loja Física, com Clube Hebraica e Clube Paineiras)
+const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
 
 const AppContext = createContext<any>(null);
 
@@ -81,7 +83,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
            colEstado: r.col_estado, colQuantidade: r.col_quantidade, formulaExcel: r.formula_excel
         })));
         
-        // CORREÇÃO: Mescla os canais do banco com os canais padrão para garantir que nenhum desapareça
         const dbCanais = regrasDb.map((r: any) => r.canal);
         const mergedCanais = Array.from(new Set([...INITIAL_CHANNELS, ...dbCanais]));
         setCanais(mergedCanais);
