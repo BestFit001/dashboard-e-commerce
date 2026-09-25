@@ -9,67 +9,83 @@ export default function SkusPage() {
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const openNewModal = () => { setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' }); setIsEditing(false); setShowModal(true); };
-  const openEditModal = (prod: any) => { setNewProduct({ sku: prod.sku, titulo: prod.titulo, preco_custo: String(prod.preco_custo).replace('.', ','), custo_embalagem: String(prod.custo_embalagem).replace('.', ',') }); setIsEditing(true); setShowModal(true); };
+  // Abertura do modal para criar novo
+  const openNewModal = () => {
+    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+    setIsEditing(false);
+    setShowModal(true);
+  };
 
-  // Função para converter vírgula brasileira para ponto matemático
-  const parseBrFloat = (val: string | number) => parseFloat(String(val).replace(',', '.')) || 0;
+  // Abertura do modal para editar
+  const openEditModal = (prod: any) => {
+    setNewProduct({
+      sku: prod.sku,
+      titulo: prod.titulo,
+      preco_custo: String(prod.preco_custo),
+      custo_embalagem: String(prod.custo_embalagem)
+    });
+    setIsEditing(true);
+    setShowModal(true);
+  };
 
+  // Salvar Produto no Supabase (Novo ou Edição)
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
+    setIsSaving(true);
     
+    // Tratamento para aceitar vírgulas nos valores (ex: 1,50 vira 1.50)
     const item = {
       sku: newProduct.sku.toUpperCase().trim(),
       titulo: newProduct.titulo.trim(),
-      preco_custo: parseBrFloat(newProduct.preco_custo),
-      custo_embalagem: parseBrFloat(newProduct.custo_embalagem)
+      preco_custo: parseFloat(String(newProduct.preco_custo).replace(',', '.')) || 0,
+      custo_embalagem: parseFloat(String(newProduct.custo_embalagem).replace(',', '.')) || 0
     };
 
     try {
-      // Tenta gravar no Supabase
-      const { error } = await supabase.from('tb_produtos').upsert([item], { onConflict: 'sku' });
-      
-      if (error) {
-        alert(`BLOQUEIO DO SUPABASE:\n\n${error.message}\n\nSolução: Vá ao seu painel do Supabase, acesse a tabela 'tb_produtos' e desative o RLS (Row Level Security).`);
-        addLog(`Erro Supabase ao salvar SKU: ${error.message}`, 'error');
+      // Grava no banco de dados Supabase
+      const { error } = await supabase.from('tb_produtos').upsert([item]);
+      if (error) throw error;
+
+      // Se der sucesso, atualiza a tela para o usuário ver instantaneamente
+      if (isEditing) {
+        setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
+        addLog(`SKU [${item.sku}] atualizado com sucesso no banco de dados.`, 'success');
       } else {
-        // Se gravar com sucesso, atualiza a tela
-        if (isEditing) {
-          setProducts((prev: any[]) => prev.map(p => p.sku === item.sku ? item : p));
-          addLog(`SKU [${item.sku}] atualizado com sucesso.`, 'success');
-        } else {
-          setProducts((prev: any[]) => [item, ...prev]);
-          addLog(`Novo SKU [${item.sku}] cadastrado.`, 'success');
-        }
-        setShowModal(false);
+        setProducts((prev: any[]) => [item, ...prev]);
+        addLog(`Novo SKU [${item.sku}] gravado no banco de dados.`, 'success');
       }
+      setShowModal(false);
     } catch (err: any) {
-      alert(`Erro na Aplicação: ${err.message}`);
+      addLog(`Erro ao salvar SKU no banco: ${err.message}`, 'error');
+      alert(`Falha ao gravar no Supabase: ${err.message}`);
+    } finally {
+      setIsSaving(false);
     }
-    
-    setIsProcessing(false);
   };
 
+  // Excluir Produto do Supabase
   const handleDeleteProduct = async (sku: string) => {
-    if (confirm(`Tem a certeza que deseja excluir o SKU: ${sku}?`)) {
-      const { error } = await supabase.from('tb_produtos').delete().eq('sku', sku);
-      if (error) {
-        alert(`Erro ao excluir: ${error.message}`);
-        addLog(`Erro ao excluir: ${error.message}`, 'error');
-      } else {
+    if (confirm(`Tem a certeza que deseja apagar definitivamente o SKU: ${sku} do banco de dados?`)) {
+      try {
+        const { error } = await supabase.from('tb_produtos').delete().eq('sku', sku);
+        if (error) throw error;
+
         setProducts((prev: any[]) => prev.filter(p => p.sku !== sku));
-        addLog(`SKU [${sku}] removido da base de dados.`, 'warning');
+        addLog(`SKU [${sku}] apagado da nuvem.`, 'warning');
+      } catch (err: any) {
+        addLog(`Erro ao excluir SKU: ${err.message}`, 'error');
+        alert(`Falha ao apagar: ${err.message}`);
       }
     }
   };
 
-  const handleUploadCustos = (e: any) => {
+  // Importação em Massa de Custos via Planilha (Direto pro Supabase)
+  const handleUploadCustos = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsProcessing(true);
+    
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
@@ -81,30 +97,36 @@ export default function SkusPage() {
           if (!r[0]) return;
           novosCustos.push({
             sku: String(r[0]).trim().toUpperCase(),
-            titulo: String(r[1] || 'Produto Importado'),
-            preco_custo: parseBrFloat(r[2]),
-            custo_embalagem: parseBrFloat(r[3])
+            titulo: String(r[1] || 'Produto Importado').trim(),
+            preco_custo: parseFloat(String(r[2]).replace(',', '.')) || 0,
+            custo_embalagem: parseFloat(String(r[3]).replace(',', '.')) || 0
           });
         });
 
-        const { error } = await supabase.from('tb_produtos').upsert(novosCustos, { onConflict: 'sku' });
+        if(novosCustos.length === 0) return;
+
+        addLog('A processar envio de SKUs para o banco de dados...', 'info');
+
+        // Dispara o lote inteiro para o Supabase
+        const { error } = await supabase.from('tb_produtos').upsert(novosCustos);
         if (error) throw error;
 
+        // Atualiza a interface
         setProducts((prev: any[]) => {
           const map = new Map(prev.map(p => [p.sku, p]));
           novosCustos.forEach(nc => map.set(nc.sku, nc));
           return Array.from(map.values());
         });
-        addLog(`Sincronização concluída: ${novosCustos.length} SKUs importados.`, 'success');
+
+        addLog(`Importação concluída: ${novosCustos.length} SKUs sincronizados na Nuvem.`, 'success');
+        alert(`Sucesso! ${novosCustos.length} SKUs foram guardados no banco de dados.`);
       } catch (err: any) {
-        alert(`Erro na importação: ${err.message}`);
         addLog(`Erro ao importar custos: ${err.message}`, 'error');
-      } finally {
-        setIsProcessing(false);
+        alert(`Erro na importação: ${err.message}`);
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = '';
+    e.target.value = ''; // Reseta o input
   };
 
   return (
@@ -112,46 +134,57 @@ export default function SkusPage() {
       <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Cadastro de SKUs & Base de Custos</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Sincronizado em tempo real com o banco de dados.</p>
+          <p className="text-xs text-emerald-400 font-bold mt-0.5"><i className="fa-solid fa-cloud"></i> Sincronizado em tempo real com o banco de dados (Supabase).</p>
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <label className={`cursor-pointer px-4 py-2 border border-slate-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition text-center flex-1 sm:flex-none ${isProcessing ? 'bg-slate-600' : 'bg-slate-800 hover:bg-slate-700'}`}>
-            <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCustos} disabled={isProcessing} />
-            <i className={`fa-solid ${isProcessing ? 'fa-spinner fa-spin' : 'fa-file-arrow-up'} mr-2`}></i>Importar Custos
+          <label className="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-extrabold text-xs rounded-xl shadow-lg transition text-center flex-1 sm:flex-none">
+            <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCustos} />
+            <i className="fa-solid fa-file-arrow-up mr-2"></i>Importar Custos
           </label>
-          <button onClick={openNewModal} disabled={isProcessing} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex-1 sm:flex-none">
+          <button onClick={openNewModal} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex-1 sm:flex-none">
             <i className="fa-solid fa-plus mr-2"></i>Novo SKU
           </button>
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
             <tr>
-              <th className="py-3 px-4">SKU</th>
-              <th className="py-3 px-4">Descrição</th>
-              <th className="py-3 px-4">Custo Produto</th>
-              <th className="py-3 px-4">Custo Embalagem</th>
-              <th className="py-3 px-4 text-right">Custo Total Unitário</th>
-              <th className="py-3 px-4 text-center">Ações</th>
+              <th className="py-4 px-5">SKU</th>
+              <th className="py-4 px-5">Descrição</th>
+              <th className="py-4 px-5">Custo Produto</th>
+              <th className="py-4 px-5">Custo Embalagem</th>
+              <th className="py-4 px-5 text-right">Custo Total Unitário</th>
+              <th className="py-4 px-5 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-medium text-slate-300">
             {products.map((p: any) => (
-              <tr key={p.sku} className="hover:bg-slate-800/40">
-                <td className="py-3 px-4 font-mono font-bold text-indigo-400">{p.sku}</td>
-                <td className="py-3 px-4 text-slate-200">{p.titulo}</td>
-                <td className="py-3 px-4">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-4">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-4 text-right font-bold text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
-                <td className="py-3 px-4 flex justify-center gap-2">
-                  <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar"><i className="fa-solid fa-pen-to-square"></i></button>
-                  <button onClick={() => handleDeleteProduct(p.sku)} className="text-slate-400 hover:text-rose-400 transition" title="Excluir"><i className="fa-solid fa-trash"></i></button>
+              <tr key={p.sku} className="hover:bg-slate-800/40 transition">
+                <td className="py-3 px-5 font-mono font-bold text-indigo-400">{p.sku}</td>
+                <td className="py-3 px-5 text-slate-200">{p.titulo}</td>
+                <td className="py-3 px-5">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-3 px-5">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-3 px-5 text-right font-black text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
+                <td className="py-3 px-5 flex justify-center gap-3">
+                  <button onClick={() => openEditModal(p)} className="text-slate-400 hover:text-indigo-400 transition" title="Editar">
+                    <i className="fa-solid fa-pen-to-square"></i>
+                  </button>
+                  <button onClick={() => handleDeleteProduct(p.sku)} className="text-slate-400 hover:text-rose-400 transition" title="Excluir">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
                 </td>
               </tr>
             ))}
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-slate-500 font-bold">
+                  Nenhum SKU registado. Clique em "Novo SKU" ou importe a sua planilha.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -163,29 +196,38 @@ export default function SkusPage() {
                <h3 className="font-bold text-white text-base">{isEditing ? 'Editar SKU' : 'Cadastrar Novo SKU'}</h3>
                <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
              </div>
-             <form onSubmit={handleSaveProduct} className="space-y-3">
+             <form onSubmit={handleSaveProduct} className="space-y-4">
                <div>
-                 <label className="block text-xs font-bold text-slate-400 mb-1">SKU *</label>
-                 <input type="text" required value={newProduct.sku} onChange={e => setNewProduct({...newProduct, sku: e.target.value})} disabled={isEditing} className={`w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-mono ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                 <label className="block text-xs font-bold text-slate-400 mb-1">CÓDIGO SKU *</label>
+                 <input 
+                   type="text" 
+                   required 
+                   value={newProduct.sku} 
+                   onChange={e => setNewProduct({...newProduct, sku: e.target.value})} 
+                   disabled={isEditing} 
+                   className={`w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white uppercase font-mono focus:border-indigo-500 focus:outline-none ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                 />
+                 {isEditing && <span className="text-[10px] text-amber-400 mt-1 block">Não é possível alterar o código de um SKU já criado.</span>}
                </div>
                <div>
-                 <label className="block text-xs font-bold text-slate-400 mb-1">Descrição / Título *</label>
-                 <input type="text" required value={newProduct.titulo} onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                 <label className="block text-xs font-bold text-slate-400 mb-1">Título do Produto *</label>
+                 <input type="text" required value={newProduct.titulo} onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:border-indigo-500 focus:outline-none" />
                </div>
                <div className="grid grid-cols-2 gap-3">
                  <div>
-                   <label className="block text-xs font-bold text-slate-400 mb-1">Custo Produto (R$) *</label>
-                   {/* Alterado para tipo texto para permitir digitar vírgula tranquilamente */}
-                   <input type="text" required value={newProduct.preco_custo} onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} placeholder="0,00" className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   <label className="block text-xs font-bold text-slate-400 mb-1">Custo Prod. (R$) *</label>
+                   <input type="text" required value={newProduct.preco_custo} onChange={e => setNewProduct({...newProduct, preco_custo: e.target.value})} placeholder="0,00" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white font-mono focus:border-indigo-500 focus:outline-none" />
                  </div>
                  <div>
-                   <label className="block text-xs font-bold text-slate-400 mb-1">Custo Embalagem (R$)</label>
-                   <input type="text" value={newProduct.custo_embalagem} onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} placeholder="0,00" className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" />
+                   <label className="block text-xs font-bold text-slate-400 mb-1">Embalagem (R$)</label>
+                   <input type="text" value={newProduct.custo_embalagem} onChange={e => setNewProduct({...newProduct, custo_embalagem: e.target.value})} placeholder="0,00" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white font-mono focus:border-indigo-500 focus:outline-none" />
                  </div>
                </div>
-               <div className="flex gap-2 justify-end pt-3">
-                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold transition">Cancelar</button>
-                 <button type="submit" disabled={isProcessing} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition">{isProcessing ? 'A salvar...' : 'Salvar SKU'}</button>
+               <div className="flex gap-2 justify-end pt-4">
+                 <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition">Cancelar</button>
+                 <button type="submit" disabled={isSaving} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition text-white shadow-lg ${isSaving ? 'bg-indigo-800 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'}`}>
+                   {isSaving ? 'A guardar...' : 'Salvar Base'}
+                 </button>
                </div>
              </form>
           </div>
