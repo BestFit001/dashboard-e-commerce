@@ -23,7 +23,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização global Supabase ativa.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização com Supabase ativa.', type: 'info' }]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const [users, setUsers] = useState<any[]>([
@@ -50,14 +50,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
+        // Puxa exatamente como as abas que já funcionam (Produtos e Regras)
         const [
           { data: usersData },
           { data: skusData },
           { data: regrasData },
           { data: metasData },
           { data: vendasData },
-          { data: faturadosData },
-          { data: canceladosData },
           { data: flexDataDb },
           { data: adsDataDb }
         ] = await Promise.all([
@@ -66,8 +65,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           supabase.from('tb_regras_canais').select('*'),
           supabase.from('tb_metas').select('*'),
           supabase.from('tb_vendas').select('*'),
-          supabase.from('tb_faturados').select('*'),
-          supabase.from('tb_cancelados').select('*'),
           supabase.from('tb_flex').select('*'),
           supabase.from('tb_ads').select('*')
         ]);
@@ -76,8 +73,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         if (skusData) setProducts(skusData);
         if (metasData) setGoals(metasData);
         if (vendasData) setSales(vendasData);
-        if (faturadosData) setFaturados(faturadosData);
-        if (canceladosData) setCancelados(canceladosData);
         if (flexDataDb) setFlexData(flexDataDb);
         if (adsDataDb) setAdsData(adsDataDb);
 
