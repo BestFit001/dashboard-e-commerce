@@ -16,10 +16,13 @@ export default function SkusPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
-  // Filtragem por SKU
+  // Filtragem por SKU ou Título
   const filteredProducts = useMemo(() => {
     if (!searchSku.trim()) return products;
-    return products.filter((p: any) => p.sku.toLowerCase().includes(searchSku.toLowerCase()) || (p.titulo && p.titulo.toLowerCase().includes(searchSku.toLowerCase())));
+    return products.filter((p: any) => 
+      p.sku.toLowerCase().includes(searchSku.toLowerCase()) || 
+      (p.titulo && p.titulo.toLowerCase().includes(searchSku.toLowerCase()))
+    );
   }, [products, searchSku]);
 
   // Paginação
@@ -29,12 +32,14 @@ export default function SkusPage() {
     return filteredProducts.slice(start, start + itemsPerPage);
   }, [filteredProducts, currentPage]);
 
+  // Abertura do modal para criar novo
   const openNewModal = () => {
     setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
     setIsEditing(false);
     setShowModal(true);
   };
 
+  // Abertura do modal para editar
   const openEditModal = (prod: any) => {
     setNewProduct({
       sku: prod.sku,
@@ -46,6 +51,7 @@ export default function SkusPage() {
     setShowModal(true);
   };
 
+  // Salvar Produto no Supabase (Novo ou Edição)
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -77,6 +83,7 @@ export default function SkusPage() {
     }
   };
 
+  // Excluir Produto do Supabase
   const handleDeleteProduct = async (sku: string) => {
     if (confirm(`Tem a certeza que deseja apagar definitivamente o SKU: ${sku} do banco de dados?`)) {
       try {
@@ -92,6 +99,7 @@ export default function SkusPage() {
     }
   };
 
+  // Importação em Massa de Custos com Envio Fracionado (Lotes de 500 para suportar 10k+ SKUs)
   const handleUploadCustos = async (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -115,10 +123,15 @@ export default function SkusPage() {
 
         if(novosCustos.length === 0) return;
 
-        addLog('A processar envio de SKUs para o banco de dados...', 'info');
+        addLog(`A enviar ${novosCustos.length} SKUs em lotes para o Supabase...`, 'info');
 
-        const { error } = await supabase.from('tb_produtos').upsert(novosCustos);
-        if (error) throw error;
+        // Envio em blocos de 500 para contornar o limite do Supabase
+        const chunkSize = 500;
+        for (let i = 0; i < novosCustos.length; i += chunkSize) {
+          const chunk = novosCustos.slice(i, i + chunkSize);
+          const { error } = await supabase.from('tb_produtos').upsert(chunk);
+          if (error) throw error;
+        }
 
         setProducts((prev: any[]) => {
           const map = new Map(prev.map(p => [p.sku, p]));
@@ -127,7 +140,7 @@ export default function SkusPage() {
         });
 
         addLog(`Importação concluída: ${novosCustos.length} SKUs sincronizados na Nuvem.`, 'success');
-        alert(`Sucesso! ${novosCustos.length} SKUs foram guardados no banco de dados.`);
+        alert(`Sucesso! Todos os ${novosCustos.length} SKUs foram guardados no banco de dados.`);
       } catch (err: any) {
         addLog(`Erro ao importar custos: ${err.message}`, 'error');
         alert(`Erro na importação: ${err.message}`);
@@ -142,7 +155,9 @@ export default function SkusPage() {
       <div className="flex flex-col lg:flex-row justify-between items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Cadastro de SKUs & Base de Custos</h2>
-          <p className="text-xs text-emerald-400 font-bold mt-0.5"><i className="fa-solid fa-cloud"></i> Sincronizado em tempo real com o banco de dados (Supabase).</p>
+          <p className="text-xs text-emerald-400 font-bold mt-0.5">
+            <i className="fa-solid fa-cloud"></i> Sincronizado em tempo real com o banco de dados (Supabase) | Total de SKUs: {products.length}
+          </p>
         </div>
         
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
@@ -196,7 +211,7 @@ export default function SkusPage() {
               )) : (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-500 font-bold">
-                    Nenhum SKU encontrado.
+                    Nenhum SKU encontrado. Clique em "Novo SKU" ou importe a sua planilha.
                   </td>
                 </tr>
               )}
@@ -255,7 +270,7 @@ export default function SkusPage() {
                  <button type="submit" disabled={isSaving} className={`px-5 py-2.5 rounded-xl text-xs font-bold transition text-white shadow-lg ${isSaving ? 'bg-indigo-800 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'}`}>
                    {isSaving ? 'A guardar...' : 'Salvar Base'}
                  </button>
-                 </div>
+               </div>
              </form>
           </div>
         </div>

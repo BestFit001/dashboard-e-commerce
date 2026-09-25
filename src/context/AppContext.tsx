@@ -1,14 +1,18 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export const BRAZIL_STATES = ['TODOS', 'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA', 'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO'];
 export const INITIAL_ADMIN_PASS = 'Dash321';
-const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Clube Hebraica', 'Clube Paineiras'];
+const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magalu', 'Shopee', 'TikTok', 'Shein', 'Netshoes', 'Site', 'Loja física'];
 
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
+  const [users, setUsers] = useState<any[]>([{ username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' }]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+
   const [canais, setCanais] = useState<string[]>(INITIAL_CHANNELS);
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -18,106 +22,136 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   
   const [faturados, setFaturados] = useState<any[]>([]);
   const [cancelados, setCancelados] = useState<any[]>([]);
-
-  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'C', colPdv: 'D', colQuantidade: 'G', formulaExcel: 'D2 - (D2 * 12%)' })));
-  const [channelLogos, setChannelLogos] = useState<any>({});
+  
+  const [channelLogos, setChannelLogos] = useState<Record<string, string>>({});
+  const [channelRules, setChannelRules] = useState(INITIAL_CHANNELS.map(c => ({ canal: c, colIdPedido: 'A', colSku: 'B', colEstado: 'E', colQuantidade: 'G', formulaExcel: 'C2 - (C2 * 12%)' })));
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização global com Supabase ativa.', type: 'info' }]);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-
-  const [users, setUsers] = useState<any[]>([
-    { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' },
-    { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' },
-    { username: 'leila@usebestfit.com.br', password: '123', role: 'admin' }
-  ]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Dashboard Best Fit sincronizado com Supabase.', type: 'info' }]);
 
   const addLog = (message: string, type = 'info') => {
     setLogs((prev: any[]) => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), message, type }, ...prev.slice(0, 49)]);
   };
 
-  useEffect(() => {
-    const savedSession = localStorage.getItem('bestfit_session');
-    if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {} }
-    setIsAuthLoaded(true);
+  const fetchCloudData = useCallback(async () => {
+    try {
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
-    const carregarBancoDeDados = async () => {
-      try {
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-          setIsDataLoaded(true);
-          return;
-        }
+      const { data: usersDb } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'users').single();
+      if (usersDb && usersDb.dados) setUsers(usersDb.dados);
 
-        // Puxa as tabelas dedicadas E também o tb_estado_global onde as vendas e faturados estão gravados
-        const [
-          { data: usersData },
-          { data: skusData },
-          { data: regrasData },
-          { data: metasData },
-          { data: estadoGlobal },
-          { data: flexDataDb },
-          { data: adsDataDb }
-        ] = await Promise.all([
-          supabase.from('tb_usuarios').select('*'),
-          supabase.from('tb_produtos').select('*'),
-          supabase.from('tb_regras_canais').select('*'),
-          supabase.from('tb_metas').select('*'),
-          supabase.from('tb_estado_global').select('*'),
-          supabase.from('tb_flex').select('*'),
-          supabase.from('tb_ads').select('*')
-        ]);
-
-        if (usersData && usersData.length > 0) setUsers(usersData);
-        if (skusData) setProducts(skusData);
-        if (metasData) setGoals(metasData);
-        if (flexDataDb) setFlexData(flexDataDb);
-        if (adsDataDb) setAdsData(adsDataDb);
-
-        // Processa o estado global da nuvem (Vendas, Faturados, Cancelados)
-        if (estadoGlobal && estadoGlobal.length > 0) {
-          estadoGlobal.forEach((item: any) => {
-            if (item.chave === 'vendas' && item.dados) setSales(item.dados);
-            if (item.chave === 'faturados' && item.dados) setFaturados(item.dados);
-            if (item.chave === 'cancelados' && item.dados) setCancelados(item.dados);
-            if (item.chave === 'flex' && item.dados) setFlexData(item.dados);
-            if (item.chave === 'ads' && item.dados) setAdsData(item.dados);
-          });
-        }
-
-        if (regrasData && regrasData.length > 0) {
-          const regrasMapeadas = regrasData.map((r: any) => ({
-            canal: r.canal, colIdPedido: r.col_id_pedido || 'A', colSku: r.col_sku || 'B',
-            colEstado: r.col_estado || 'C', colPdv: r.col_pdv || 'D', colQuantidade: r.col_quantidade || 'G',
-            formulaExcel: r.formula_excel || '', responsavel: r.responsavel || '', logo_url: r.logo_url || ''
-          }));
-          setChannelRules(regrasMapeadas);
-          setCanais(Array.from(new Set([...INITIAL_CHANNELS, ...regrasData.map((r: any) => r.canal)])));
-        }
-
-      } catch (error) {
-        console.error("Erro ao carregar dados do Supabase:", error);
-      } finally {
-        setIsDataLoaded(true);
+      const { data: globalState } = await supabase.from('tb_estado_global').select('*');
+      if (globalState) {
+        globalState.forEach((item: any) => {
+          if (item.chave === 'vendas') setSales(item.dados || []);
+          if (item.chave === 'faturados') setFaturados(item.dados || []);
+          if (item.chave === 'cancelados') setCancelados(item.dados || []);
+          if (item.chave === 'flex') setFlexData(item.dados || []);
+          if (item.chave === 'ads') setAdsData(item.dados || []);
+        });
       }
-    };
-    carregarBancoDeDados();
+
+      // BUSCA PAGINADA DE PRODUTOS PARA PASSAR DOS 1000 LIMITE DO SUPABASE
+      let allProducts: any[] = [];
+      let page = 0;
+      let fetchMore = true;
+      while (fetchMore) {
+        const { data: produtosDb } = await supabase.from('tb_produtos').select('*').range(page * 1000, (page + 1) * 1000 - 1);
+        if (produtosDb && produtosDb.length > 0) {
+          allProducts = [...allProducts, ...produtosDb];
+          if (produtosDb.length < 1000) fetchMore = false;
+          else page++;
+        } else {
+          fetchMore = false;
+        }
+      }
+      if (allProducts.length > 0) setProducts(allProducts);
+
+      const { data: regrasDb } = await supabase.from('tb_regras_canais').select('*');
+      if (regrasDb && regrasDb.length > 0) {
+        setChannelRules(regrasDb.map((r: any) => ({
+           canal: r.canal, colIdPedido: r.col_id_pedido, colSku: r.col_sku, 
+           colEstado: r.col_estado, colQuantidade: r.col_quantidade, formulaExcel: r.formula_excel
+        })));
+        setCanais(regrasDb.map((r: any) => r.canal));
+        
+        const logosMap: Record<string, string> = {};
+        regrasDb.forEach((r: any) => {
+           if (r.logo_url) logosMap[r.canal] = r.logo_url;
+        });
+        setChannelLogos(logosMap);
+      }
+    } catch (e) {
+      console.error("Erro ao sincronizar com Supabase", e);
+    }
   }, []);
 
-  useEffect(() => { 
-    if (isAuthLoaded) { 
-      if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser)); 
-      else localStorage.removeItem('bestfit_session'); 
-    } 
+  useEffect(() => {
+    const savedSession = localStorage.getItem('apex_session');
+    if (savedSession) setCurrentUser(JSON.parse(savedSession));
+    setIsAuthLoaded(true);
+
+    fetchCloudData();
+
+    const interval = setInterval(() => {
+      fetchCloudData();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchCloudData]);
+
+  useEffect(() => {
+    if (isAuthLoaded) {
+      if (currentUser) localStorage.setItem('apex_session', JSON.stringify(currentUser));
+      else localStorage.removeItem('apex_session');
+    }
   }, [currentUser, isAuthLoaded]);
+
+  const updateCloudState = async (chave: string, dados: any) => {
+    await supabase.from('tb_estado_global').upsert([{ chave, dados }], { onConflict: 'chave' });
+    await fetchCloudData();
+  };
 
   return (
     <AppContext.Provider value={{
-      canais, setCanais, products, setProducts, sales, setSales, adsData, setAdsData, flexData, setFlexData, goals, setGoals,
-      faturados, setFaturados, cancelados, setCancelados,
-      channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog,
-      currentUser, setCurrentUser, isAuthLoaded, users, setUsers, channelLogos, setChannelLogos, isDataLoaded
+      users, 
+      setUsers: async (newUsersOrUpdater: any) => {
+        const updated = typeof newUsersOrUpdater === 'function' ? newUsersOrUpdater(users) : newUsersOrUpdater;
+        setUsers(updated);
+        await updateCloudState('users', updated);
+      }, 
+      currentUser, setCurrentUser, isAuthLoaded,
+      canais, setCanais, 
+      products, setProducts, 
+      sales, setSales: async (newSales: any) => {
+        const updated = typeof newSales === 'function' ? newSales(sales) : newSales;
+        setSales(updated);
+        await updateCloudState('vendas', updated);
+      }, 
+      adsData, setAdsData: async (newAds: any) => {
+        const updated = typeof newAds === 'function' ? newAds(adsData) : newAds;
+        setAdsData(updated);
+        await updateCloudState('ads', updated);
+      }, 
+      flexData, setFlexData: async (newFlex: any) => {
+        const updated = typeof newFlex === 'function' ? newFlex(flexData) : newFlex;
+        setFlexData(updated);
+        await updateCloudState('flex', updated);
+      }, 
+      goals, setGoals,
+      faturados, setFaturados: async (newFat: any) => {
+        const updated = typeof newFat === 'function' ? newFat(faturados) : newFat;
+        setFaturados(updated);
+        await updateCloudState('faturados', updated);
+      }, 
+      cancelados, setCancelados: async (newCanc: any) => {
+        const updated = typeof newCanc === 'function' ? newCanc(cancelados) : newCanc;
+        setCancelados(updated);
+        await updateCloudState('cancelados', updated);
+      }, 
+      channelLogos, setChannelLogos,
+      channelRules, setChannelRules, 
+      isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog
     }}>
       {children}
     </AppContext.Provider>
