@@ -23,7 +23,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização com Supabase (Unrestricted) ativa.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização global com Supabase ativa.', type: 'info' }]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   const [users, setUsers] = useState<any[]>([
@@ -50,13 +50,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        // Puxa todas as tabelas operacionais da nuvem do Supabase
+        // Puxa as tabelas dedicadas E também o tb_estado_global onde as vendas e faturados estão gravados
         const [
           { data: usersData },
           { data: skusData },
           { data: regrasData },
           { data: metasData },
-          { data: vendasData },
+          { data: estadoGlobal },
           { data: flexDataDb },
           { data: adsDataDb }
         ] = await Promise.all([
@@ -64,7 +64,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           supabase.from('tb_produtos').select('*'),
           supabase.from('tb_regras_canais').select('*'),
           supabase.from('tb_metas').select('*'),
-          supabase.from('tb_vendas').select('*'),
+          supabase.from('tb_estado_global').select('*'),
           supabase.from('tb_flex').select('*'),
           supabase.from('tb_ads').select('*')
         ]);
@@ -72,9 +72,19 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         if (usersData && usersData.length > 0) setUsers(usersData);
         if (skusData) setProducts(skusData);
         if (metasData) setGoals(metasData);
-        if (vendasData) setSales(vendasData);
         if (flexDataDb) setFlexData(flexDataDb);
         if (adsDataDb) setAdsData(adsDataDb);
+
+        // Processa o estado global da nuvem (Vendas, Faturados, Cancelados)
+        if (estadoGlobal && estadoGlobal.length > 0) {
+          estadoGlobal.forEach((item: any) => {
+            if (item.chave === 'vendas' && item.dados) setSales(item.dados);
+            if (item.chave === 'faturados' && item.dados) setFaturados(item.dados);
+            if (item.chave === 'cancelados' && item.dados) setCancelados(item.dados);
+            if (item.chave === 'flex' && item.dados) setFlexData(item.dados);
+            if (item.chave === 'ads' && item.dados) setAdsData(item.dados);
+          });
+        }
 
         if (regrasData && regrasData.length > 0) {
           const regrasMapeadas = regrasData.map((r: any) => ({
