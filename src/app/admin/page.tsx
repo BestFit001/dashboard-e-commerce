@@ -77,7 +77,7 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // UPLOAD DE VENDAS FLEXÍVEL (IMPORTA TUDO E ACUMULA EM LOTE NA NUVEM)
+  // UPLOAD DE VENDAS COM MULTIPLICAÇÃO RIGOROSA DE QUANTIDADE E ACUMULAÇÃO DE SKUS
   const handleUploadVendas = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -93,7 +93,6 @@ export default function AdminPage() {
         let ignoradosCancelados = 0;
         const newSales: any[] = [];
 
-        // Varre a planilha inteira procurando linhas com ID de pedido válido
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
           if (!row || !row.length) continue;
@@ -101,12 +100,10 @@ export default function AdminPage() {
           const rawIdCell = row[colToIdx(rule.colIdPedido)];
           const id_pedido = extractCleanId(rawIdCell);
 
-          // Ignora cabeçalhos ou linhas vazias
           if (!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes', 'n.º de venda'].includes(id_pedido.toLowerCase())) {
             continue;
           }
 
-          // Se houver base de cancelados, bloqueia apenas os cancelados. Faturados passa livre.
           if (cancelados.find((c: any) => c.id === id_pedido)) { 
             ignoradosCancelados++; 
             continue; 
@@ -115,7 +112,13 @@ export default function AdminPage() {
           const repasse = evaluateExcelFormula(rule.formulaExcel, row);
           const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
           
-          // Procura data nos faturados se houver, senão usa a data atual
+          // Leitura rigorosa da Quantidade (Coluna mapeada, ex: H)
+          const qtdRaw = row[colToIdx(rule.colQuantidade || 'G')];
+          const quantidade = parseInt(String(qtdRaw).replace(/[^0-9]/g, ''), 10) || 1;
+
+          // Leitura do SKU (Coluna mapeada, ex: W)
+          const sku = String(row[colToIdx(rule.colSku || 'B')] || 'SKU-GENERAL').trim().toUpperCase();
+
           const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
           const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
 
@@ -123,20 +126,25 @@ export default function AdminPage() {
             id_pedido,
             data_faturamento: dataFaturamento,
             canal: selectedChannel,
-            sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
-            quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
+            sku,
+            quantidade, // Quantidade exata da linha (multiplicadora do CMV)
             preco_venda: parseBrFloat(precoVendaRaw),
             repasse_liquido: repasse 
           });
         }
         
         if (newSales.length > 0) {
-          // Combina com as vendas já existentes na memória para não sobrepor/apagar as de outros canais ou lotes
+          // Importante: No e-commerce, o mesmo pedido pode ter linhas repetidas com SKUs diferentes. 
+          // Usamos um identificador composto (id_pedido + sku + index) ou acumulamos todas as linhas da planilha.
+          // Como o utilizador quer que todas as linhas e repetições de SKUs conte, geramos uma chave única para cada linha de venda:
+          const salesWithUniqueKeys = newSales.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
+
           const map = new Map();
-          [...sales, ...newSales].forEach(s => map.set(s.id_pedido, s));
+          // Junta com as vendas anteriores guardadas na nuvem
+          [...sales.map((s: any, idx: number) => ({ ...s, unique_key: s.unique_key || `${s.id_pedido}_${s.sku}_${idx}` })), ...salesWithUniqueKeys].forEach(s => map.set(s.unique_key, s));
+          
           const updatedSales = Array.from(map.values());
 
-          // Salva o lote completo diretamente no Supabase (`tb_estado_global`)
           const { error } = await supabase.from('tb_estado_global').upsert([{
             chave: 'vendas',
             dados: updatedSales
@@ -147,10 +155,10 @@ export default function AdminPage() {
             alert(`Erro Supabase: ${error.message}`);
           } else {
             setSales(updatedSales);
-            addLog(`Sucesso! ${newSales.length} pedidos importados e salvos na nuvem. (Cancelados ignorados: ${ignoradosCancelados})`, 'success');
+            addLog(`Sucesso! ${newSales.length} linhas de vendas importadas e multiplicadas por SKU/Qtd. (Cancelados ignorados: ${ignoradosCancelados})`, 'success');
           }
         } else {
-          addLog(`Atenção: Nenhum pedido válido encontrado. Verifique se a coluna do ID do Pedido (Ex: A) está certa nas Regras.`, 'error');
+          addLog(`Atenção: Nenhum pedido válido encontrado. Verifique as colunas mapeadas nas Regras.`, 'error');
         }
       } catch (err: any) {
         addLog(`Erro crítico no processamento: ${err.message}`, 'error');
@@ -333,7 +341,7 @@ export default function AdminPage() {
           </div>
        </div>
 
-       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 mt-6">
+       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 t-6">
           <div className="flex justify-between items-center mb-3"><h3 className="font-bold text-white text-sm">Console</h3><button onClick={() => setLogs([])} className="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-700 px-2 py-1 rounded">Limpar</button></div>
           <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs max-h-48 overflow-y-auto text-slate-300 space-y-2 border border-slate-800">
              {logs.map((log: any) => (<div key={log.id}><span className="text-slate-600 mr-2">[{log.timestamp}]</span> <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : log.type === 'error' ? 'text-rose-400' : 'text-slate-300'}>{log.message}</span></div>))}
