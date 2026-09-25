@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog, isDataLoaded } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -105,11 +105,7 @@ export default function DashboardPage() {
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
       const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
       
-      // NOVA FÓRMULA SOLICITADA
-      // Margem Bruta = Repasse / Preço de Venda Bruto
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
-      
-      // Margem Líquida = Lucro Líquido Final / Preço de Venda Bruto
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
       const logoUrl = channelLogos[channelName as keyof typeof channelLogos] || ruleObj.logo_url || null;
@@ -117,6 +113,15 @@ export default function DashboardPage() {
       return { canal: channelName, responsavel: goalObj.responsavel || ruleObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct, logoUrl };
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, channelRules, channelLogos, currentRefMonth, canais]);
+
+  if (!isDataLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-bold text-slate-400">A sincronizar dados com o Supabase...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -127,7 +132,6 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* Filtro Datas */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -185,7 +189,7 @@ export default function DashboardPage() {
                <div className="flex items-center gap-3">
                  {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
                  <div>
-                   <span className="text-[10px] uppercase font-bold text-slate-400 block">{item.responsavel || 'Equipe'}</span>
+                   <span className="text-[10px] uppercase font-bold text-slate-400 block">{item.responsavel || 'Equipe Best Fit'}</span>
                    <h4 className="font-black text-white text-sm">{item.canal}</h4>
                  </div>
                </div>

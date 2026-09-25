@@ -24,8 +24,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sincronização global Supabase ativa.', type: 'info' }]);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  // Gestão de Utilizadores Global
   const [users, setUsers] = useState<any[]>([
     { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' },
     { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' },
@@ -39,26 +39,48 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    // Mantém apenas a sessão ativa localmente para não obrigar login a cada F5
     const savedSession = localStorage.getItem('bestfit_session');
     if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {} }
     setIsAuthLoaded(true);
 
-    // Puxa TUDO da Nuvem (Supabase) para que qualquer app veja os mesmos dados
     const carregarBancoDeDados = async () => {
       try {
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+          setIsDataLoaded(true);
+          return;
+        }
 
-        // 1. Utilizadores da Nuvem
-        const { data: usersData } = await supabase.from('tb_usuarios').select('*');
+        const [
+          { data: usersData },
+          { data: skusData },
+          { data: regrasData },
+          { data: metasData },
+          { data: vendasData },
+          { data: faturadosData },
+          { data: canceladosData },
+          { data: flexDataDb },
+          { data: adsDataDb }
+        ] = await Promise.all([
+          supabase.from('tb_usuarios').select('*'),
+          supabase.from('tb_produtos').select('*'),
+          supabase.from('tb_regras_canais').select('*'),
+          supabase.from('tb_metas').select('*'),
+          supabase.from('tb_vendas').select('*'),
+          supabase.from('tb_faturados').select('*'),
+          supabase.from('tb_cancelados').select('*'),
+          supabase.from('tb_flex').select('*'),
+          supabase.from('tb_ads').select('*')
+        ]);
+
         if (usersData && usersData.length > 0) setUsers(usersData);
-
-        // 2. Produtos e Custos
-        const { data: skusData } = await supabase.from('tb_produtos').select('*');
         if (skusData) setProducts(skusData);
+        if (metasData) setGoals(metasData);
+        if (vendasData) setSales(vendasData);
+        if (faturadosData) setFaturados(faturadosData);
+        if (canceladosData) setCancelados(canceladosData);
+        if (flexDataDb) setFlexData(flexDataDb);
+        if (adsDataDb) setAdsData(adsDataDb);
 
-        // 3. Regras de Canais
-        const { data: regrasData } = await supabase.from('tb_regras_canais').select('*');
         if (regrasData && regrasData.length > 0) {
           const regrasMapeadas = regrasData.map((r: any) => ({
             canal: r.canal, colIdPedido: r.col_id_pedido || 'A', colSku: r.col_sku || 'B',
@@ -69,38 +91,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           setCanais(Array.from(new Set([...INITIAL_CHANNELS, ...regrasData.map((r: any) => r.canal)])));
         }
 
-        // 4. Metas
-        const { data: metasData } = await supabase.from('tb_metas').select('*');
-        if (metasData) setGoals(metasData);
-
-        // 5. Vendas (Admin)
-        const { data: vendasData } = await supabase.from('tb_vendas').select('*');
-        if (vendasData) setSales(vendasData);
-
-        // 6. Faturados (Admin)
-        const { data: faturadosData } = await supabase.from('tb_faturados').select('*');
-        if (faturadosData) setFaturados(faturadosData);
-
-        // 7. Cancelados (Admin)
-        const { data: canceladosData } = await supabase.from('tb_cancelados').select('*');
-        if (canceladosData) setCancelados(canceladosData);
-
-        // 8. Frete Flex (Admin)
-        const { data: flexDataDb } = await supabase.from('tb_flex').select('*');
-        if (flexDataDb) setFlexData(flexDataDb);
-
-        // 9. Ads (Admin)
-        const { data: adsDataDb } = await supabase.from('tb_ads').select('*');
-        if (adsDataDb) setAdsData(adsDataDb);
-
       } catch (error) {
         console.error("Erro ao carregar dados do Supabase:", error);
+      } finally {
+        setIsDataLoaded(true);
       }
     };
     carregarBancoDeDados();
   }, []);
 
-  // Salva sessão localmente
   useEffect(() => { 
     if (isAuthLoaded) { 
       if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser)); 
@@ -113,7 +112,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       canais, setCanais, products, setProducts, sales, setSales, adsData, setAdsData, flexData, setFlexData, goals, setGoals,
       faturados, setFaturados, cancelados, setCancelados,
       channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog,
-      currentUser, setCurrentUser, isAuthLoaded, users, setUsers, channelLogos, setChannelLogos
+      currentUser, setCurrentUser, isAuthLoaded, users, setUsers, channelLogos, setChannelLogos, isDataLoaded
     }}>
       {children}
     </AppContext.Provider>
