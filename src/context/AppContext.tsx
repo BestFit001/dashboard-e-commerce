@@ -40,6 +40,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
+      // 1. Busca Utilizadores
       const { data: usersDb } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'users').single();
       if (usersDb && usersDb.dados) {
         const updatedUsers = usersDb.dados.map((u: any) => 
@@ -48,6 +49,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         setUsers(updatedUsers);
       }
 
+      // 2. Busca Vendas, Faturados, Cancelados, etc.
       const { data: globalState } = await supabase.from('tb_estado_global').select('*');
       if (globalState) {
         globalState.forEach((item: any) => {
@@ -59,6 +61,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
+      // 3. BUSCA METAS (Esta era a linha que faltava e causava o valor 0!)
+      const { data: metasDb } = await supabase.from('tb_metas').select('*');
+      if (metasDb && metasDb.length > 0) {
+        setGoals(metasDb);
+      }
+
+      // 4. Busca Paginada de Produtos (SKUs)
       let allProducts: any[] = [];
       let page = 0;
       let fetchMore = true;
@@ -74,6 +83,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (allProducts.length > 0) setProducts(allProducts);
 
+      // 5. Busca Regras dos Canais e Logos
       const { data: regrasDb } = await supabase.from('tb_regras_canais').select('*');
       if (regrasDb && regrasDb.length > 0) {
         setChannelRules(regrasDb.map((r: any) => ({
@@ -101,7 +111,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     if (savedSession) {
       try {
         const parsedSession = JSON.parse(savedSession);
-        // TRAVA DE SEGURANÇA: Se for a Gisele na sessão cacheada, força o acesso Admin
         if (parsedSession?.username?.toLowerCase() === 'gisele@usebestfit.com.br') {
           parsedSession.role = 'admin';
         }
