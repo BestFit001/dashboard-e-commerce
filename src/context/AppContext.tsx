@@ -9,7 +9,6 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  // 1. Estados de Dados
   const [canais, setCanais] = useState<string[]>(INITIAL_CHANNELS);
   const [products, setProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -17,7 +16,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [flexData, setFlexData] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   
-  // 2. Estados Críticos do ERP (Restaurados para evitar o Crash no Admin)
   const [faturados, setFaturados] = useState<any[]>([]);
   const [cancelados, setCancelados] = useState<any[]>([]);
 
@@ -25,9 +23,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [channelLogos, setChannelLogos] = useState<any>({});
   
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Sistema sincronizado e conciliação ERP restaurada.', type: 'info' }]);
+  const [logs, setLogs] = useState([{ id: 1, timestamp: new Date().toLocaleTimeString(), message: 'Motor Supabase Total ativado.', type: 'info' }]);
 
-  // 3. Autenticação de Usuários
   const [users, setUsers] = useState<any[]>([
     { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' },
     { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' },
@@ -40,26 +37,20 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     setLogs((prev: any[]) => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), message, type }, ...prev.slice(0, 49)]);
   };
 
-  // 4. Carregamento Inicial
   useEffect(() => {
-    // A. Recuperar dados locais (Usuários, Sessão, e Bases ERP)
     const savedUsers = localStorage.getItem('bestfit_users');
     if (savedUsers) { try { setUsers(JSON.parse(savedUsers)); } catch (e) {} }
     
     const savedSession = localStorage.getItem('bestfit_session');
     if (savedSession) { try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {} }
 
-    const savedFaturados = localStorage.getItem('apex_faturados');
-    if (savedFaturados) { try { setFaturados(JSON.parse(savedFaturados)); } catch (e) {} }
-
-    const savedCancelados = localStorage.getItem('apex_cancelados');
-    if (savedCancelados) { try { setCancelados(JSON.parse(savedCancelados)); } catch (e) {} }
-
     setIsAuthLoaded(true);
 
-    // B. Puxar Dados da Nuvem
+    // Carregamento de TODOS os dados do Supabase (Nuvem)
     const carregarBancoDeDados = async () => {
       try {
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+
         const { data: skusData } = await supabase.from('tb_produtos').select('*');
         if (skusData) setProducts(skusData);
 
@@ -77,23 +68,40 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         const { data: metasData } = await supabase.from('tb_metas').select('*');
         if (metasData) setGoals(metasData);
 
+        // Puxar Vendas da Nuvem
+        const { data: vendasData } = await supabase.from('tb_vendas').select('*');
+        if (vendasData) setSales(vendasData);
+
+        // Puxar Faturados da Nuvem
+        const { data: faturadosData } = await supabase.from('tb_faturados').select('*');
+        if (faturadosData) setFaturados(faturadosData);
+
+        // Puxar Cancelados da Nuvem
+        const { data: canceladosData } = await supabase.from('tb_cancelados').select('*');
+        if (canceladosData) setCancelados(canceladosData);
+
+        // Puxar Frete Flex da Nuvem
+        const { data: flexDataDb } = await supabase.from('tb_flex').select('*');
+        if (flexDataDb) setFlexData(flexDataDb);
+
+        // Puxar Ads da Nuvem
+        const { data: adsDataDb } = await supabase.from('tb_ads').select('*');
+        if (adsDataDb) setAdsData(adsDataDb);
+
       } catch (error) {
-        console.error("Erro Supabase:", error);
+        console.error("Erro ao carregar dados do Supabase:", error);
       }
     };
     carregarBancoDeDados();
   }, []);
 
-  // 5. Salvar automaticamente na memória local
   useEffect(() => { if (isAuthLoaded) localStorage.setItem('bestfit_users', JSON.stringify(users)); }, [users, isAuthLoaded]);
   useEffect(() => { if (isAuthLoaded) { if (currentUser) localStorage.setItem('bestfit_session', JSON.stringify(currentUser)); else localStorage.removeItem('bestfit_session'); } }, [currentUser, isAuthLoaded]);
-  useEffect(() => { localStorage.setItem('apex_faturados', JSON.stringify(faturados)); }, [faturados]);
-  useEffect(() => { localStorage.setItem('apex_cancelados', JSON.stringify(cancelados)); }, [cancelados]);
 
   return (
     <AppContext.Provider value={{
       canais, setCanais, products, setProducts, sales, setSales, adsData, setAdsData, flexData, setFlexData, goals, setGoals,
-      faturados, setFaturados, cancelados, setCancelados, /* Restauração vital! */
+      faturados, setFaturados, cancelados, setCancelados,
       channelRules, setChannelRules, isAdminUnlocked, setIsAdminUnlocked, logs, setLogs, addLog,
       currentUser, setCurrentUser, isAuthLoaded, users, setUsers, channelLogos, setChannelLogos
     }}>
