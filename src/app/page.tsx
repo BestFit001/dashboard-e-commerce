@@ -1,9 +1,9 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { useAppContext } from '@/context/AppContext';
+import { useAppContext, CHANNELS, BRAZIL_STATES } from '@/context/AppContext';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelLogos, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -11,16 +11,9 @@ export default function DashboardPage() {
   const [dateFilter, setDateFilter] = useState('TUDO');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  
   const [appliedDateFilter, setAppliedDateFilter] = useState('TUDO');
   const [appliedStartDate, setAppliedStartDate] = useState('');
   const [appliedEndDate, setAppliedEndDate] = useState('');
-
-  // Estados de Busca e Paginação da Tabela (50 em 50)
-  const [searchPedido, setSearchPedido] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
-
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   const handleRecalculate = () => {
@@ -30,9 +23,8 @@ export default function DashboardPage() {
       setAppliedDateFilter(dateFilter);
       setAppliedStartDate(customStartDate);
       setAppliedEndDate(customEndDate);
-      setCurrentPage(1);
       setIsRecalculating(false);
-      addLog(`Dashboard recalculado. Canal: [${selectedChannelFilter}] | Período: [${dateFilter}]`, 'success');
+      addLog(`Painel recalculado. Canal: [${selectedChannelFilter}] | Período: [${dateFilter}]`, 'success');
     }, 300);
   };
 
@@ -47,50 +39,43 @@ export default function DashboardPage() {
            const d = new Date(s.data_faturamento + 'T00:00:00');
            d.setHours(0, 0, 0, 0);
            
-           if (appliedDateFilter === 'HOJE') {
-              if (d.getTime() !== today.getTime()) return false;
-           } else if (appliedDateFilter === 'SEMANA') {
-              const limit = new Date(today); limit.setDate(limit.getDate() - 7);
-              if (d < limit || d > today) return false;
-           } else if (appliedDateFilter === 'QUINZENA') {
-              const limit = new Date(today); limit.setDate(limit.getDate() - 15);
-              if (d < limit || d > today) return false;
-           } else if (appliedDateFilter === 'MES') {
-              const limit = new Date(today); limit.setDate(limit.getDate() - 30);
-              if (d < limit || d > today) return false;
-           } else if (appliedDateFilter === 'PERSONALIZADO') {
-              if (appliedStartDate && appliedEndDate) {
-                 const start = new Date(appliedStartDate + 'T00:00:00');
-                 const end = new Date(appliedEndDate + 'T23:59:59');
-                 if (d < start || d > end) return false;
-              }
+           if (appliedDateFilter === 'HOJE' && d.getTime() !== today.getTime()) return false;
+           if (appliedDateFilter === 'SEMANA' && (d < new Date(today.getTime() - 7*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'QUINZENA' && (d < new Date(today.getTime() - 15*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'MES' && (d < new Date(today.getTime() - 30*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate && appliedEndDate) {
+              const start = new Date(appliedStartDate + 'T00:00:00');
+              const end = new Date(appliedEndDate + 'T23:59:59');
+              if (d < start || d > end) return false;
            }
         }
         return true;
       })
       .map((s: any) => {
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
-        const custoUn = (prod.preco_custo || 0) + (prod.custo_embalagem || 0);
-        const custoCMV = custoUn * (s.quantidade || 1);
-
+        const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
-        const custoFlex = flexOrder ? (flexOrder.valor_frete || 0) : 0;
-
-        const repasse = s.repasse_liquido || 0;
-        const ganhoLiquido = repasse - custoCMV - custoFlex;
-
-        return { ...s, custoCMV, custoFlex, ganhoLiquido };
+        const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
+        const ganhoBruto = (Number(s.repasse_liquido) || 0) - custoCMV; 
+        const ganhoLiquido = ganhoBruto - custoFlex;
+        return { ...s, custoCMV, custoFlex, ganhoBruto, ganhoLiquido };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
+  // Identifica dinamicamente o Mês de Referência com base no filtro de datas
+  const currentRefMonth = useMemo(() => {
+    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
+    return new Date().toISOString().slice(0, 7); // Mês atual
+  }, [appliedDateFilter, appliedStartDate]);
+
   const kpis = useMemo(() => {
-    const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
-    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (s.repasse_liquido || 0), 0);
-    const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (s.custoCMV || 0), 0);
+    const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
+    const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
-    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (a.custo_ads || 0), 0);
-    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (s.custoFlex || 0), 0);
+    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
 
@@ -98,62 +83,60 @@ export default function DashboardPage() {
   }, [enrichedSales, adsData, appliedChannelFilter]);
 
   const channelAnalytics = useMemo(() => {
-    const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? canais : canais.filter((c:string) => c === appliedChannelFilter);
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
+    const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
 
-    return channelsToAnalyze.map((channelName: string) => {
+    return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
-      const goalObj = goals.find((g: any) => g.canal === channelName) || { meta_valor: 0, responsavel: 'N/A' };
+      const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
+      
+      // Busca a meta histórica do Mês selecionado no filtro
+      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+                   || goals.find((g: any) => g.canal === channelName) // Fallback caso não haja meta para este mês
+                   || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (s.repasse_liquido || 0), 0);
-      const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + (a.custo_ads || 0), 0);
-      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (s.custoCMV || 0), 0);
-      const flexCanal = chSales.reduce((sum: number, s: any) => sum + (s.custoFlex || 0), 0);
+      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
+      const canalAds = adsData.find((a: any) => a.canal === channelName)?.custo_ads || 0;
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
+      const flexCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
 
       const faturadoLiquido = repasseTotal - cmvCanal - flexCanal - canalAds;
-      const progressoMetaPct = goalObj.meta_valor > 0 ? (faturadoBruto / goalObj.meta_valor) * 100 : 0;
-      const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
+      
+      const metaBase = Number(goalObj.meta_valor) || 0;
+      // Meta calculada com base no Faturamento Líquido (se preferir Bruto, basta trocar faturadoLiquido por faturadoBruto)
+      const progressoMetaPct = metaBase > 0 ? (faturadoLiquido / metaBase) * 100 : 0;
+      
+      const ganhoBrutoCanal = repasseTotal - cmvCanal;
+      const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
-      return { canal: channelName, responsavel: goalObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct };
+      const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
+
+      return { 
+        canal: channelName, 
+        responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
+        metaValor: metaBase,
+        faturadoBruto, 
+        faturadoLiquido, 
+        progressoMetaPct, 
+        margemBrutaPct, 
+        margemLiquidaPct, 
+        logoUrl 
+      };
     });
-  }, [enrichedSales, goals, adsData, canais, appliedChannelFilter]);
-
-  // Filtragem de Busca e Paginação para a Tabela (50 itens por página)
-  const filteredSalesForTable = useMemo(() => {
-    if (!searchPedido.trim()) return enrichedSales;
-    return enrichedSales.filter((s: any) => s.id_pedido.toLowerCase().includes(searchPedido.toLowerCase()) || s.sku.toLowerCase().includes(searchPedido.toLowerCase()));
-  }, [enrichedSales, searchPedido]);
-
-  const totalPages = Math.ceil(filteredSalesForTable.length / itemsPerPage) || 1;
-  const paginatedSales = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredSalesForTable.slice(start, start + itemsPerPage);
-  }, [filteredSalesForTable, currentPage]);
-
-  const renderChannelLogo = (canal: string) => {
-    if (channelLogos[canal]) {
-      return (
-        <div className="w-10 h-10 bg-white rounded-lg p-1 flex items-center justify-center shrink-0">
-          <img src={channelLogos[canal]} alt={canal} className="max-w-full max-h-full object-contain rounded" />
-        </div>
-      );
-    }
-    const c = canal.toLowerCase();
-    if (c.includes('site')) return <div className="w-10 h-10 bg-indigo-500/20 text-indigo-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-globe text-xl"></i></div>;
-    if (c.includes('física') || c.includes('fisica')) return <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-store text-xl"></i></div>;
-    return <div className="w-10 h-10 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center shrink-0"><i className="fa-solid fa-box text-xl"></i></div>;
-  };
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Lucro Líquido: Repasse - CMV - Fretes Flex - ADS</p>
+          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Real = Repasse Líq - CMV - Fretes Flex - ADS</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          {/* Filtro Datas */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -165,7 +148,6 @@ export default function DashboardPage() {
               <option value="PERSONALIZADO">Personalizado</option>
             </select>
           </div>
-
           {dateFilter === 'PERSONALIZADO' && (
             <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700">
               <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
@@ -173,7 +155,7 @@ export default function DashboardPage() {
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
             </div>
           )}
-
+          {/* Filtro Canais */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -181,9 +163,8 @@ export default function DashboardPage() {
               {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
             </select>
           </div>
-
           <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg">
-            Recalcular
+            {isRecalculating ? 'A calcular...' : 'Recalcular'}
           </button>
         </div>
       </div>
@@ -191,108 +172,84 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
-          <h3 className="text-2xl font-black text-white">R$ {kpis.faturamentoBrutoVendas.toFixed(2).replace('.', ',')}</h3>
-          <p className="text-[10px] text-slate-500">{kpis.totalPedidos} itens validados</p>
+          <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
-          <h3 className="text-2xl font-black text-purple-400">R$ {kpis.faturamentoLiquidoRepasse.toFixed(2).replace('.', ',')}</h3>
+          <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
-          <h3 className="text-2xl font-black text-amber-400">R$ {kpis.custoTotalCMV.toFixed(2).replace('.', ',')}</h3>
+          <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20">
-          <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Final</span>
-          <h3 className="text-2xl font-black text-emerald-400">R$ {kpis.lucroLiquidoReal.toFixed(2).replace('.', ',')}</h3>
+          <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+          <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => (
-          <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
-             <div className="flex justify-between items-start border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-3">
-                   {renderChannelLogo(item.canal)}
-                   <div>
-                     <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">{item.responsavel}</span>
-                     <h4 className="font-black text-white leading-tight">{item.canal}</h4>
-                   </div>
-                </div>
-                <div className="text-right mt-1">
-                  <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">{item.progressoMetaPct.toFixed(1)}% Meta</span>
-                </div>
+          <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between">
+             <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
+               <div className="flex items-center gap-3">
+                 {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
+                 <div>
+                   <span className="text-[10px] uppercase font-bold text-slate-400 block">{item.responsavel || 'Equipe'}</span>
+                   <h4 className="font-black text-white text-sm">{item.canal}</h4>
+                 </div>
+               </div>
+               
+               {/* FORMATAÇÃO DA META AQUI */}
+               <div className="flex flex-col items-end gap-1">
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 whitespace-nowrap">
+                    {item.progressoMetaPct.toFixed(1)}% Meta
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-500 tracking-tight">
+                    Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+               </div>
+               
              </div>
-             
-             <div className="grid grid-cols-2 gap-3">
-               <div><span className="text-[10px] text-slate-400 block">Fat. Bruto</span><strong className="text-sm text-white">R$ {item.faturadoBruto.toFixed(2).replace('.', ',')}</strong></div>
-               <div><span className="text-[10px] text-purple-300 block">Lucro Líq.</span><strong className="text-sm text-purple-400">R$ {item.faturadoLiquido.toFixed(2).replace('.', ',')}</strong></div>
+             <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+               <div><span className="text-[10px] text-slate-400 block font-bold">FAT. BRUTO</span><strong className="text-xs text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+               <div><span className="text-[10px] text-purple-300 block font-bold">LUCRO LÍQ.</span><strong className="text-xs text-purple-400">R$ {item.faturadoLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
              </div>
              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-                <div><span className="text-[10px] text-slate-500 block">Margem Bruta (Repasse %)</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
-                <div><span className="text-[10px] text-slate-500 block">Margem Líquida</span><strong className="text-xs text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong></div>
+                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Bruta</span><strong className="text-xs text-indigo-400">{item.margemBrutaPct.toFixed(1)}%</strong></div>
+                <div><span className="text-[10px] text-slate-500 block font-bold">Margem Líquida</span><strong className="text-xs text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong></div>
              </div>
           </div>
         ))}
       </div>
 
-      {/* TABELA DE FRAGMENTAÇÃO COM BUSCA E PAGINAÇÃO */}
-      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <h3 className="font-bold text-white text-base">Fragmentação por Pedido (Ganho Real)</h3>
-          <input 
-            type="text" 
-            placeholder="Buscar por ID de Pedido ou SKU..." 
-            value={searchPedido} 
-            onChange={e => { setSearchPedido(e.target.value); setCurrentPage(1); }} 
-            className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-72" 
-          />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-200">
-            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-              <tr>
-                <th className="py-3 pl-3">Data</th>
-                <th>ID Pedido</th>
-                <th>Canal</th>
-                <th>SKU (Qtd)</th>
-                <th>PDV (Fat. Bruto)</th>
-                <th className="text-purple-300">Repasse</th>
-                <th>CMV do Pedido</th>
-                <th className="text-rose-300">FLEX</th>
-                <th className="text-emerald-400 font-extrabold pr-3 text-right">Ganho Líquido Real</th>
+      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 overflow-x-auto">
+        <h3 className="font-bold text-white text-base mb-4">Fragmentação por Pedido (Ganho Real)</h3>
+        <table className="w-full text-left text-xs text-slate-200">
+          <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
+            <tr><th className="py-3 pl-3">Data</th><th>ID Pedido</th><th>Canal</th><th>SKU (Qtd)</th><th>PDV</th><th>Repasse</th><th>CMV</th><th className="text-indigo-300">Ganho Bruto</th><th className="text-rose-300">FLEX</th><th className="text-emerald-400 font-extrabold pr-3 text-right">Líquido Real</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60 font-medium">
+            {enrichedSales.map((s: any, i: number) => (
+              <tr key={i} className="hover:bg-slate-800/40">
+                <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
+                <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
+                <td className="py-2.5">{s.canal}</td>
+                <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
+                <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 font-bold text-indigo-300">R$ {(s.ganhoBruto || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 pr-3 text-right font-extrabold text-emerald-400">R$ {(s.ganhoLiquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-medium">
-              {paginatedSales.length > 0 ? paginatedSales.map((s: any) => (
-                <tr key={s.unique_key || s.id_pedido} className="hover:bg-slate-800/40">
-                  <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
-                  <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
-                  <td className="py-2.5">{s.canal}</td>
-                  <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
-                  <td className="py-2.5">R$ {(s.preco_venda || 0).toFixed(2).replace('.', ',')}</td>
-                  <td className="py-2.5 font-bold text-purple-300">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
-                  <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toFixed(2).replace('.', ',')}</td>
-                  <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toFixed(2).replace('.', ',')}</td>
-                  <td className="py-2.5 pr-3 text-right font-extrabold text-emerald-400">R$ {(s.ganhoLiquido || 0).toFixed(2).replace('.', ',')}</td>
-                </tr>
-              )) : (
-                <tr><td colSpan={9} className="text-center py-6 text-slate-500">Nenhum pedido encontrado.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex justify-between items-center pt-3 border-t border-slate-800 text-xs">
-            <span className="text-slate-400">Página {currentPage} de {totalPages} ({filteredSalesForTable.length} registos)</span>
-            <div className="flex gap-2">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-40">Anterior</button>
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-40">Próxima</button>
-            </div>
-          </div>
-        )}
+            ))}
+            {enrichedSales.length === 0 && (
+              <tr><td colSpan={10} className="p-6 text-center text-slate-500">Nenhum pedido validado para exibição.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
