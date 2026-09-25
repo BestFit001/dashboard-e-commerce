@@ -9,7 +9,6 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  // Gisele configurada como Admin por predefinição
   const [users, setUsers] = useState<any[]>([
     { username: 'Gisele@usebestfit.com.br', password: 'Best2026**', role: 'admin' },
     { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' }
@@ -43,7 +42,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       const { data: usersDb } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'users').single();
       if (usersDb && usersDb.dados) {
-        // Garante que a Gisele é sempre admin caso venha da base antiga
         const updatedUsers = usersDb.dados.map((u: any) => 
           u.username.toLowerCase() === 'gisele@usebestfit.com.br' ? { ...u, role: 'admin' } : u
         );
@@ -61,7 +59,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
-      // BUSCA PAGINADA DE PRODUTOS PARA PASSAR DOS 1000 LIMITE DO SUPABASE (Suporta 10k+ SKUs)
       let allProducts: any[] = [];
       let page = 0;
       let fetchMore = true;
@@ -83,7 +80,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
            canal: r.canal, colIdPedido: r.col_id_pedido, colSku: r.col_sku, 
            colEstado: r.col_estado, colQuantidade: r.col_quantidade, formulaExcel: r.formula_excel
         })));
-        setCanais(regrasDb.map((r: any) => r.canal));
+        
+        // CORREÇÃO: Mescla os canais do banco com os canais padrão para garantir que nenhum desapareça
+        const dbCanais = regrasDb.map((r: any) => r.canal);
+        const mergedCanais = Array.from(new Set([...INITIAL_CHANNELS, ...dbCanais]));
+        setCanais(mergedCanais);
         
         const logosMap: Record<string, string> = {};
         regrasDb.forEach((r: any) => {
