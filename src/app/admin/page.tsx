@@ -7,7 +7,8 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    sales, setSales, setFlexData, setAdsData, faturados, setFaturados, cancelados, setCancelados, addLog, logs, setLogs 
+    sales, setSales, flexData, setFlexData, adsData, setAdsData, 
+    faturados, setFaturados, cancelados, setCancelados, addLog, logs, setLogs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
@@ -75,7 +76,6 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // Salva o estado global no Supabase
   const persistToCloud = async (chave: string, dados: any) => {
     try {
       await supabase.from('tb_estado_global').upsert([{ chave, dados }]);
@@ -85,7 +85,7 @@ export default function AdminPage() {
   };
 
   // UPLOAD DE VENDAS
-  const handleUploadVendas = async (e: any) => {
+  const handleUploadVendas = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     const rule = channelRules.find((r: any) => r.canal === selectedChannel);
@@ -126,7 +126,7 @@ export default function AdminPage() {
         const updatedSales = [...newSales, ...sales];
         setSales(updatedSales);
         await persistToCloud('vendas', updatedSales);
-        addLog(`Cruzamento (${selectedChannel}): ${newSales.length} salvos na nuvem. Bloqueados: ${bloqueadosFaturados} / ${bloqueadosCancelados}.`, 'success');
+        addLog(`Cruzamento (${selectedChannel}): ${newSales.length} salvos na nuvem.`, 'success');
       } else {
         addLog(`Atenção: Nenhum pedido validado no cruzamento.`, 'error');
       }
@@ -157,13 +157,12 @@ export default function AdminPage() {
       }
 
       if(novosFaturados.length > 0){
-        setFaturados(async (prev: any) => {
-          const map = new Map();
-          [...prev, ...novosFaturados].forEach(item => map.set(item.id, item));
-          const finalArr = Array.from(map.values());
-          await persistToCloud('faturados', finalArr);
-          return finalArr;
-        });
+        const map = new Map();
+        [...faturados, ...novosFaturados].forEach(item => map.set(item.id, item));
+        const finalArr = Array.from(map.values());
+        
+        setFaturados(finalArr);
+        await persistToCloud('faturados', finalArr);
         addLog(`${novosFaturados.length} Faturados salvos na nuvem.`, 'success');
       }
     };
@@ -191,13 +190,12 @@ export default function AdminPage() {
       }
 
       if(novosCancelados.length > 0){
-        setCancelados(async (prev: any) => {
-          const map = new Map();
-          [...prev, ...novosCancelados].forEach(item => map.set(item.id, item));
-          const finalArr = Array.from(map.values());
-          await persistToCloud('cancelados', finalArr);
-          return finalArr;
-        });
+        const map = new Map();
+        [...cancelados, ...novosCancelados].forEach(item => map.set(item.id, item));
+        const finalArr = Array.from(map.values());
+
+        setCancelados(finalArr);
+        await persistToCloud('cancelados', finalArr);
         addLog(`${novosCancelados.length} Cancelados salvos na nuvem.`, 'warning');
       }
     };
@@ -205,7 +203,7 @@ export default function AdminPage() {
   };
 
   // UPLOAD GENÉRICO (FLEX / ADS)
-  const readGeneric = (e: any, setter: any, type: string, cloudKey: string, mapper: (row: any) => any) => {
+  const readGeneric = (e: any, setter: any, currentData: any[], type: string, cloudKey: string, mapper: (row: any) => any) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -214,19 +212,16 @@ export default function AdminPage() {
       const data = rows.slice(1).map(mapper).filter((i:any) => i.val > 0);
       
       if(data.length > 0) {
-        setter((prev: any) => {
-          const objs = data.map((d:any)=>d.obj);
-          const finalArr = [...objs, ...prev];
-          persistToCloud(cloudKey, finalArr);
-          return finalArr;
-        });
+        const objs = data.map((d:any)=>d.obj);
+        const finalArr = [...objs, ...currentData];
+        setter(finalArr);
+        await persistToCloud(cloudKey, finalArr);
         addLog(`${data.length} registos de ${type} salvos na nuvem.`, 'success');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  // LIMPEZA DEFINITIVA
   const clearData = async (type: string, cloudKey: string, setter: any) => {
     if(confirm(`Tem a certeza que deseja apagar a base de ${type.toUpperCase()}?`)) {
       setter([]);
@@ -246,7 +241,7 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases do ERP (Nufla Global)</h2>
+       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases do ERP (Nuvem Global)</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
            <h3 className="font-bold text-emerald-400 text-sm mb-2">Faturados</h3>
@@ -287,13 +282,13 @@ export default function AdminPage() {
          <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Débitos Frete FLEX</h3>
            <p className="text-[9px] text-slate-400 mb-2">A: ID | B: Valor</p>
-           <label className="cursor-pointer block py-2 bg-cyan-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', 'flex', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
+           <label className="cursor-pointer block py-2 bg-cyan-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, flexData, 'FLEX', 'flex', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Custos de ADS</h3>
            <p className="text-[9px] text-slate-400 mb-2">A: Canal | B: Valor</p>
-           <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
+           <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, adsData, 'ADS', 'ads', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
          </div>
        </div>
 
