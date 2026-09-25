@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { useAppContext, CHANNELS, BRAZIL_STATES } from '@/context/AppContext';
+import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
   const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog } = useAppContext();
@@ -62,10 +62,9 @@ export default function DashboardPage() {
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
-  // Identifica dinamicamente o Mês de Referência com base no filtro de datas
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
-    return new Date().toISOString().slice(0, 7); // Mês atual
+    return new Date().toISOString().slice(0, 7); 
   }, [appliedDateFilter, appliedStartDate]);
 
   const kpis = useMemo(() => {
@@ -83,16 +82,15 @@ export default function DashboardPage() {
   }, [enrichedSales, adsData, appliedChannelFilter]);
 
   const channelAnalytics = useMemo(() => {
-    const activeChannels = Array.from(new Set([...CHANNELS, ...channelRules.map((r: any) => r.canal)]));
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
 
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       
-      // Busca a meta histórica do Mês selecionado no filtro
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
-                   || goals.find((g: any) => g.canal === channelName) // Fallback caso não haja meta para este mês
+                   || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
       const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (s.preco_venda || 0), 0);
@@ -108,18 +106,18 @@ export default function DashboardPage() {
       const margemBrutaPct = faturadoBruto > 0 ? (ganhoBrutoCanal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (faturadoLiquido / faturadoBruto) * 100 : 0;
 
-      const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
+      const logoUrl = channelLogos[channelName as keyof typeof channelLogos] || ruleObj.logo_url || null;
 
       return { canal: channelName, responsavel: goalObj.responsavel || ruleObj.responsavel, metaValor: goalObj.meta_valor, faturadoBruto, faturadoLiquido, progressoMetaPct, margemBrutaPct, margemLiquidaPct, logoUrl };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, channelRules, channelLogos, currentRefMonth]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Real = Repasse Líq - CMV - Fretes Flex - ADS</p>
+          <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Ganho Real: Repasse - CMV(Emb+Prod) - Fretes Flex - ADS</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">

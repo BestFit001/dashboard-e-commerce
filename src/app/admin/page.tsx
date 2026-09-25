@@ -1,27 +1,32 @@
 'use client';
 import React, { useState } from 'react';
-import { useAppContext, INITIAL_ADMIN_PASS, CHANNELS } from '@/context/AppContext';
-import { supabase } from '@/lib/supabase';
+import { useAppContext, INITIAL_ADMIN_PASS } from '@/context/AppContext';
 import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
   const { 
-    isAdminUnlocked, setIsAdminUnlocked, channelRules, products, sales, setSales, setProducts, addLog, logs 
+    canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
+    setSales, setFlexData, setAdsData, setGoals, faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
-  const [selectedChannel, setSelectedChannel] = useState(CHANNELS[0]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState('');
+  
+  // Colunas configuradas conforme o seu ERP
+  const [colFaturadosId, setColFaturadosId] = useState('AI');
+  const [colFaturadosData, setColFaturadosData] = useState('D');
+  const [colCancelados, setColCancelados] = useState('AI');
 
-  const [showClearModal, setShowClearModal] = useState(false);
-  const [clearPassword, setClearPassword] = useState('');
-
-  const [faturadosSet, setFaturadosSet] = useState<Set<string>>(new Set());
-  const [canceladosSet, setCanceladosSet] = useState<Set<string>>(new Set());
+  // Garante que o canal inicial é selecionado assim que a lista carregar
+  React.useEffect(() => {
+    if (canais && canais.length > 0 && !selectedChannel) {
+      setSelectedChannel(canais[0]);
+    }
+  }, [canais, selectedChannel]);
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === INITIAL_ADMIN_PASS) { setIsAdminUnlocked(true); addLog('Autenticado com sucesso na Central.', 'success'); }
+    if (password === INITIAL_ADMIN_PASS) { setIsAdminUnlocked(true); addLog('Sessão desbloqueada.', 'success'); }
   };
 
   const colToIdx = (colStr: string) => {
@@ -31,7 +36,35 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  const evaluateFormula = (formulaStr: string, row: any, rebateVal: number) => {
+  const parseBrFloat = (val: any) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    const strVal = String(val).replace(/[^0-9,-]/g, '').replace(',', '.');
+    return parseFloat(strVal) || 0;
+  };
+
+  const parseExcelDate = (val: any) => {
+    if (!val) return new Date().toISOString().slice(0, 10);
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      return date.toISOString().slice(0, 10);
+    }
+    return String(val).trim().substring(0, 10);
+  };
+
+  const extractCleanId = (rawStr: string) => {
+    const rawId = String(rawStr || '').trim();
+    const regexMatch = rawId.match(/n[úu]mero\s+([0-9\-]+)/i);
+    let finalId = '';
+    if (regexMatch && regexMatch[1]) {
+      finalId = regexMatch[1];
+    } else {
+      finalId = rawId.split(/[\s;|,\|]+/)[0];
+    }
+    return finalId;
+  };
+
+  const evaluateExcelFormula = (formulaStr: string, row: any) => {
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
       expr = expr.replace(/([A-Z]+)\d*/g, (m, colLet) => {
@@ -39,409 +72,256 @@ export default function AdminPage() {
         return (val !== undefined && val !== null ? parseFloat(val) || 0 : 0).toString();
       });
       const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s]/g, '')};`)();
-      const baseLiquido = isNaN(result) ? 0 : result;
-      return baseLiquido + rebateVal; 
-    } catch { return rebateVal; }
+      return isNaN(result) ? 0 : Math.max(0, result);
+    } catch { return 0; }
   };
 
-  const converterEstadoParaUF = (estadoBruto: string) => {
-    if (!estadoBruto) return 'SP'; 
-    const estado = estadoBruto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-    if (estado.length === 2) return estado.toUpperCase(); 
-
-    const mapaUF: Record<string, string> = {
-      'acre': 'AC', 'alagoas': 'AL', 'amapa': 'AP', 'amazonas': 'AM',
-      'bahia': 'BA', 'ceara': 'CE', 'distrito federal': 'DF', 'espirito santo': 'ES',
-      'goias': 'GO', 'maranhao': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS',
-      'minas gerais': 'MG', 'para': 'PA', 'paraiba': 'PB', 'parana': 'PR',
-      'pernambuco': 'PE', 'piaui': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN',
-      'rio grande do sul': 'RS', 'rondonia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC',
-      'sao paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO'
-    };
-    return mapaUF[estado] || estadoBruto.substring(0, 2).toUpperCase(); 
-  };
-
-  // 1. Upload Faturados
-  const handleUploadFaturados = (e: any) => {
+  const handleUploadVendas = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
+    const rule = channelRules.find((r: any) => r.canal === selectedChannel);
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const newSet = new Set<string>();
-      rows.slice(1).forEach(r => { if (r[0]) newSet.add(String(r[0]).trim()); });
-      setFaturadosSet(newSet);
-      addLog(`Base Faturados carregada: ${newSet.size} pedidos p/ filtro.`, 'success');
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  // 2. Upload Cancelados
-  const handleUploadCancelados = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const newSet = new Set<string>();
-      rows.slice(1).forEach(r => { if (r[0]) newSet.add(String(r[0]).trim()); });
-      setFaturadosSet(prev => {
-        const updated = new Set(prev);
-        newSet.forEach(id => updated.delete(id));
-        return updated;
-      });
-      setCanceladosSet(newSet);
-      addLog(`${newSet.size} pedidos cancelados identificados.`, 'warning');
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  // 3. Upload Base de Custos (Admin)
-  const handleUploadCustos = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const novosCustos: any[] = [];
-      rows.slice(1).forEach((r) => {
-        if (!r[0]) return;
-        novosCustos.push({
-          sku: String(r[0]).trim().toUpperCase(),
-          nome: String(r[1] || 'Produto Importado'),
-          preco_custo: parseFloat(String(r[2]).replace(',','.')) || 0,
-          custo_embalagem: parseFloat(String(r[3]).replace(',','.')) || 0
-        });
-      });
-      setProducts((prev: any[]) => {
-        const map = new Map(prev.map(p => [p.sku, p]));
-        novosCustos.forEach(nc => map.set(nc.sku, nc));
-        return Array.from(map.values());
-      });
-      addLog(`Base de Custos importada via Admin: ${novosCustos.length} SKUs.`, 'success');
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  // 4. Upload Envios Flex
-  const handleUploadFlex = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const idsFlex = new Set<string>();
-      rows.slice(1).forEach(r => { if (r[0]) idsFlex.add(String(r[0]).trim()); });
-
-      setSales((prev: any[]) => prev.map(s => {
-        if (idsFlex.has(s.id_pedido)) {
-          return { ...s, faturamento_liquido_final: Math.max(0, s.faturamento_liquido_final - 12.99) };
-        }
-        return s;
-      }));
-      addLog(`Fretes FLEX abatidos em ${idsFlex.size} pedidos.`, 'success');
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  // 5. Upload Adsense
-  const handleUploadAds = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      const workbook = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
       
-      let count = 0;
-      rows.slice(1).forEach(r => {
-        const canalRef = String(r[0] || '').trim();
-        const valorAds = parseFloat(r[1]) || 0;
-        if (canalRef && valorAds > 0) {
-          setSales((prev: any[]) => prev.map(s => {
-            if (s.canal.toLowerCase() === canalRef.toLowerCase()) {
-              return { ...s, faturamento_liquido_final: Math.max(0, s.faturamento_liquido_final - (valorAds / prev.filter(x => x.canal === s.canal).length || 1)) };
-            }
-            return s;
-          }));
-          count++;
-        }
-      });
-      addLog(`Adsense rateado para ${count} canais.`, 'success');
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
+      let bloqueadosFaturados = 0;
+      let bloqueadosCancelados = 0;
 
-  // 6. Processamento do Canal Vendas Final com Integração ao Supabase
-  const handleUploadVendasCanal = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setIsProcessing(true);
+      const newSales = rows.slice(1).map((row, i) => {
+        if (!row || !row.length) return null;
+        const id_pedido = extractCleanId(row[colToIdx(rule.colIdPedido)]);
 
-    const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPrecoVenda: 'D', colQuantidade: 'E', colEstado: 'F', formulaExcel: 'D2 - (D2 * 0.12) + C2'
-    };
+        if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes'].includes(id_pedido.toLowerCase())) return null;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        
-        const novasVendas: any[] = [];
-        const paraBanco: any[] = []; // Payload para o Supabase
-
-        rows.slice(1).forEach((row, i) => {
-          if (!row || !row.length) return;
-
-          const idPed = row[colToIdx(rule.colIdPedido)] ? String(row[colToIdx(rule.colIdPedido)]).trim() : `PDV-${i}`;
-
-          // Ignora se não estiver nos faturados ou se foi cancelado
-          if (faturadosSet.size > 0 && !faturadosSet.has(idPed)) return;
-          if (canceladosSet.has(idPed)) return;
-
-          const skuVal = row[colToIdx(rule.colSku)] ? String(row[colToIdx(rule.colSku)]).trim().toUpperCase() : 'SKU-GERAL';
-          
-          // UF inteligente
-          const estadoBruto = row[colToIdx(rule.colEstado)] ? String(row[colToIdx(rule.colEstado)]) : 'SP';
-          const estadoConvertido = converterEstadoParaUF(estadoBruto);
-          
-          // Valores numéricos essenciais
-          const quantidade = parseFloat(row[colToIdx(rule.colQuantidade)]) || 1;
-          const pdvUnitario = parseFloat(row[colToIdx(rule.colPrecoVenda)]) || 0;
-          const rebate = rule.colRebate && rule.colRebate !== 'NAO' ? (parseFloat(row[colToIdx(rule.colRebate)]) || 0) : 0;
-
-          // Aplica Fórmula do Liquido (já recebe o rebate em cima da regra se tiver)
-          const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
-          
-          // Abate de Custos do Produto multiplicados pela Quantidade
-          const prodMatch = products.find((p: any) => p.sku === skuVal);
-          const custoProdUnitario = prodMatch ? (Number(prodMatch.preco_custo) || 0) + (Number(prodMatch.custo_embalagem) || 0) : 0;
-          
-          const custoTotalDaLinha = custoProdUnitario * quantidade;
-          const liquidoAposCustos = Math.max(0, repasseBase - custoTotalDaLinha);
-
-          const objVenda = {
-            id_pedido: idPed,
-            data_faturamento: new Date().toISOString().slice(0, 10),
-            canal: selectedChannel,
-            estado: estadoConvertido,
-            sku: skuVal,
-            quantidade: quantidade,
-            preco_venda: pdvUnitario * quantidade, // Faturamento bruto = PDV * Qtd
-            faturamento_liquido_final: liquidoAposCustos
-          };
-
-          novasVendas.push(objVenda);
-          paraBanco.push(objVenda);
-        });
-
-        if (paraBanco.length > 0) {
-          // DISPARA PARA O BANCO DE DADOS
-          const { error } = await supabase.from('tb_vendas').insert(paraBanco);
-
-          if (error) {
-            addLog(`Erro ao injetar vendas no banco: ${error.message}`, 'error');
-          } else {
-            setSales((prev: any) => [...novasVendas, ...prev]);
-            addLog(`Enviadas ${novasVendas.length} vendas de [${selectedChannel}] para o Banco de Dados.`, 'success');
-          }
-        } else {
-          addLog(`Atenção: Nenhum pedido validado para inserir no Supabase.`, 'warning');
+        const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
+        if (faturados.length > 0 && !faturadoMatch) { 
+          bloqueadosFaturados++; 
+          return null; 
         }
 
-      } catch (err: any) {
-        addLog(`Erro ao processar vendas: ${err.message}`, 'error');
-      } finally {
-        setIsProcessing(false);
+        if (cancelados.find((c: any) => c.id === id_pedido)) { 
+          bloqueadosCancelados++; 
+          return null; 
+        }
+
+        const repasse = evaluateExcelFormula(rule.formulaExcel, row);
+        const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
+        const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
+
+        return {
+          id_pedido,
+          data_faturamento: dataFaturamento,
+          canal: selectedChannel,
+          sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
+          quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
+          preco_venda: parseBrFloat(precoVendaRaw),
+          repasse_liquido: repasse 
+        };
+      }).filter(Boolean);
+      
+      if (newSales.length > 0) {
+        setSales((prev: any) => [...newSales, ...prev]);
+        addLog(`Cruzamento (${selectedChannel}): ${newSales.length} inseridos. Bloqueados: ${bloqueadosFaturados} (Não Faturados) e ${bloqueadosCancelados} (Cancelados).`, 'success');
+      } else {
+        addLog(`Atenção: Nenhum pedido validado no cruzamento.`, 'error');
       }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
-  const handleExportDashboard = () => {
-    try {
-      const wb = XLSX.utils.book_new();
-      const wsVendas = XLSX.utils.json_to_sheet(sales);
-      XLSX.utils.book_append_sheet(wb, wsVendas, "Vendas Processadas");
-      const wsSkus = XLSX.utils.json_to_sheet(products);
-      XLSX.utils.book_append_sheet(wb, wsSkus, "Base de SKUs e Custos");
-      XLSX.writeFile(wb, `Exportacao_ApexMetrics_${new Date().toISOString().slice(0,10)}.xlsx`);
-      addLog('Exportação concluída com sucesso.', 'success');
-    } catch (err) {
-      addLog('Erro ao exportar dados.', 'error');
-    }
+  const handleUploadFaturados = (e: any) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      
+      const novosFaturados: any[] = [];
+      const idxId = colToIdx(colFaturadosId);
+      const idxData = colToIdx(colFaturadosData);
+
+      for (let i = 1; i < (rows as any[]).length; i++) {
+        const row = (rows as any[])[i];
+        if (!row) continue;
+        const id_pedido = extractCleanId(row[idxId]);
+        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
+          novosFaturados.push({
+            id: id_pedido,
+            data: parseExcelDate(row[idxData])
+          });
+        }
+      }
+
+      if(novosFaturados.length > 0){
+        setFaturados((prev: any) => {
+          const map = new Map();
+          [...prev, ...novosFaturados].forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+        addLog(`${novosFaturados.length} Faturados lidos com filtro aplicado.`, 'success');
+      }
+    };
+    reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  const handleExecuteClearBase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (clearPassword === INITIAL_ADMIN_PASS) {
-      // Opcional: Se quiser que o botão de limpar também limpe o Supabase, descomente abaixo:
-      // await supabase.from('tb_vendas').delete().neq('id_pedido', '0');
+  const handleUploadCancelados = (e: any) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
       
-      setSales([]);
-      setProducts([]);
-      setFaturadosSet(new Set());
-      setCanceladosSet(new Set());
-      addLog('A Base de Vendas, Custos e Filtros foi limpa na sessão atual.', 'warning');
-      setShowClearModal(false);
-      setClearPassword('');
-    } else {
-      addLog('Falha na limpeza: Senha Master incorreta.', 'error');
+      const novosCancelados: any[] = [];
+      const idxId = colToIdx(colCancelados);
+
+      for (let i = 1; i < (rows as any[]).length; i++) {
+        const row = (rows as any[])[i];
+        if (!row) continue;
+        const id_pedido = extractCleanId(row[idxId]);
+        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
+          novosCancelados.push({ id: id_pedido });
+        }
+      }
+
+      if(novosCancelados.length > 0){
+        setCancelados((prev: any) => {
+          const map = new Map();
+          [...prev, ...novosCancelados].forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+        addLog(`${novosCancelados.length} Cancelados lidos com filtro aplicado.`, 'warning');
+      }
+    };
+    reader.readAsArrayBuffer(file); e.target.value = '';
+  };
+
+  const handleUploadMetas = (e: any) => { 
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      const novasMetas = rows.slice(1).map(r => ({ responsavel: String(r[0]||''), canal: String(r[1]||''), meta_valor: parseBrFloat(r[2]) })).filter(m => m.canal && m.meta_valor > 0);
+      if (novasMetas.length > 0) { setGoals(novasMetas); addLog(`${novasMetas.length} Metas configuradas.`, 'success'); }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const readGeneric = (e: any, setter: any, type: string, mapper: Function) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      const data = rows.slice(1).map(mapper).filter((i:any) => i.val > 0);
+      if(data.length > 0) { setter((p:any)=>[...data.map((d:any)=>d.obj), ...p]); addLog(`${data.length} registos de ${type} inseridos.`, 'success'); }
+    };
+    reader.readAsArrayBuffer(file); e.target.value = '';
+  };
+
+  const clearData = (type: string) => {
+    if(confirm(`Tem a certeza que deseja apagar a base de ${type.toUpperCase()}?`)) {
+      if(type === 'faturados') setFaturados([]);
+      if(type === 'cancelados') setCancelados([]);
+      if(type === 'vendas') setSales([]);
+      if(type === 'flex') setFlexData([]);
+      if(type === 'ads') setAdsData([]);
+      if(type === 'metas') setGoals([]);
+      addLog(`Base de ${type.toUpperCase()} apagada da memória.`, 'warning');
     }
   };
 
   if (!isAdminUnlocked) {
     return (
-      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center mt-10 shadow-2xl">
-        <h2 className="text-xl font-bold text-white mb-4">Área Restrita Admin</h2>
-        <form onSubmit={auth}>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha Master (Dash321)" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl mb-4 text-white text-sm" />
-          <button className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg transition">Desbloquear Central</button>
-        </form>
+      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center shadow-2xl mt-10">
+        <h2 className="text-xl font-bold text-white mb-2">Área Restrita Admin</h2>
+        <form onSubmit={auth}><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha (Dash321)" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl mb-4 text-white" /><button className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl">Desbloquear</button></form>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-         
-         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-500/30 inline-block mb-2">Base de Filtro</span>
-             <h3 className="font-bold text-white text-sm">Pedidos Faturados</h3>
-             <p className="text-xs text-slate-400 mt-1">Garante que apenas vendas enviadas pelo ERP entram no cálculo.</p>
+       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases do ERP</h2>
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
+           <h3 className="font-bold text-emerald-400 text-sm mb-2">Faturados</h3>
+           <div className="flex gap-2 mb-3">
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
+                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data Emissão</span>
+                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
            </div>
-           <label className="cursor-pointer block py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs text-center rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados} />
-             <i className="fa-solid fa-upload mr-2"></i>Importar Faturados
-           </label>
+           
+           <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {faturados.length}</p>
          </div>
 
-         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30 inline-block mb-2">Exclusão</span>
-             <h3 className="font-bold text-white text-sm">Pedidos Cancelados</h3>
-             <p className="text-xs text-slate-400 mt-1">Remove da base os pedidos que não foram concretizados.</p>
+         <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
+           <h3 className="font-bold text-rose-400 text-sm mb-2">Cancelados</h3>
+           <div className="mb-3">
+              <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações)</span>
+              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" />
            </div>
-           <label className="cursor-pointer block py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs text-center rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados} />
-             <i className="fa-solid fa-upload mr-2"></i>Importar Cancelados
-           </label>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30 inline-block mb-2">Dedução CMV</span>
-             <h3 className="font-bold text-white text-sm">Base de Custos (SKU)</h3>
-             <p className="text-xs text-slate-400 mt-1">Insere em lote os custos de produção/embalagem do ERP.</p>
-           </div>
-           <label className="cursor-pointer block py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCustos} />
-             <i className="fa-solid fa-upload mr-2"></i>Importar Custos
-           </label>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 inline-block mb-2">Logística</span>
-             <h3 className="font-bold text-white text-sm">Envios Flex</h3>
-             <p className="text-xs text-slate-400 mt-1">Abate -R$ 12,99 por pedido processado via frota Flex.</p>
-           </div>
-           <label className="cursor-pointer block py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs text-center rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFlex} />
-             <i className="fa-solid fa-upload mr-2"></i>Importar Flex
-           </label>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-block mb-2">Mídia & ADS</span>
-             <h3 className="font-bold text-white text-sm">Investimento Adsense</h3>
-             <p className="text-xs text-slate-400 mt-1">Rateia o custo de anúncios no lucro líquido do canal respetivo.</p>
-           </div>
-           <label className="cursor-pointer block py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs text-center rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadAds} />
-             <i className="fa-solid fa-upload mr-2"></i>Importar Adsense
-           </label>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30 flex flex-col justify-between space-y-3 lg:col-span-1">
-           <div>
-             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/30 inline-block mb-2">Processamento Core</span>
-             <h3 className="font-bold text-white text-sm">Planilha do Canal de Venda</h3>
-             <p className="text-xs text-slate-400 mt-1">Executa fórmula, filtra cancelados e abate CMV (multiplicado pela qtd).</p>
-           </div>
-           <div className="flex flex-col gap-2">
-             <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2.5 bg-slate-950 border border-purple-500/30 rounded-xl text-xs text-purple-300 font-bold">
-               {CHANNELS.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-             </select>
-             <label className={`cursor-pointer block py-2.5 text-white font-bold text-xs text-center rounded-xl transition shadow-lg ${isProcessing ? 'bg-slate-600' : 'bg-purple-600 hover:bg-purple-500'}`}>
-               <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendasCanal} disabled={isProcessing} />
-               <i className={`fa-solid ${isProcessing ? 'fa-spinner fa-spin' : 'fa-play'} mr-2`}></i>
-               {isProcessing ? 'A processar...' : 'Gerar Vendas'}
-             </label>
-           </div>
+           <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Validados: {cancelados.length}</p>
          </div>
        </div>
 
-       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
-         <h3 className="font-bold text-white text-base border-b border-slate-800 pb-2">Manutenção Global</h3>
-         <div className="flex flex-col sm:flex-row gap-4">
-            <button onClick={handleExportDashboard} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition">
-              <i className="fa-solid fa-file-excel mr-2 text-emerald-400"></i> Exportar Base Completa
-            </button>
-            <button onClick={() => setShowClearModal(true)} className="flex-1 py-3 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-900 font-bold rounded-xl text-xs transition">
-              <i className="fa-solid fa-triangle-exclamation mr-2"></i> Expurgo da Base de Dados
-            </button>
+       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 2: Vendas, Custos e Metas</h2>
+       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+         <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30">
+           <h3 className="font-bold text-white text-sm mb-4">Planilha Vendas (Cruzar)</h3>
+           <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2 bg-slate-950 mb-3 text-purple-300 border font-bold">{canais.map((ch: string) => <option key={ch}>{ch}</option>)}</select>
+           <label className="cursor-pointer block py-2 bg-purple-600 text-white font-bold text-xs text-center rounded-xl"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendas}/>Importar Vendas</label>
+         </div>
+
+         <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30">
+           <h3 className="font-bold text-white text-sm mb-4">Débitos Frete FLEX</h3>
+           <p className="text-[9px] text-slate-400 mb-2">A: ID | B: Valor</p>
+           <label className="cursor-pointer block py-2 bg-cyan-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
+         </div>
+
+         <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30">
+           <h3 className="font-bold text-white text-sm mb-4">Custos de ADS</h3>
+           <p className="text-[9px] text-slate-400 mb-2">A: Canal | B: Valor</p>
+           <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
+         </div>
+
+         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
+           <h3 className="font-bold text-white text-sm mb-4">Importar Metas</h3>
+           <p className="text-[9px] text-slate-400 mb-2">A: Resp. | B: Canal | C: Valor</p>
+           <label className="cursor-pointer block py-2 bg-emerald-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadMetas} />Subir Metas</label>
          </div>
        </div>
 
-       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-3">
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider">Console de Auditoria</h3>
-          <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs max-h-40 overflow-auto text-slate-300 space-y-1 border border-slate-800">
-             {logs.map((log: any) => (
-               <div key={log.id} className="flex gap-2">
-                 <span className="text-slate-600">[{log.timestamp}]</span>
-                 <span className={log.type === 'error' ? 'text-red-400' : log.type === 'warning' ? 'text-amber-400' : log.type === 'success' ? 'text-emerald-400' : 'text-slate-300'}>{log.message}</span>
-               </div>
-             ))}
+       {/* ZONA DE EXPURGO (Limpeza de Dados) */}
+       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6">
+          <h3 className="font-bold text-rose-400 text-sm mb-4"><i className="fa-solid fa-trash mr-2"></i>Zona de Limpeza (Expurgo de Dados)</h3>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+            <button onClick={() => clearData('vendas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Vendas</button>
+            <button onClick={() => clearData('faturados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Faturados</button>
+            <button onClick={() => clearData('cancelados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Cancelados</button>
+            <button onClick={() => clearData('flex')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar FLEX</button>
+            <button onClick={() => clearData('ads')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar ADS</button>
+            <button onClick={() => clearData('metas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Metas</button>
           </div>
        </div>
 
-       {showClearModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-               <h3 className="font-bold text-rose-400 text-base flex items-center gap-2"><i className="fa-solid fa-radiation"></i> Ação Crítica</h3>
-               <button onClick={() => setShowClearModal(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
-             </div>
-             <p className="text-xs text-slate-300">
-               Confirmar a limpeza total dos dados importados na sessão atual?
-             </p>
-             <form onSubmit={handleExecuteClearBase} className="space-y-4 pt-2">
-               <div>
-                 <input type="password" required value={clearPassword} onChange={e => setClearPassword(e.target.value)} placeholder="Senha (Dash321)" className="w-full p-2.5 bg-slate-950 border border-rose-500/40 rounded-xl text-xs text-white" />
-               </div>
-               <div className="flex gap-2 justify-end">
-                 <button type="button" onClick={() => setShowClearModal(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold transition">Cancelar</button>
-                 <button type="submit" className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition">Limpar Sessão</button>
-               </div>
-             </form>
+       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 mt-6">
+          <div className="flex justify-between items-center mb-3"><h3 className="font-bold text-white text-sm">Console</h3><button onClick={() => setLogs([])} className="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-700 px-2 py-1 rounded">Limpar</button></div>
+          <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs max-h-48 overflow-y-auto text-slate-300 space-y-2 border border-slate-800">
+             {logs.map((log: any) => (<div key={log.id}><span className="text-slate-600 mr-2">[{log.timestamp}]</span> <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : log.type === 'error' ? 'text-rose-400' : 'text-slate-300'}>{log.message}</span></div>))}
           </div>
-        </div>
-      )}
+       </div>
     </div>
   );
 }
