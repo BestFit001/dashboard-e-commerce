@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { useAppContext, INITIAL_ADMIN_PASS, CHANNELS } from '@/context/AppContext';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
@@ -180,7 +181,7 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // 6. Processamento do Canal Vendas Final
+  // 6. Processamento do Canal Vendas Final com Integração ao Supabase
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -191,12 +192,14 @@ export default function AdminPage() {
     };
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const novasVendas: any[] = [];
+        const paraBanco: any[] = []; // Payload para o Supabase
+
         rows.slice(1).forEach((row, i) => {
           if (!row || !row.length) return;
 
@@ -227,7 +230,7 @@ export default function AdminPage() {
           const custoTotalDaLinha = custoProdUnitario * quantidade;
           const liquidoAposCustos = Math.max(0, repasseBase - custoTotalDaLinha);
 
-          novasVendas.push({
+          const objVenda = {
             id_pedido: idPed,
             data_faturamento: new Date().toISOString().slice(0, 10),
             canal: selectedChannel,
@@ -236,11 +239,26 @@ export default function AdminPage() {
             quantidade: quantidade,
             preco_venda: pdvUnitario * quantidade, // Faturamento bruto = PDV * Qtd
             faturamento_liquido_final: liquidoAposCustos
-          });
+          };
+
+          novasVendas.push(objVenda);
+          paraBanco.push(objVenda);
         });
 
-        setSales((prev: any) => [...novasVendas, ...prev]);
-        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} vendas. (CMV deduzido p/ quantidade)`, 'success');
+        if (paraBanco.length > 0) {
+          // DISPARA PARA O BANCO DE DADOS
+          const { error } = await supabase.from('tb_vendas').insert(paraBanco);
+
+          if (error) {
+            addLog(`Erro ao injetar vendas no banco: ${error.message}`, 'error');
+          } else {
+            setSales((prev: any) => [...novasVendas, ...prev]);
+            addLog(`Enviadas ${novasVendas.length} vendas de [${selectedChannel}] para o Banco de Dados.`, 'success');
+          }
+        } else {
+          addLog(`Atenção: Nenhum pedido validado para inserir no Supabase.`, 'warning');
+        }
+
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
       } finally {
@@ -265,14 +283,17 @@ export default function AdminPage() {
     }
   };
 
-  const handleExecuteClearBase = (e: React.FormEvent) => {
+  const handleExecuteClearBase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (clearPassword === INITIAL_ADMIN_PASS) {
+      // Opcional: Se quiser que o botão de limpar também limpe o Supabase, descomente abaixo:
+      // await supabase.from('tb_vendas').delete().neq('id_pedido', '0');
+      
       setSales([]);
       setProducts([]);
       setFaturadosSet(new Set());
       setCanceladosSet(new Set());
-      addLog('A Base de Vendas, Custos e Filtros foi completamente limpa.', 'warning');
+      addLog('A Base de Vendas, Custos e Filtros foi limpa na sessão atual.', 'warning');
       setShowClearModal(false);
       setClearPassword('');
     } else {
@@ -407,7 +428,7 @@ export default function AdminPage() {
                <button onClick={() => setShowClearModal(false)} className="text-slate-400 hover:text-white"><i className="fa-solid fa-xmark"></i></button>
              </div>
              <p className="text-xs text-slate-300">
-               Confirmar a exclusão total das Vendas e Custos? <strong>Isto não pode ser desfeito.</strong>
+               Confirmar a limpeza total dos dados importados na sessão atual?
              </p>
              <form onSubmit={handleExecuteClearBase} className="space-y-4 pt-2">
                <div>
@@ -415,7 +436,7 @@ export default function AdminPage() {
                </div>
                <div className="flex gap-2 justify-end">
                  <button type="button" onClick={() => setShowClearModal(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold transition">Cancelar</button>
-                 <button type="submit" className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition">Purgar Dados</button>
+                 <button type="submit" className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition">Limpar Sessão</button>
                </div>
              </form>
           </div>
