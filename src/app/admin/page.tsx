@@ -6,18 +6,16 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    setSales, setFlexData, setAdsData, setGoals, faturados, setFaturados, cancelados, setCancelados, addLog, logs 
+    setSales, setFlexData, setAdsData, faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState('');
   
-  // Colunas configuradas conforme o seu ERP
   const [colFaturadosId, setColFaturadosId] = useState('AI');
   const [colFaturadosData, setColFaturadosData] = useState('D');
   const [colCancelados, setColCancelados] = useState('AI');
 
-  // Garante que o canal inicial é selecionado assim que a lista carregar
   React.useEffect(() => {
     if (canais && canais.length > 0 && !selectedChannel) {
       setSelectedChannel(canais[0]);
@@ -197,20 +195,6 @@ export default function AdminPage() {
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  const handleUploadMetas = (e: any) => { 
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const novasMetas = rows.slice(1).map(r => ({ responsavel: String(r[0]||''), canal: String(r[1]||''), meta_valor: parseBrFloat(r[2]) })).filter(m => m.canal && m.meta_valor > 0);
-      if (novasMetas.length > 0) { setGoals(novasMetas); addLog(`${novasMetas.length} Metas configuradas.`, 'success'); }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
   const readGeneric = (e: any, setter: any, type: string, mapper: Function) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -230,7 +214,6 @@ export default function AdminPage() {
       if(type === 'vendas') setSales([]);
       if(type === 'flex') setFlexData([]);
       if(type === 'ads') setAdsData([]);
-      if(type === 'metas') setGoals([]);
       addLog(`Base de ${type.toUpperCase()} apagada da memória.`, 'warning');
     }
   };
@@ -276,8 +259,8 @@ export default function AdminPage() {
          </div>
        </div>
 
-       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 2: Vendas, Custos e Metas</h2>
-       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 2: Vendas e Custos</h2>
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Planilha Vendas (Cruzar)</h3>
            <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2 bg-slate-950 mb-3 text-purple-300 border font-bold">{canais.map((ch: string) => <option key={ch}>{ch}</option>)}</select>
@@ -295,24 +278,17 @@ export default function AdminPage() {
            <p className="text-[9px] text-slate-400 mb-2">A: Canal | B: Valor</p>
            <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
          </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
-           <h3 className="font-bold text-white text-sm mb-4">Importar Metas</h3>
-           <p className="text-[9px] text-slate-400 mb-2">A: Resp. | B: Canal | C: Valor</p>
-           <label className="cursor-pointer block py-2 bg-emerald-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadMetas} />Subir Metas</label>
-         </div>
        </div>
 
        {/* ZONA DE EXPURGO (Limpeza de Dados) */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6">
           <h3 className="font-bold text-rose-400 text-sm mb-4"><i className="fa-solid fa-trash mr-2"></i>Zona de Limpeza (Expurgo de Dados)</h3>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-            <button onClick={() => clearData('vendas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Vendas</button>
-            <button onClick={() => clearData('faturados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Faturados</button>
-            <button onClick={() => clearData('cancelados')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Cancelados</button>
-            <button onClick={() => clearData('flex')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar FLEX</button>
-            <button onClick={() => clearData('ads')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar ADS</button>
-            <button onClick={() => clearData('metas')} className="px-2 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Metas</button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => clearData('vendas')} className="px-3 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Vendas</button>
+            <button onClick={() => clearData('faturados')} className="px-3 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Faturados</button>
+            <button onClick={() => clearData('cancelados')} className="px-3 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar Cancelados</button>
+            <button onClick={() => clearData('flex')} className="px-3 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar FLEX</button>
+            <button onClick={() => clearData('ads')} className="px-3 py-2 bg-slate-950 hover:bg-rose-900 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-lg transition">Apagar ADS</button>
           </div>
        </div>
 

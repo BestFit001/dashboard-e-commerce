@@ -117,7 +117,7 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Ganho Real: Repasse - CMV(Emb+Prod) - Fretes Flex - ADS</p>
+          <p className="text-xs text-slate-400 mt-1">Metas sobre Fat. Bruto | Lucro Líquido: Repasse - CMV - Fretes Flex - ADS</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
@@ -140,12 +140,12 @@ export default function DashboardPage() {
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
             </div>
           )}
-          {/* Filtro Canais */}
+          {/* Filtro Canais Corrigido: Agora usa a lista global 'canais' */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
               <option value="TODOS">Todos os Canais</option>
-              {channelRules.map((r: any) => <option key={r.canal} value={r.canal}>{r.canal}</option>)}
+              {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
             </select>
           </div>
           <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg">
@@ -168,7 +168,7 @@ export default function DashboardPage() {
           <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toFixed(2).replace('.', ',')}</h3>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20">
-          <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+          <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Final</span>
           <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toFixed(2).replace('.', ',')}</h3>
         </div>
       </div>
@@ -202,10 +202,21 @@ export default function DashboardPage() {
       </div>
 
       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 overflow-x-auto">
-        <h3 className="font-bold text-white text-base mb-4">Fragmentação por Pedido (Ganho Real)</h3>
+        <h3 className="font-bold text-white text-base mb-4">Fragmentação por Pedido (Análise de Margem)</h3>
         <table className="w-full text-left text-xs text-slate-200">
           <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-            <tr><th className="py-3 pl-3">Data</th><th>ID Pedido</th><th>Canal</th><th>SKU (Qtd)</th><th>PDV</th><th>Repasse</th><th>CMV</th><th className="text-indigo-300">Ganho Bruto</th><th className="text-rose-300">FLEX</th><th className="text-emerald-400 font-extrabold pr-3 text-right">Líquido Real</th></tr>
+            <tr>
+              <th className="py-3 pl-3">Data</th>
+              <th>ID Pedido</th>
+              <th>Canal</th>
+              <th>SKU (Qtd)</th>
+              <th>Fat. Bruto</th>
+              <th>Repasse Líq.</th>
+              <th>Custo CMV</th>
+              <th className="text-indigo-300">Lucro Bruto</th>
+              <th className="text-rose-300">Frete FLEX</th>
+              <th className="text-emerald-400 font-extrabold pr-3 text-right">Lucro Líq. Final</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-medium">
             {enrichedSales.map((s: any, i: number) => (
@@ -215,7 +226,7 @@ export default function DashboardPage() {
                 <td className="py-2.5">{s.canal}</td>
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toFixed(2).replace('.', ',')}</td>
-                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
+                <td className="py-2.5 text-purple-300">R$ {(s.repasse_liquido || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 font-bold text-indigo-300">R$ {(s.ganhoBruto || 0).toFixed(2).replace('.', ',')}</td>
                 <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toFixed(2).replace('.', ',')}</td>
