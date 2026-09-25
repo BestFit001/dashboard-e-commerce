@@ -9,7 +9,11 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  const [users, setUsers] = useState<any[]>([{ username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' }]);
+  // Gisele configurada como Admin por predefinição
+  const [users, setUsers] = useState<any[]>([
+    { username: 'Gisele@usebestfit.com.br', password: 'Best2026**', role: 'admin' },
+    { username: 'felipe.camargo@usebestfit.com.br', password: '123', role: 'admin' }
+  ]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
@@ -38,7 +42,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
       const { data: usersDb } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'users').single();
-      if (usersDb && usersDb.dados) setUsers(usersDb.dados);
+      if (usersDb && usersDb.dados) {
+        // Garante que a Gisele é sempre admin caso venha da base antiga
+        const updatedUsers = usersDb.dados.map((u: any) => 
+          u.username.toLowerCase() === 'gisele@usebestfit.com.br' ? { ...u, role: 'admin' } : u
+        );
+        setUsers(updatedUsers);
+      }
 
       const { data: globalState } = await supabase.from('tb_estado_global').select('*');
       if (globalState) {
@@ -51,7 +61,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
-      // BUSCA PAGINADA DE PRODUTOS PARA PASSAR DOS 1000 LIMITE DO SUPABASE
+      // BUSCA PAGINADA DE PRODUTOS PARA PASSAR DOS 1000 LIMITE DO SUPABASE (Suporta 10k+ SKUs)
       let allProducts: any[] = [];
       let page = 0;
       let fetchMore = true;
