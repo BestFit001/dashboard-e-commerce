@@ -13,6 +13,7 @@ export default function AdminPage() {
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const [colFaturadosId, setColFaturadosId] = useState('AI');
   const [colFaturadosData, setColFaturadosData] = useState('D');
@@ -76,66 +77,91 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  const persistToCloud = async (chave: string, dados: any) => {
-    try {
-      await supabase.from('tb_estado_global').upsert([{ chave, dados }]);
-    } catch (e) {
-      console.error("Erro ao salvar na nuvem:", e);
-    }
-  };
-
-  // UPLOAD DE VENDAS
+  // UPLOAD DE VENDAS FLEXÍVEL (IMPORTA TUDO E ACUMULA EM LOTE NA NUVEM)
   const handleUploadVendas = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
+    setIsProcessing(true);
+
     const rule = channelRules.find((r: any) => r.canal === selectedChannel);
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const workbook = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-      const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
-      
-      let bloqueadosFaturados = 0;
-      let bloqueadosCancelados = 0;
+      try {
+        const workbook = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+        const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+        
+        let ignoradosCancelados = 0;
+        const newSales: any[] = [];
 
-      const newSales = rows.slice(1).map((row, i) => {
-        if (!row || !row.length) return null;
-        const id_pedido = extractCleanId(row[colToIdx(rule.colIdPedido)]);
+        // Varre a planilha inteira procurando linhas com ID de pedido válido
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || !row.length) continue;
+          
+          const rawIdCell = row[colToIdx(rule.colIdPedido)];
+          const id_pedido = extractCleanId(rawIdCell);
 
-        if(!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes'].includes(id_pedido.toLowerCase())) return null;
+          // Ignora cabeçalhos ou linhas vazias
+          if (!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes', 'n.º de venda'].includes(id_pedido.toLowerCase())) {
+            continue;
+          }
 
-        const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
-        if (faturados.length > 0 && !faturadoMatch) { bloqueadosFaturados++; return null; }
-        if (cancelados.find((c: any) => c.id === id_pedido)) { bloqueadosCancelados++; return null; }
+          // Se houver base de cancelados, bloqueia apenas os cancelados. Faturados passa livre.
+          if (cancelados.find((c: any) => c.id === id_pedido)) { 
+            ignoradosCancelados++; 
+            continue; 
+          }
 
-        const repasse = evaluateExcelFormula(rule.formulaExcel, row);
-        const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
-        const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
+          const repasse = evaluateExcelFormula(rule.formulaExcel, row);
+          const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
+          
+          // Procura data nos faturados se houver, senão usa a data atual
+          const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
+          const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
 
-        return {
-          id_pedido,
-          data_faturamento: dataFaturamento,
-          canal: selectedChannel,
-          sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
-          quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
-          preco_venda: parseBrFloat(precoVendaRaw),
-          repasse_liquido: repasse 
-        };
-      }).filter(Boolean);
-      
-      if (newSales.length > 0) {
-        const updatedSales = [...newSales, ...sales];
-        setSales(updatedSales);
-        await persistToCloud('vendas', updatedSales);
-        addLog(`Cruzamento (${selectedChannel}): ${newSales.length} salvos na nuvem.`, 'success');
-      } else {
-        addLog(`Atenção: Nenhum pedido validado no cruzamento.`, 'error');
+          newSales.push({
+            id_pedido,
+            data_faturamento: dataFaturamento,
+            canal: selectedChannel,
+            sku: String(row[colToIdx(rule.colSku)] || 'SKU-GENERAL').trim().toUpperCase(),
+            quantidade: parseInt(row[colToIdx(rule.colQuantidade)], 10) || 1,
+            preco_venda: parseBrFloat(precoVendaRaw),
+            repasse_liquido: repasse 
+          });
+        }
+        
+        if (newSales.length > 0) {
+          // Combina com as vendas já existentes na memória para não sobrepor/apagar as de outros canais ou lotes
+          const map = new Map();
+          [...sales, ...newSales].forEach(s => map.set(s.id_pedido, s));
+          const updatedSales = Array.from(map.values());
+
+          // Salva o lote completo diretamente no Supabase (`tb_estado_global`)
+          const { error } = await supabase.from('tb_estado_global').upsert([{
+            chave: 'vendas',
+            dados: updatedSales
+          }], { onConflict: 'chave' });
+
+          if (error) {
+            addLog(`Erro ao gravar no Supabase: ${error.message}`, 'error');
+            alert(`Erro Supabase: ${error.message}`);
+          } else {
+            setSales(updatedSales);
+            addLog(`Sucesso! ${newSales.length} pedidos importados e salvos na nuvem. (Cancelados ignorados: ${ignoradosCancelados})`, 'success');
+          }
+        } else {
+          addLog(`Atenção: Nenhum pedido válido encontrado. Verifique se a coluna do ID do Pedido (Ex: A) está certa nas Regras.`, 'error');
+        }
+      } catch (err: any) {
+        addLog(`Erro crítico no processamento: ${err.message}`, 'error');
+      } finally {
+        setIsProcessing(false);
       }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
-  // UPLOAD DE FATURADOS
   const handleUploadFaturados = (e: any) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -147,11 +173,11 @@ export default function AdminPage() {
       const idxId = colToIdx(colFaturadosId);
       const idxData = colToIdx(colFaturadosData);
 
-      for (let i = 1; i < (rows as any[]).length; i++) {
+      for (let i = 0; i < (rows as any[]).length; i++) {
         const row = (rows as any[])[i];
         if (!row) continue;
         const id_pedido = extractCleanId(row[idxId]);
-        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
+        if (id_pedido && !['id', 'pedido', 'observacoes', 'id nota'].includes(id_pedido.toLowerCase())) {
           novosFaturados.push({ id: id_pedido, data: parseExcelDate(row[idxData]) });
         }
       }
@@ -161,15 +187,14 @@ export default function AdminPage() {
         [...faturados, ...novosFaturados].forEach(item => map.set(item.id, item));
         const finalArr = Array.from(map.values());
         
+        await supabase.from('tb_estado_global').upsert([{ chave: 'faturados', dados: finalArr }], { onConflict: 'chave' });
         setFaturados(finalArr);
-        await persistToCloud('faturados', finalArr);
-        addLog(`${novosFaturados.length} Faturados salvos na nuvem.`, 'success');
+        addLog(`${novosFaturados.length} Faturados carregados e salvos na nuvem.`, 'success');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  // UPLOAD DE CANCELADOS
   const handleUploadCancelados = (e: any) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -180,7 +205,7 @@ export default function AdminPage() {
       const novosCancelados: any[] = [];
       const idxId = colToIdx(colCancelados);
 
-      for (let i = 1; i < (rows as any[]).length; i++) {
+      for (let i = 0; i < (rows as any[]).length; i++) {
         const row = (rows as any[])[i];
         if (!row) continue;
         const id_pedido = extractCleanId(row[idxId]);
@@ -194,39 +219,41 @@ export default function AdminPage() {
         [...cancelados, ...novosCancelados].forEach(item => map.set(item.id, item));
         const finalArr = Array.from(map.values());
 
+        await supabase.from('tb_estado_global').upsert([{ chave: 'cancelados', dados: finalArr }], { onConflict: 'chave' });
         setCancelados(finalArr);
-        await persistToCloud('cancelados', finalArr);
         addLog(`${novosCancelados.length} Cancelados salvos na nuvem.`, 'warning');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  // UPLOAD GENÉRICO (FLEX / ADS)
-  const readGeneric = (e: any, setter: any, currentData: any[], type: string, cloudKey: string, mapper: (row: any) => any) => {
+  const readGeneric = (e: any, setter: any, currentData: any[], type: string, keyName: string, mapper: (row: any) => any) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const data = rows.slice(1).map(mapper).filter((i:any) => i.val > 0);
+      const data = rows.map(mapper).filter((i:any) => i && i.val > 0);
       
       if(data.length > 0) {
         const objs = data.map((d:any)=>d.obj);
-        const finalArr = [...objs, ...currentData];
+        const map = new Map();
+        [...currentData, ...objs].forEach(item => map.set(item.id_pedido || item.canal, item));
+        const finalArr = Array.from(map.values());
+
+        await supabase.from('tb_estado_global').upsert([{ chave: keyName, dados: finalArr }], { onConflict: 'chave' });
         setter(finalArr);
-        await persistToCloud(cloudKey, finalArr);
         addLog(`${data.length} registos de ${type} salvos na nuvem.`, 'success');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
 
-  const clearData = async (type: string, cloudKey: string, setter: any) => {
+  const clearData = async (type: string, keyName: string, setter: any) => {
     if(confirm(`Tem a certeza que deseja apagar a base de ${type.toUpperCase()}?`)) {
       setter([]);
-      await persistToCloud(cloudKey, []);
-      addLog(`Base de ${type.toUpperCase()} apagada.`, 'warning');
+      await supabase.from('tb_estado_global').delete().eq('chave', keyName);
+      addLog(`Base de ${type.toUpperCase()} limpa.`, 'warning');
     }
   };
 
@@ -241,7 +268,7 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases do ERP (Nuvem Global)</h2>
+       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases do ERP (Supabase)</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
            <h3 className="font-bold text-emerald-400 text-sm mb-2">Faturados</h3>
@@ -257,7 +284,7 @@ export default function AdminPage() {
            </div>
            
            <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
-           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Salvos: {faturados.length}</p>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Carregados: {faturados.length}</p>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
@@ -267,7 +294,7 @@ export default function AdminPage() {
               <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" />
            </div>
            <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
-           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Salvos: {cancelados.length}</p>
+           <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Carregados: {cancelados.length}</p>
          </div>
        </div>
 
@@ -276,7 +303,10 @@ export default function AdminPage() {
          <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Planilha Vendas (Cruzar)</h3>
            <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2 bg-slate-950 mb-3 text-purple-300 border font-bold">{canais.map((ch: string) => <option key={ch}>{ch}</option>)}</select>
-           <label className="cursor-pointer block py-2 bg-purple-600 text-white font-bold text-xs text-center rounded-xl"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendas}/>Importar Vendas</label>
+           <label className={`cursor-pointer block py-2 text-white font-bold text-xs text-center rounded-xl transition ${isProcessing ? 'bg-slate-600' : 'bg-purple-600 hover:bg-purple-500'}`}>
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendas} disabled={isProcessing}/>
+             {isProcessing ? 'A processar lotes...' : 'Importar e Gravar Vendas'}
+           </label>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30">
