@@ -53,18 +53,6 @@ export default function AdminPage() {
     return String(val).trim().substring(0, 10);
   };
 
-  const extractCleanId = (rawStr: string) => {
-    const rawId = String(rawStr || '').trim();
-    const regexMatch = rawId.match(/n[úu]mero\s+([0-9\-]+)/i);
-    let finalId = '';
-    if (regexMatch && regexMatch[1]) {
-      finalId = regexMatch[1];
-    } else {
-      finalId = rawId.split(/[\s;|,\|]+/)[0];
-    }
-    return finalId;
-  };
-
   const evaluateExcelFormula = (formulaStr: string, row: any) => {
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
@@ -77,7 +65,7 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // UPLOAD DE VENDAS COM INTERPRETAÇÃO DE PACOTES / CARRINHOS
+  // UPLOAD DE VENDAS COM TRAVA RIGOROSA E LÓGICA DE CARRINHO
   const handleUploadVendas = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -91,77 +79,66 @@ export default function AdminPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
         
         let ignoradosCancelados = 0;
+        let ignoradosNaoFaturados = 0;
+        let lixoIgnorado = 0;
         const newSales: any[] = [];
 
-        let i = 0;
-        while (i < rows.length) {
+        for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
-          if (!row || !row.length) { i++; continue; }
-
+          if (!row || !row.length) continue;
+          
           const rawIdCell = row[colToIdx(rule.colIdPedido)];
-          const id_pedido = extractCleanId(rawIdCell);
+          const rawIdStr = String(rawIdCell || '').trim();
 
-          if (!id_pedido || ['id', 'pedido', 'venda', 'código', 'undefined', 'observacoes', 'n.º de venda'].includes(id_pedido.toLowerCase())) {
-            i++; continue;
+          // 1. Filtro Anti-Lixo: Tem que ter pelo menos um número para ser considerado um ID (Ignora "Neste", "Vendas", etc)
+          if (!/\d/.test(rawIdStr)) {
+            lixoIgnorado++;
+            continue;
           }
 
-          if (cancelados.find((c: any) => c.id === id_pedido)) { 
-            ignoradosCancelados++; 
-            i++; continue; 
+          // 2. Extrai apenas os números puros do ID para fazer o de/para exato com o ERP
+          const baseNumericId = rawIdStr.replace(/[^0-9]/g, '');
+          if (!baseNumericId) continue;
+
+          // 3. Regra de Carrinho: Verifica se é carrinho e adiciona a tag se for
+          const isCart = rawIdStr.toLowerCase().includes('carrinho');
+          const finalIdPedido = isCart ? `${baseNumericId}-CARRINHO` : baseNumericId;
+
+          // 4. Cruzamento Rigoroso com a base de Faturados
+          const faturadoMatch = faturados.find((f: any) => {
+            const fIdNumeric = String(f.id).replace(/[^0-9]/g, '');
+            return fIdNumeric === baseNumericId;
+          });
+
+          // SE TEM DADOS EM FATURADOS E ESTE PEDIDO NÃO ESTÁ LÁ, BLOQUEIA IMEDIATAMENTE.
+          if (faturados.length > 0 && !faturadoMatch) {
+            ignoradosNaoFaturados++;
+            continue;
+          }
+
+          // Verifica se está na lista de Cancelados
+          if (cancelados.find((c: any) => String(c.id).replace(/[^0-9]/g, '') === baseNumericId)) {
+            ignoradosCancelados++;
+            continue;
           }
 
           const repasse = evaluateExcelFormula(rule.formulaExcel, row);
           const precoVendaRaw = row[colToIdx(rule.colPdv || 'E')];
-          const faturadoMatch = faturados.find((f: any) => f.id === id_pedido);
+          const qtdRaw = row[colToIdx(rule.colQuantidade || 'G')];
+          const quantidade = parseInt(String(qtdRaw).replace(/[^0-9]/g, ''), 10) || 1;
+          const sku = String(row[colToIdx(rule.colSku || 'B')] || 'SKU-GENERAL').trim().toUpperCase();
+
           const dataFaturamento = faturadoMatch ? faturadoMatch.data : new Date().toISOString().slice(0, 10);
 
-          // Verifica se é um pacote/carrinho (ex: "Pacote de 2 produtos")
-          const statusOrDesc = String(row[3] || row[4] || '').toLowerCase(); // Coluna D ou E
-          const packageMatch = statusOrDesc.match(/pacote de (\d+) produt/i);
-          const numItemsInPackage = packageMatch ? parseInt(packageMatch[1], 10) : 0;
-
-          if (numItemsInPackage > 1) {
-            // É um carrinho! Vamos ler as próximas N linhas para capturar os SKUs
-            let itemsProcessed = 0;
-            let subIndex = 1;
-            while (subIndex <= numItemsInPackage && (i + subIndex) < rows.length) {
-              const subRow = rows[i + subIndex];
-              if (subRow) {
-                const subSku = String(subRow[colToIdx(rule.colSku || 'W')] || '').trim().toUpperCase();
-                const subQtd = parseInt(String(subRow[colToIdx(rule.colQuantidade || 'H')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
-                
-                if (subSku && subSku !== 'SKU-GENERAL') {
-                  newSales.push({
-                    id_pedido,
-                    data_faturamento: dataFaturamento,
-                    canal: selectedChannel,
-                    sku: subSku,
-                    quantidade: subQtd,
-                    preco_venda: itemsProcessed === 0 ? parseBrFloat(precoVendaRaw) : 0, // Valor na primeira linha do pacote
-                    repasse_liquido: itemsProcessed === 0 ? repasse : 0
-                  });
-                  itemsProcessed++;
-                }
-              }
-              subIndex++;
-            }
-            i += numItemsInPackage; // Pula as linhas do pacote processadas
-          } else {
-            // Venda normal de item único
-            const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
-            const sku = String(row[colToIdx(rule.colSku || 'B')] || 'SKU-GENERAL').trim().toUpperCase();
-
-            newSales.push({
-              id_pedido,
-              data_faturamento: dataFaturamento,
-              canal: selectedChannel,
-              sku,
-              quantidade,
-              preco_venda: parseBrFloat(precoVendaRaw),
-              repasse_liquido: repasse 
-            });
-          }
-          i++;
+          newSales.push({
+            id_pedido: finalIdPedido,
+            data_faturamento: dataFaturamento,
+            canal: selectedChannel,
+            sku,
+            quantidade,
+            preco_venda: parseBrFloat(precoVendaRaw),
+            repasse_liquido: repasse 
+          });
         }
         
         if (newSales.length > 0) {
@@ -171,22 +148,20 @@ export default function AdminPage() {
           
           const updatedSales = Array.from(map.values());
 
-          const { error } = await supabase.from('tb_estado_global').upsert([{
-            chave: 'vendas',
-            dados: updatedSales
-          }], { onConflict: 'chave' });
+          const { error } = await supabase.from('tb_estado_global').upsert([{ chave: 'vendas', dados: updatedSales }], { onConflict: 'chave' });
 
           if (error) {
             addLog(`Erro ao gravar no Supabase: ${error.message}`, 'error');
+            alert(`Erro Supabase: ${error.message}`);
           } else {
             setSales(updatedSales);
-            addLog(`Sucesso! ${newSales.length} itens de vendas processados (Pacotes interpretados).`, 'success');
+            addLog(`Sucesso! ${newSales.length} linhas importadas. Bloqueados: ${ignoradosNaoFaturados} (Ñ Faturados), ${ignoradosCancelados} (Cancelados), ${lixoIgnorado} (Lixo Excel).`, 'success');
           }
         } else {
-          addLog(`Atenção: Nenhum pedido válido encontrado.`, 'error');
+          addLog(`Atenção: Nenhuma linha passou na Trava de Faturados. Total bloqueado: ${ignoradosNaoFaturados}`, 'error');
         }
       } catch (err: any) {
-        addLog(`Erro crítico: ${err.message}`, 'error');
+        addLog(`Erro crítico no processamento: ${err.message}`, 'error');
       } finally {
         setIsProcessing(false);
       }
@@ -201,6 +176,7 @@ export default function AdminPage() {
     reader.onload = async (evt) => {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      
       const novosFaturados: any[] = [];
       const idxId = colToIdx(colFaturadosId);
       const idxData = colToIdx(colFaturadosData);
@@ -208,9 +184,11 @@ export default function AdminPage() {
       for (let i = 0; i < (rows as any[]).length; i++) {
         const row = (rows as any[])[i];
         if (!row) continue;
-        const id_pedido = extractCleanId(row[idxId]);
-        if (id_pedido && !['id', 'pedido', 'observacoes', 'id nota'].includes(id_pedido.toLowerCase())) {
-          novosFaturados.push({ id: id_pedido, data: parseExcelDate(row[idxData]) });
+        const rawId = String(row[idxId] || '').trim();
+        
+        // Exige número no ID do Faturado também
+        if (rawId && /\d/.test(rawId) && !['id', 'pedido', 'observacoes', 'id nota'].includes(rawId.toLowerCase())) {
+          novosFaturados.push({ id: rawId, data: parseExcelDate(row[idxData]) });
         }
       }
 
@@ -218,9 +196,10 @@ export default function AdminPage() {
         const map = new Map();
         [...faturados, ...novosFaturados].forEach(item => map.set(item.id, item));
         const finalArr = Array.from(map.values());
+        
         await supabase.from('tb_estado_global').upsert([{ chave: 'faturados', dados: finalArr }], { onConflict: 'chave' });
         setFaturados(finalArr);
-        addLog(`${novosFaturados.length} Faturados salvos na nuvem.`, 'success');
+        addLog(`${novosFaturados.length} IDs Faturados carregados para a trava de segurança.`, 'success');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
@@ -232,15 +211,17 @@ export default function AdminPage() {
     reader.onload = async (evt) => {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      
       const novosCancelados: any[] = [];
       const idxId = colToIdx(colCancelados);
 
       for (let i = 0; i < (rows as any[]).length; i++) {
         const row = (rows as any[])[i];
         if (!row) continue;
-        const id_pedido = extractCleanId(row[idxId]);
-        if (id_pedido && !['id', 'pedido', 'observacoes'].includes(id_pedido.toLowerCase())) {
-          novosCancelados.push({ id: id_pedido });
+        const rawId = String(row[idxId] || '').trim();
+        
+        if (rawId && /\d/.test(rawId)) {
+          novosCancelados.push({ id: rawId });
         }
       }
 
@@ -248,9 +229,10 @@ export default function AdminPage() {
         const map = new Map();
         [...cancelados, ...novosCancelados].forEach(item => map.set(item.id, item));
         const finalArr = Array.from(map.values());
+
         await supabase.from('tb_estado_global').upsert([{ chave: 'cancelados', dados: finalArr }], { onConflict: 'chave' });
         setCancelados(finalArr);
-        addLog(`${novosCancelados.length} Cancelados salvos na nuvem.`, 'warning');
+        addLog(`${novosCancelados.length} IDs Cancelados salvos na nuvem.`, 'warning');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
@@ -263,14 +245,16 @@ export default function AdminPage() {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
       const data = rows.map(mapper).filter((i:any) => i && i.val > 0);
+      
       if(data.length > 0) {
         const objs = data.map((d:any)=>d.obj);
         const map = new Map();
         [...currentData, ...objs].forEach(item => map.set(item.id_pedido || item.canal, item));
         const finalArr = Array.from(map.values());
+
         await supabase.from('tb_estado_global').upsert([{ chave: keyName, dados: finalArr }], { onConflict: 'chave' });
         setter(finalArr);
-        addLog(`${data.length} registos de ${type} salvos.`, 'success');
+        addLog(`${data.length} registos de ${type} salvos na nuvem.`, 'success');
       }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
@@ -300,16 +284,26 @@ export default function AdminPage() {
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30">
            <h3 className="font-bold text-emerald-400 text-sm mb-2">Faturados</h3>
            <div className="flex gap-2 mb-3">
-              <div><span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span><input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" /></div>
-              <div><span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data</span><input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" /></div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span>
+                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data</span>
+                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border rounded-lg" />
+              </div>
            </div>
+           
            <label className="cursor-pointer block text-center px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados</label>
            <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Carregados: {faturados.length}</p>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
            <h3 className="font-bold text-rose-400 text-sm mb-2">Cancelados</h3>
-           <div className="mb-3"><span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span><input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" /></div>
+           <div className="mb-3">
+              <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span>
+              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border rounded-lg" />
+           </div>
            <label className="cursor-pointer block text-center px-4 py-2 bg-rose-600 text-white font-bold text-xs rounded-lg"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados</label>
            <p className="text-[10px] text-slate-400 mt-2 text-center">IDs Carregados: {cancelados.length}</p>
          </div>
@@ -328,11 +322,13 @@ export default function AdminPage() {
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Débitos Frete FLEX</h3>
+           <p className="text-[9px] text-slate-400 mb-2">A: ID | B: Valor</p>
            <label className="cursor-pointer block py-2 bg-cyan-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, flexData, 'FLEX', 'flex', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />Importar Flex</label>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30">
            <h3 className="font-bold text-white text-sm mb-4">Custos de ADS</h3>
+           <p className="text-[9px] text-slate-400 mb-2">A: Canal | B: Valor</p>
            <label className="cursor-pointer block py-2 bg-amber-600 text-white font-bold text-xs text-center rounded-xl mt-auto"><input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, adsData, 'ADS', 'ads', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />Importar ADS</label>
          </div>
        </div>
@@ -351,7 +347,7 @@ export default function AdminPage() {
        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 mt-6">
           <div className="flex justify-between items-center mb-3"><h3 className="font-bold text-white text-sm">Console</h3><button onClick={() => setLogs([])} className="text-[10px] text-slate-500 hover:text-slate-300 border border-slate-700 px-2 py-1 rounded">Limpar</button></div>
           <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs max-h-48 overflow-y-auto text-slate-300 space-y-2 border border-slate-800">
-             {logs.map((log: any) => (<div key={log.id}><span className="text-slate-600 mr-2">[{log.timestamp}]</span> <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : log.type === 'error' ? 'text-rose-400' : 'text-slate-300'}>{log.message}</span></div>))}
+             {logs.map((log: any) => (<div key={log.id} className="leading-relaxed"><span className="text-slate-600 mr-2">[{log.timestamp}]</span> <span className={log.type === 'success' ? 'text-emerald-400 font-bold' : log.type === 'warning' ? 'text-amber-400 font-bold' : log.type === 'error' ? 'text-rose-400 font-bold' : 'text-slate-300'}>{log.message}</span></div>))}
           </div>
        </div>
     </div>
