@@ -150,33 +150,34 @@ export default function AdminPage() {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        const fatSet = new Set(faturados.map((id: string) => String(id).replace(/[^0-9]/g, '')));
+        const fatSet = new Set(faturados.map((item: any) => String(item.id || item).replace(/[^0-9]/g, '')));
         const cancSet = new Set(cancelados.map((id: string) => String(id).replace(/[^0-9]/g, '')));
 
         let bloqueadosFaturados = 0;
         let bloqueadosCancelados = 0;
-        let ignoradosCabecalho = 0;
         const novasVendas: any[] = [];
 
-        rows.slice(1).forEach((row, i) => {
+        // CORREÇÃO CRUCIAL: Começa obrigatoriamente a partir da linha 7 do Excel (índice 6) até o infinito
+        const linhasDados = rows.slice(6);
+
+        linhasDados.forEach((row) => {
           if (!row || !row.length) return;
 
           const rawId = row[colToIdx(rule.colIdPedido)];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          if (!idPedBruto || idPedBruto.length < 5 || idPedBruto.toLowerCase().includes('neste relatório') || idPedBruto.toLowerCase().includes('vendas') || idPedBruto.toLowerCase().includes('código')) {
-            ignoradosCabecalho++;
-            return;
-          }
+          if (!idPedBruto) return;
 
           const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
+          if (!idPedLimpo) return;
 
-          if (fatSet.size > 0 && idPedLimpo && !fatSet.has(idPedLimpo)) {
+          // Validação estrita com a aba de Faturados
+          if (fatSet.size > 0 && !fatSet.has(idPedLimpo)) {
               bloqueadosFaturados++;
               return;
           }
           
-          if (cancSet.size > 0 && idPedLimpo && cancSet.has(idPedLimpo)) {
+          if (cancSet.size > 0 && cancSet.has(idPedLimpo)) {
               bloqueadosCancelados++;
               return;
           }
@@ -188,9 +189,13 @@ export default function AdminPage() {
 
           const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
           
+          // Busca a data correspondente exata na base de Faturados se houver
+          const faturadoObj = faturados.find((item: any) => String(item.id || '').replace(/[^0-9]/g, '') === idPedLimpo);
+          const dataFaturamento = faturadoObj && faturadoObj.data ? faturadoObj.data : new Date().toISOString().slice(0, 10);
+
           novasVendas.push({
             id_pedido: idPedBruto,
-            data_faturamento: new Date().toISOString().slice(0, 10),
+            data_faturamento: dataFaturamento,
             canal: selectedChannel,
             sku: skuVal,
             quantidade: quantidade,
@@ -201,13 +206,12 @@ export default function AdminPage() {
         });
 
         setSales((prev: any) => [...prev, ...novasVendas]);
-        addLog(`Sucesso: ${novasVendas.length} vendas importadas para o canal [${selectedChannel}].`, 'success');
+        addLog(`Sucesso: ${novasVendas.length} vendas importadas a partir da linha 7 para [${selectedChannel}].`, 'success');
         
-        if (ignoradosCabecalho > 0) addLog(`Info: ${ignoradosCabecalho} linhas de texto/cabeçalho ignoradas.`, 'warning');
         if (bloqueadosFaturados > 0) addLog(`Atenção: ${bloqueadosFaturados} linhas bloqueadas (não encontradas nos Faturados).`, 'error');
         if (bloqueadosCancelados > 0) addLog(`Atenção: ${bloqueadosCancelados} pedidos ignorados (Cancelados).`, 'warning');
         
-        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas.`);
+        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas com sucesso.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -219,7 +223,6 @@ export default function AdminPage() {
     if (fileVendasRef.current) fileVendasRef.current.value = '';
   };
 
-  // Tipagem estrita de mapper para satisfazer o TypeScript
   const readGeneric = (e: any, setter: any, type: string, mapper: (row: any[]) => { val: number; obj: any }) => {
     const file = e.target.files[0];
     if (!file) return;
