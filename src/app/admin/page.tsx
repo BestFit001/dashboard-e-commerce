@@ -15,9 +15,9 @@ export default function AdminPage() {
   const [selectedChannel, setSelectedChannel] = useState(canais[0] || 'Mercado Livre 1');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const [colFaturadosId, setColFaturadosId] = useState('AI');
-  const [colFaturadosData, setColFaturadosData] = useState('D');
-  const [colCancelados, setColCancelados] = useState('AI');
+  const [colFaturadosObs, setColFaturadosObs] = useState('AI'); // Coluna de Observações onde vem o ID do pedido
+  const [colFaturadosData, setColFaturadosData] = useState('D'); // Coluna de Data de Emissão
+  const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
 
@@ -69,17 +69,16 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // Função robusta para salvar no Supabase e atualizar o estado global
   const saveToCloudAndState = async (key: string, data: any, setter: any) => {
     setter(data);
     try {
-      const { error } = await supabase.from('tb_estado_global').upsert([{ chave: key, dados: data }], { onConflict: 'chave' });
-      if (error) console.error(`Erro ao salvar ${key} no Supabase:`, error.message);
+      await supabase.from('tb_estado_global').upsert([{ chave: key, dados: data }], { onConflict: 'chave' });
     } catch (err) {
-      console.error(`Exceção ao salvar ${key}:`, err);
+      console.error(`Erro ao salvar ${key} no Supabase:`, err);
     }
   };
 
+  // UPLOAD DE FATURADOS (EXTRAI O ID DE DENTRO DO TEXTO DAS OBSERVAÇÕES)
   const handleUploadFaturados = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -90,25 +89,24 @@ export default function AdminPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const novosFaturados: any[] = [];
-        const idxId = colToIdx(colFaturadosId); // Coluna AI
-        const idxData = colToIdx(colFaturadosData); // Coluna D
+        const idxObs = colToIdx(colFaturadosObs);
+        const idxData = colToIdx(colFaturadosData);
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const rawId = row[idxId];
-          const rawData = row[idxData];
-          if (rawId) {
-            const cleanId = String(rawId).trim();
-            novosFaturados.push({
-              id: cleanId,
-              data: parseExcelDate(rawData)
-            });
+          const obsText = String(row[idxObs] || row[34] || ''); // Tenta a coluna configurada ou a 34 (Observações)
+          const match = obsText.match(/20000[0-9]+/); // Procura o ID do pedido no texto
+          
+          if (match) {
+            const pedidoId = match[0];
+            const dataEmissao = parseExcelDate(row[idxData]);
+            novosFaturados.push({ id: pedidoId, data: dataEmissao });
           }
         });
 
         await saveToCloudAndState('faturados', novosFaturados, setFaturados);
-        addLog(`${novosFaturados.length} IDs Faturados carregados e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados importados com sucesso!`);
+        addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
+        alert(`${novosFaturados.length} faturados lidos com sucesso das observações e salvos no Supabase!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -125,16 +123,13 @@ export default function AdminPage() {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        
         const novosCancelados: any[] = [];
         const idxId = colToIdx(colCancelados);
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
           const rawId = row[idxId];
-          if (rawId) {
-            novosCancelados.push(String(rawId).trim());
-          }
+          if (rawId) novosCancelados.push(String(rawId).trim());
         });
 
         await saveToCloudAndState('cancelados', novosCancelados, setCancelados);
@@ -148,14 +143,14 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
+  // UPLOAD E CRUZAMENTO DE VENDAS INTELIGENTE (COM SUPORTE A PACOTES/CARRINHOS)
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPrecoVenda: 'D', colQuantidade: 'G', formulaExcel: 'D2 - (D2 * 0.12) + C2'
+      colIdPedido: 'A', colSku: 'W', colRebate: 'C', colPrecoVenda: 'E', colQuantidade: 'H', formulaExcel: 'E2 - (E2 * 0.12)'
     };
 
     const reader = new FileReader();
@@ -164,74 +159,93 @@ export default function AdminPage() {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        // Mapeia os Faturados exatos com base no que você ensinou
         const fatMap = new Map();
         if (faturados && faturados.length > 0) {
           faturados.forEach((item: any) => {
-            const rawId = String(item.id || '').trim();
-            if (rawId) fatMap.set(rawId, item.data);
+            fatMap.set(String(item.id).trim(), item.data);
           });
         }
 
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
-
-        let bloqueadosFaturados = 0;
-        let bloqueadosCancelados = 0;
-        let ignoradosCabecalho = 0;
         const novasVendas: any[] = [];
 
-        const linhasDados = rows.slice(6); // A partir da linha 7
-
-        linhasDados.forEach((row) => {
-          if (!row || !row.length) return;
+        let i = 0;
+        // As planilhas do Mercado Livre começam a partir da linha de dados (ex: índice 6)
+        while (i < rows.length) {
+          const row = rows[i];
+          if (!row || !row.length) { i++; continue; }
 
           const rawId = row[colToIdx(rule.colIdPedido)];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          if (!idPedBruto) return;
-
-          const lower = idPedBruto.toLowerCase();
-          if (lower.includes('neste relatório') || lower.includes('vendas') || lower.includes('código') || lower.includes('status') || lower.includes('n.º de venda') || idPedBruto.length < 5) {
-            ignoradosCabecalho++;
-            return;
+          if (!idPedBruto || idPedBruto.length < 5 || idPedBruto.toLowerCase().includes('neste relatório')) {
+            i++; continue;
           }
 
-          // Se houver faturados carregados, verifica se o ID consta neles. Se não houver faturados carregados, deixa passar por segurança.
+          if (cancSet.has(idPedBruto)) { i++; continue; }
+
+          // Se houver faturados carregados, valida se o pedido consta lá. Se não houver faturados carregados, aceita.
           if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
-              bloqueadosFaturados++;
-              return;
-          }
-          
-          if (cancSet.has(idPedBruto)) {
-              bloqueadosCancelados++;
-              return;
+            i++; continue;
           }
 
-          const skuVal = row[colToIdx(rule.colSku)] ? String(row[colToIdx(rule.colSku)]).trim().toUpperCase() : 'SKU-GERAL';
-          const quantidade = parseFloat(row[colToIdx(rule.colQuantidade)]) || 1;
-          const pdvUnitario = parseFloat(row[colToIdx(rule.colPrecoVenda)]) || 0;
-          const rebate = parseFloat(row[colToIdx(rule.colRebate)]) || 0;
-
-          const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
           const dataFaturamento = fatMap.get(idPedBruto) || new Date().toISOString().slice(0, 10);
+          const precoVendaRaw = row[colToIdx(rule.colPrecoVenda || 'E')];
+          const repasse = evaluateFormula(rule.formulaExcel, row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
-          novasVendas.push({
-            id_pedido: idPedBruto,
-            data_faturamento: dataFaturamento,
-            canal: selectedChannel,
-            sku: skuVal,
-            quantidade: quantidade,
-            preco_venda: pdvUnitario * quantidade,
-            repasse_liquido: repasseBase,
-            faturamento_liquido_final: repasseBase 
-          });
-        });
+          // Verifica se é um carrinho / pacote (ex: "Pacote de 2 produtos")
+          const descStatus = String(row[3] || row[4] || '').toLowerCase();
+          const pkgMatch = descStatus.match(/pacote de (\d+) produt/i);
+          const numItems = pkgMatch ? parseInt(pkgMatch[1], 10) : 0;
 
-        const updatedSales = [...novasVendas, ...sales];
+          if (numItems > 1) {
+            let processed = 0;
+            let sub = 1;
+            while (sub <= numItems && (i + sub) < rows.length) {
+              const subRow = rows[i + sub];
+              if (subRow) {
+                const subSku = String(subRow[colToIdx(rule.colSku || 'W')] || 'SKU-GERAL').trim().toUpperCase();
+                const subQtd = parseInt(String(subRow[colToIdx(rule.colQuantidade || 'H')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+
+                if (subSku && subSku !== 'SKU-GERAL') {
+                  novasVendas.push({
+                    id_pedido: idPedBruto,
+                    data_faturamento: dataFaturamento,
+                    canal: selectedChannel,
+                    sku: subSku,
+                    quantidade: subQtd,
+                    preco_venda: processed === 0 ? parseBrFloat(precoVendaRaw) : 0,
+                    repasse_liquido: processed === 0 ? repasse : 0
+                  });
+                  processed++;
+                }
+              }
+              sub++;
+            }
+            i += numItems;
+          } else {
+            const skuVal = row[colToIdx(rule.colSku || 'W')] ? String(row[colToIdx(rule.colSku || 'W')]).trim().toUpperCase() : 'SKU-GERAL';
+            const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'H')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+
+            novasVendas.push({
+              id_pedido: idPedBruto,
+              data_faturamento: dataFaturamento,
+              canal: selectedChannel,
+              sku: skuVal,
+              quantidade: quantidade,
+              preco_venda: parseBrFloat(precoVendaRaw),
+              repasse_liquido: repasse
+            });
+          }
+          i++;
+        }
+
+        const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
+        const updatedSales = [...salesWithKeys, ...sales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        addLog(`Sucesso: ${novasVendas.length} vendas cruzadas e salvas na nuvem para [${selectedChannel}]. (Bloqueados faturados: ${bloqueadosFaturados})`, 'success');
-        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas e gravadas no Supabase.`);
+        addLog(`Sucesso: ${novasVendas.length} itens de vendas importados e salvos na nuvem.`, 'success');
+        alert(`Importação concluída com sucesso! ${novasVendas.length} itens gravados no Supabase.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -287,11 +301,11 @@ export default function AdminPage() {
        <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases e Filtros ERP</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 space-y-3">
-           <h3 className="font-bold text-emerald-400 text-sm">Faturados</h3>
+           <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
            <div className="flex gap-2">
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span>
-                <input type="text" value={colFaturadosId} onChange={e => setColFaturadosId(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Observações (ID)</span>
+                <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
               <div>
                 <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data</span>
@@ -361,7 +375,7 @@ export default function AdminPage() {
             <button onClick={() => clearData('vendas', 'vendas', setSales)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
             <button onClick={() => clearData('faturados', 'faturados', setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
             <button onClick={() => clearData('cancelados', 'cancelados', setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
-            <button onClick={() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
+            <button onClick(() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
             <button onClick={() => clearData('ads', 'ads', setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS</button>
           </div>
        </div>
