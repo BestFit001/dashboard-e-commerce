@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    setSales, setFlexData, setAdsData, setGoals, 
+    setSales, setFlexData, setAdsData, 
     faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
@@ -219,14 +219,15 @@ export default function AdminPage() {
     if (fileVendasRef.current) fileVendasRef.current.value = '';
   };
 
-  const readGeneric = (e: any, setter: any, type: string, mapper: Function) => {
+  // Tipagem estrita de mapper para satisfazer o TypeScript
+  const readGeneric = (e: any, setter: any, type: string, mapper: (row: any[]) => { val: number; obj: any }) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-      const data = rows.slice(1).map(mapper).filter((i: any) => i.val > 0);
+      const data = rows.slice(1).map(mapper).filter((i: any) => i && i.val > 0);
       if (data.length > 0) {
         setter((p: any) => [...data.map((d: any) => d.obj), ...p]);
         addLog(`${data.length} registos de ${type} inseridos.`, 'success');
