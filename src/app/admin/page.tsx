@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    sales, setSales, flexData, setFlexData, adsData, setAdsData, 
+    setSales, setFlexData, setAdsData, 
     faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
@@ -15,8 +15,8 @@ export default function AdminPage() {
   const [selectedChannel, setSelectedChannel] = useState(canais[0] || 'Mercado Livre 1');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const [colFaturadosObs, setColFaturadosObs] = useState('AI'); // Coluna de Observações onde vem o ID do pedido
-  const [colFaturadosData, setColFaturadosData] = useState('D'); // Coluna de Data de Emissão
+  const [colFaturadosObs, setColFaturadosObs] = useState('AI');
+  const [colFaturadosData, setColFaturadosData] = useState('D');
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -78,7 +78,6 @@ export default function AdminPage() {
     }
   };
 
-  // UPLOAD DE FATURADOS (EXTRAI O ID DE DENTRO DO TEXTO DAS OBSERVAÇÕES)
   const handleUploadFaturados = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -94,8 +93,8 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const obsText = String(row[idxObs] || row[34] || ''); // Tenta a coluna configurada ou a 34 (Observações)
-          const match = obsText.match(/20000[0-9]+/); // Procura o ID do pedido no texto
+          const obsText = String(row[idxObs] || row[34] || '');
+          const match = obsText.match(/20000[0-9]+/);
           
           if (match) {
             const pedidoId = match[0];
@@ -143,7 +142,6 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // UPLOAD E CRUZAMENTO DE VENDAS INTELIGENTE (COM SUPORTE A PACOTES/CARRINHOS)
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -170,7 +168,6 @@ export default function AdminPage() {
         const novasVendas: any[] = [];
 
         let i = 0;
-        // As planilhas do Mercado Livre começam a partir da linha de dados (ex: índice 6)
         while (i < rows.length) {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
@@ -183,17 +180,12 @@ export default function AdminPage() {
           }
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
-
-          // Se houver faturados carregados, valida se o pedido consta lá. Se não houver faturados carregados, aceita.
-          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
-            i++; continue;
-          }
+          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) { i++; continue; }
 
           const dataFaturamento = fatMap.get(idPedBruto) || new Date().toISOString().slice(0, 10);
           const precoVendaRaw = row[colToIdx(rule.colPrecoVenda || 'E')];
           const repasse = evaluateFormula(rule.formulaExcel, row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
-          // Verifica se é um carrinho / pacote (ex: "Pacote de 2 produtos")
           const descStatus = String(row[3] || row[4] || '').toLowerCase();
           const pkgMatch = descStatus.match(/pacote de (\d+) produt/i);
           const numItems = pkgMatch ? parseInt(pkgMatch[1], 10) : 0;
@@ -375,7 +367,7 @@ export default function AdminPage() {
             <button onClick={() => clearData('vendas', 'vendas', setSales)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
             <button onClick={() => clearData('faturados', 'faturados', setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
             <button onClick={() => clearData('cancelados', 'cancelados', setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
-            <button onClick(() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
+            <button onClick={() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
             <button onClick={() => clearData('ads', 'ads', setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS</button>
           </div>
        </div>
