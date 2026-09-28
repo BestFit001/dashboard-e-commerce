@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    setSales, setFlexData, setAdsData, 
+    sales, setSales, flexData, setFlexData, adsData, setAdsData, 
     faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
