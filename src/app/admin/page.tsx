@@ -157,7 +157,7 @@ export default function AdminPage() {
         let bloqueadosCancelados = 0;
         const novasVendas: any[] = [];
 
-        // CORREÇÃO CRUCIAL: Começa obrigatoriamente a partir da linha 7 do Excel (índice 6) até o infinito
+        // Ignora as primeiras 6 linhas institucionais e começa estritamente a partir da linha 7 (índice 6)
         const linhasDados = rows.slice(6);
 
         linhasDados.forEach((row) => {
@@ -169,9 +169,9 @@ export default function AdminPage() {
           if (!idPedBruto) return;
 
           const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
-          if (!idPedLimpo) return;
+          if (!idPedLimpo || idPedLimpo.length < 5) return;
 
-          // Validação estrita com a aba de Faturados
+          // Validação obrigatória na base de Faturados
           if (fatSet.size > 0 && !fatSet.has(idPedLimpo)) {
               bloqueadosFaturados++;
               return;
@@ -189,7 +189,6 @@ export default function AdminPage() {
 
           const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
           
-          // Busca a data correspondente exata na base de Faturados se houver
           const faturadoObj = faturados.find((item: any) => String(item.id || '').replace(/[^0-9]/g, '') === idPedLimpo);
           const dataFaturamento = faturadoObj && faturadoObj.data ? faturadoObj.data : new Date().toISOString().slice(0, 10);
 
@@ -206,12 +205,12 @@ export default function AdminPage() {
         });
 
         setSales((prev: any) => [...prev, ...novasVendas]);
-        addLog(`Sucesso: ${novasVendas.length} vendas importadas a partir da linha 7 para [${selectedChannel}].`, 'success');
+        addLog(`Sucesso: ${novasVendas.length} vendas importadas (a partir da linha 7) para [${selectedChannel}].`, 'success');
         
         if (bloqueadosFaturados > 0) addLog(`Atenção: ${bloqueadosFaturados} linhas bloqueadas (não encontradas nos Faturados).`, 'error');
         if (bloqueadosCancelados > 0) addLog(`Atenção: ${bloqueadosCancelados} pedidos ignorados (Cancelados).`, 'warning');
         
-        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas com sucesso.`);
+        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
