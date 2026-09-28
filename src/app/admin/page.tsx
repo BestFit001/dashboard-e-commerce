@@ -94,7 +94,7 @@ export default function AdminPage() {
         });
 
         setFaturados(novosFaturados);
-        addLog(`${novosFaturados.length} IDs Faturados carregados para a trava de segurança.`, 'success');
+        addLog(`${novosFaturados.length} IDs Faturados carregados com sucesso.`, 'success');
         alert(`${novosFaturados.length} faturados importados com sucesso!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
@@ -138,6 +138,14 @@ export default function AdminPage() {
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // TRAVA DE SEGURANÇA OBRIGATÓRIA
+    if (!faturados || faturados.length === 0) {
+      alert('⚠️ ATENÇÃO: Você precisa subir primeiro a planilha de FATURADOS no Passo 1 antes de importar as Vendas!');
+      if (fileVendasRef.current) fileVendasRef.current.value = '';
+      return;
+    }
+
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
@@ -150,14 +158,21 @@ export default function AdminPage() {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        const fatSet = new Set(faturados.map((item: any) => String(item.id || item).replace(/[^0-9]/g, '')));
+        // Mapeia os IDs faturados limpos (somente números)
+        const fatMap = new Map();
+        faturados.forEach((item: any) => {
+          const idLimpo = String(item.id || item).replace(/[^0-9]/g, '');
+          if (idLimpo) fatMap.set(idLimpo, item.data);
+        });
+
         const cancSet = new Set(cancelados.map((id: string) => String(id).replace(/[^0-9]/g, '')));
 
         let bloqueadosFaturados = 0;
         let bloqueadosCancelados = 0;
+        let ignoradosCabecalho = 0;
         const novasVendas: any[] = [];
 
-        // Ignora as primeiras 6 linhas institucionais e começa estritamente a partir da linha 7 (índice 6)
+        // Ignora as primeiras 6 linhas institucionais e varre da linha 7 em diante
         const linhasDados = rows.slice(6);
 
         linhasDados.forEach((row) => {
@@ -168,16 +183,23 @@ export default function AdminPage() {
 
           if (!idPedBruto) return;
 
-          const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
-          if (!idPedLimpo || idPedLimpo.length < 5) return;
+          // Ignora se contiver termos de cabeçalho ou aviso
+          const lower = idPedBruto.toLowerCase();
+          if (lower.includes('neste relatório') || lower.includes('vendas') || lower.includes('código') || lower.includes('status') || lower.length < 5) {
+            ignoradosCabecalho++;
+            return;
+          }
 
-          // Validação obrigatória na base de Faturados
-          if (fatSet.size > 0 && !fatSet.has(idPedLimpo)) {
+          const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
+          if (!idPedLimpo) return;
+
+          // VALIDAÇÃO ESTRITA: O ID DEVE ESTAR PRESENTE NOS FATURADOS
+          if (!fatMap.has(idPedLimpo)) {
               bloqueadosFaturados++;
               return;
           }
           
-          if (cancSet.size > 0 && cancSet.has(idPedLimpo)) {
+          if (cancSet.has(idPedLimpo)) {
               bloqueadosCancelados++;
               return;
           }
@@ -188,9 +210,7 @@ export default function AdminPage() {
           const rebate = parseFloat(row[colToIdx(rule.colRebate)]) || 0;
 
           const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
-          
-          const faturadoObj = faturados.find((item: any) => String(item.id || '').replace(/[^0-9]/g, '') === idPedLimpo);
-          const dataFaturamento = faturadoObj && faturadoObj.data ? faturadoObj.data : new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedLimpo) || new Date().toISOString().slice(0, 10);
 
           novasVendas.push({
             id_pedido: idPedBruto,
@@ -205,12 +225,12 @@ export default function AdminPage() {
         });
 
         setSales((prev: any) => [...prev, ...novasVendas]);
-        addLog(`Sucesso: ${novasVendas.length} vendas importadas (a partir da linha 7) para [${selectedChannel}].`, 'success');
+        addLog(`Sucesso: ${novasVendas.length} vendas validadas e importadas para [${selectedChannel}].`, 'success');
         
-        if (bloqueadosFaturados > 0) addLog(`Atenção: ${bloqueadosFaturados} linhas bloqueadas (não encontradas nos Faturados).`, 'error');
+        if (bloqueadosFaturados > 0) addLog(`Info: ${bloqueadosFaturados} linhas ignoradas (não estão na base de Faturados).`, 'warning');
         if (bloqueadosCancelados > 0) addLog(`Atenção: ${bloqueadosCancelados} pedidos ignorados (Cancelados).`, 'warning');
         
-        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas.`);
+        alert(`Importação concluída! ${novasVendas.length} vendas cruzadas com sucesso.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
