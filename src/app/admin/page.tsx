@@ -68,7 +68,6 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // 1. UPLOAD FATURADOS
   const handleUploadFaturados = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -105,7 +104,6 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // 2. UPLOAD CANCELADOS
   const handleUploadCancelados = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -137,7 +135,6 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // 3. UPLOAD VENDAS (COM TRAVA INTELIGENTE E FILTRAGEM DE CABEÇALHOS)
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -167,7 +164,6 @@ export default function AdminPage() {
           const rawId = row[colToIdx(rule.colIdPedido)];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          // Ignora cabeçalhos, textos longos explicativos e avisos comuns de relatórios
           if (!idPedBruto || idPedBruto.length < 5 || idPedBruto.toLowerCase().includes('neste relatório') || idPedBruto.toLowerCase().includes('vendas') || idPedBruto.toLowerCase().includes('código')) {
             ignoradosCabecalho++;
             return;
