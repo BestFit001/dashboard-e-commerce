@@ -137,7 +137,7 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // 3. UPLOAD VENDAS (COM TRAVA INTELIGENTE APRIMORADA)
+  // 3. UPLOAD VENDAS (COM TRAVA INTELIGENTE E FILTRAGEM DE CABEÇALHOS)
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -158,12 +158,21 @@ export default function AdminPage() {
 
         let bloqueadosFaturados = 0;
         let bloqueadosCancelados = 0;
+        let ignoradosCabecalho = 0;
         const novasVendas: any[] = [];
 
         rows.slice(1).forEach((row, i) => {
           if (!row || !row.length) return;
 
-          const idPedBruto = row[colToIdx(rule.colIdPedido)] ? String(row[colToIdx(rule.colIdPedido)]).trim() : `PDV-${i}`;
+          const rawId = row[colToIdx(rule.colIdPedido)];
+          const idPedBruto = rawId ? String(rawId).trim() : '';
+
+          // Ignora cabeçalhos, textos longos explicativos e avisos comuns de relatórios
+          if (!idPedBruto || idPedBruto.length < 5 || idPedBruto.toLowerCase().includes('neste relatório') || idPedBruto.toLowerCase().includes('vendas') || idPedBruto.toLowerCase().includes('código')) {
+            ignoradosCabecalho++;
+            return;
+          }
+
           const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
 
           if (fatSet.size > 0 && idPedLimpo && !fatSet.has(idPedLimpo)) {
@@ -198,6 +207,7 @@ export default function AdminPage() {
         setSales((prev: any) => [...prev, ...novasVendas]);
         addLog(`Sucesso: ${novasVendas.length} vendas importadas para o canal [${selectedChannel}].`, 'success');
         
+        if (ignoradosCabecalho > 0) addLog(`Info: ${ignoradosCabecalho} linhas de texto/cabeçalho ignoradas.`, 'warning');
         if (bloqueadosFaturados > 0) addLog(`Atenção: ${bloqueadosFaturados} linhas bloqueadas (não encontradas nos Faturados).`, 'error');
         if (bloqueadosCancelados > 0) addLog(`Atenção: ${bloqueadosCancelados} pedidos ignorados (Cancelados).`, 'warning');
         
