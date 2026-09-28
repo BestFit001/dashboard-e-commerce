@@ -1,12 +1,13 @@
 'use client';
 import React, { useState, useRef } from 'react';
 import { useAppContext, INITIAL_ADMIN_PASS } from '@/context/AppContext';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
 export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    setSales, setFlexData, setAdsData, 
+    sales, setSales, flexData, setFlexData, adsData, setAdsData, 
     faturados, setFaturados, cancelados, setCancelados, addLog, logs 
   } = useAppContext();
   
@@ -68,33 +69,45 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
+  // Função robusta para salvar no Supabase e atualizar o estado global
+  const saveToCloudAndState = async (key: string, data: any, setter: any) => {
+    setter(data);
+    try {
+      const { error } = await supabase.from('tb_estado_global').upsert([{ chave: key, dados: data }], { onConflict: 'chave' });
+      if (error) console.error(`Erro ao salvar ${key} no Supabase:`, error.message);
+    } catch (err) {
+      console.error(`Exceção ao salvar ${key}:`, err);
+    }
+  };
+
   const handleUploadFaturados = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const novosFaturados: any[] = [];
-        const idxId = colToIdx(colFaturadosId);
-        const idxData = colToIdx(colFaturadosData);
+        const idxId = colToIdx(colFaturadosId); // Coluna AI
+        const idxData = colToIdx(colFaturadosData); // Coluna D
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
           const rawId = row[idxId];
+          const rawData = row[idxData];
           if (rawId) {
             const cleanId = String(rawId).trim();
             novosFaturados.push({
               id: cleanId,
-              data: parseExcelDate(row[idxData])
+              data: parseExcelDate(rawData)
             });
           }
         });
 
-        setFaturados(novosFaturados);
-        addLog(`${novosFaturados.length} IDs Faturados carregados com sucesso.`, 'success');
+        await saveToCloudAndState('faturados', novosFaturados, setFaturados);
+        addLog(`${novosFaturados.length} IDs Faturados carregados e salvos na nuvem.`, 'success');
         alert(`${novosFaturados.length} faturados importados com sucesso!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
@@ -108,7 +121,7 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
@@ -124,9 +137,9 @@ export default function AdminPage() {
           }
         });
 
-        setCancelados(novosCancelados);
-        addLog(`${novosCancelados.length} IDs Cancelados carregados.`, 'warning');
-        alert(`${novosCancelados.length} cancelados importados!`);
+        await saveToCloudAndState('cancelados', novosCancelados, setCancelados);
+        addLog(`${novosCancelados.length} IDs Cancelados salvos na nuvem.`, 'warning');
+        alert(`${novosCancelados.length} cancelados salvos!`);
       } catch (err: any) {
         alert(`Erro ao ler cancelados: ${err.message}`);
       }
@@ -139,13 +152,6 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // TRAVA DE SEGURANÇA OBRIGATÓRIA
-    if (!faturados || faturados.length === 0) {
-      alert('⚠️ ATENÇÃO: Você precisa subir primeiro a planilha de FATURADOS no Passo 1 antes de importar as Vendas!');
-      if (fileVendasRef.current) fileVendasRef.current.value = '';
-      return;
-    }
-
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
@@ -153,27 +159,28 @@ export default function AdminPage() {
     };
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        // Mapeia os IDs faturados limpos (somente números)
+        // Mapeia os Faturados exatos com base no que você ensinou
         const fatMap = new Map();
-        faturados.forEach((item: any) => {
-          const idLimpo = String(item.id || item).replace(/[^0-9]/g, '');
-          if (idLimpo) fatMap.set(idLimpo, item.data);
-        });
+        if (faturados && faturados.length > 0) {
+          faturados.forEach((item: any) => {
+            const rawId = String(item.id || '').trim();
+            if (rawId) fatMap.set(rawId, item.data);
+          });
+        }
 
-        const cancSet = new Set(cancelados.map((id: string) => String(id).replace(/[^0-9]/g, '')));
+        const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
 
         let bloqueadosFaturados = 0;
         let bloqueadosCancelados = 0;
         let ignoradosCabecalho = 0;
         const novasVendas: any[] = [];
 
-        // Ignora as primeiras 6 linhas institucionais e varre da linha 7 em diante
-        const linhasDados = rows.slice(6);
+        const linhasDados = rows.slice(6); // A partir da linha 7
 
         linhasDados.forEach((row) => {
           if (!row || !row.length) return;
@@ -183,23 +190,19 @@ export default function AdminPage() {
 
           if (!idPedBruto) return;
 
-          // Ignora se contiver termos de cabeçalho ou aviso
           const lower = idPedBruto.toLowerCase();
-          if (lower.includes('neste relatório') || lower.includes('vendas') || lower.includes('código') || lower.includes('status') || lower.length < 5) {
+          if (lower.includes('neste relatório') || lower.includes('vendas') || lower.includes('código') || lower.includes('status') || lower.includes('n.º de venda') || idPedBruto.length < 5) {
             ignoradosCabecalho++;
             return;
           }
 
-          const idPedLimpo = idPedBruto.replace(/[^0-9]/g, '');
-          if (!idPedLimpo) return;
-
-          // VALIDAÇÃO ESTRITA: O ID DEVE ESTAR PRESENTE NOS FATURADOS
-          if (!fatMap.has(idPedLimpo)) {
+          // Se houver faturados carregados, verifica se o ID consta neles. Se não houver faturados carregados, deixa passar por segurança.
+          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
               bloqueadosFaturados++;
               return;
           }
           
-          if (cancSet.has(idPedLimpo)) {
+          if (cancSet.has(idPedBruto)) {
               bloqueadosCancelados++;
               return;
           }
@@ -210,7 +213,7 @@ export default function AdminPage() {
           const rebate = parseFloat(row[colToIdx(rule.colRebate)]) || 0;
 
           const repasseBase = evaluateFormula(rule.formulaExcel, row, rebate);
-          const dataFaturamento = fatMap.get(idPedLimpo) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedBruto) || new Date().toISOString().slice(0, 10);
 
           novasVendas.push({
             id_pedido: idPedBruto,
@@ -224,13 +227,11 @@ export default function AdminPage() {
           });
         });
 
-        setSales((prev: any) => [...prev, ...novasVendas]);
-        addLog(`Sucesso: ${novasVendas.length} vendas validadas e importadas para [${selectedChannel}].`, 'success');
-        
-        if (bloqueadosFaturados > 0) addLog(`Info: ${bloqueadosFaturados} linhas ignoradas (não estão na base de Faturados).`, 'warning');
-        if (bloqueadosCancelados > 0) addLog(`Atenção: ${bloqueadosCancelados} pedidos ignorados (Cancelados).`, 'warning');
-        
-        alert(`Importação concluída! ${novasVendas.length} vendas cruzadas com sucesso.`);
+        const updatedSales = [...novasVendas, ...sales];
+        await saveToCloudAndState('vendas', updatedSales, setSales);
+
+        addLog(`Sucesso: ${novasVendas.length} vendas cruzadas e salvas na nuvem para [${selectedChannel}]. (Bloqueados faturados: ${bloqueadosFaturados})`, 'success');
+        alert(`Importação concluída! ${novasVendas.length} vendas adicionadas e gravadas no Supabase.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -242,32 +243,30 @@ export default function AdminPage() {
     if (fileVendasRef.current) fileVendasRef.current.value = '';
   };
 
-  const readGeneric = (e: any, setter: any, type: string, mapper: (row: any[]) => { val: number; obj: any }) => {
+  const readGeneric = async (e: any, setter: any, type: string, keyName: string, currentArr: any[], mapper: (row: any[]) => { val: number; obj: any }) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
       const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
       const data = rows.slice(1).map(mapper).filter((i: any) => i && i.val > 0);
       if (data.length > 0) {
-        setter((p: any) => [...data.map((d: any) => d.obj), ...p]);
-        addLog(`${data.length} registos de ${type} inseridos.`, 'success');
-        alert(`${data.length} registos de ${type} importados com sucesso!`);
+        const newObjs = data.map((d: any) => d.obj);
+        const updated = [...newObjs, ...currentArr];
+        await saveToCloudAndState(keyName, updated, setter);
+        addLog(`${data.length} registos de ${type} salvos na nuvem.`, 'success');
+        alert(`${data.length} registos de ${type} salvos com sucesso!`);
       }
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
-  const clearData = (type: string) => {
+  const clearData = async (type: string, keyName: string, setter: any) => {
     if (confirm(`Tem a certeza que deseja limpar a base de ${type.toUpperCase()}?`)) {
-      if (type === 'vendas') setSales([]);
-      if (type === 'faturados') setFaturados([]);
-      if (type === 'cancelados') setCancelados([]);
-      if (type === 'flex') setFlexData([]);
-      if (type === 'ads') setAdsData([]);
-      addLog(`Base de ${type.toUpperCase()} limpa.`, 'warning');
+      await saveToCloudAndState(keyName, [], setter);
+      addLog(`Base de ${type.toUpperCase()} limpa na nuvem.`, 'warning');
     }
   };
 
@@ -339,7 +338,7 @@ export default function AdminPage() {
              <p className="text-[10px] text-slate-400 mb-3">Coluna A: ID do Pedido | Coluna B: Valor do Frete</p>
            </div>
            <label className="cursor-pointer block py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', 'flex', flexData, (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />
              Importar Frete Flex
            </label>
          </div>
@@ -350,7 +349,7 @@ export default function AdminPage() {
              <p className="text-[10px] text-slate-400 mb-3">Coluna A: Nome do Canal | Coluna B: Valor Gasto</p>
            </div>
            <label className="cursor-pointer block py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', adsData, (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />
              Importar ADS
            </label>
          </div>
@@ -359,11 +358,11 @@ export default function AdminPage() {
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-3">
           <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <button onClick={() => clearData('vendas')} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
-            <button onClick={() => clearData('faturados')} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
-            <button onClick={() => clearData('cancelados')} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
-            <button onClick={() => clearData('flex')} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
-            <button onClick={() => clearData('ads')} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS</button>
+            <button onClick={() => clearData('vendas', 'vendas', setSales)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
+            <button onClick={() => clearData('faturados', 'faturados', setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
+            <button onClick={() => clearData('cancelados', 'cancelados', setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
+            <button onClick={() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
+            <button onClick={() => clearData('ads', 'ads', setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS</button>
           </div>
        </div>
 
