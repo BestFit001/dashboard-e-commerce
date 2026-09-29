@@ -148,7 +148,7 @@ export default function AdminPage() {
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'W', colRebate: 'C', colPrecoVenda: 'E', colQuantidade: 'H', formulaExcel: 'E2 - (E2 * 0.12)'
+      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPrecoVenda: 'D', colQuantidade: 'G', formulaExcel: 'D2 - (D2 * 0.12)'
     };
 
     const reader = new FileReader();
@@ -167,6 +167,7 @@ export default function AdminPage() {
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
         const novasVendas: any[] = [];
 
+        // Varre a planilha ignorando cabeçalhos e focando estritamente em linhas com IDs válidos (20000...)
         let i = 0;
         while (i < rows.length) {
           const row = rows[i];
@@ -175,14 +176,18 @@ export default function AdminPage() {
           const rawId = row[colToIdx(rule.colIdPedido)];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          if (!idPedBruto || idPedBruto.length < 5 || idPedBruto.toLowerCase().includes('neste relatório')) {
+          // Validação estrita: O ID do pedido do Mercado Livre deve começar obrigatoriamente com '20000' ou ter 10+ dígitos numéricos
+          if (!idPedBruto || !/^20000\d{5,}$/.test(idPedBruto)) {
             i++; continue;
           }
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
 
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
-          const precoVendaRaw = row[colToIdx(rule.colPrecoVenda || 'E')];
+          
+          // Pega o PDV exatamente da coluna configurada nas Regras (ex: Coluna D)
+          const precoVendaRaw = row[colToIdx(rule.colPrecoVenda)];
+          const precoVendaUnitario = parseBrFloat(precoVendaRaw);
           const repasse = evaluateFormula(rule.formulaExcel, row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
           const descStatus = String(row[3] || row[4] || '').toLowerCase();
@@ -195,8 +200,8 @@ export default function AdminPage() {
             while (sub <= numItems && (i + sub) < rows.length) {
               const subRow = rows[i + sub];
               if (subRow) {
-                const subSku = String(subRow[colToIdx(rule.colSku || 'W')] || 'SKU-GERAL').trim().toUpperCase();
-                const subQtd = parseInt(String(subRow[colToIdx(rule.colQuantidade || 'H')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+                const subSku = String(subRow[colToIdx(rule.colSku || 'B')] || 'SKU-GERAL').trim().toUpperCase();
+                const subQtd = parseInt(String(subRow[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
                 if (subSku && subSku !== 'SKU-GERAL') {
                   novasVendas.push({
@@ -205,7 +210,7 @@ export default function AdminPage() {
                     canal: selectedChannel,
                     sku: subSku,
                     quantidade: subQtd,
-                    preco_venda: processed === 0 ? parseBrFloat(precoVendaRaw) : 0,
+                    preco_venda: processed === 0 ? precoVendaUnitario : 0,
                     repasse_liquido: processed === 0 ? repasse : 0
                   });
                   processed++;
@@ -215,8 +220,8 @@ export default function AdminPage() {
             }
             i += numItems;
           } else {
-            const skuVal = row[colToIdx(rule.colSku || 'W')] ? String(row[colToIdx(rule.colSku || 'W')]).trim().toUpperCase() : 'SKU-GERAL';
-            const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'H')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+            const skuVal = row[colToIdx(rule.colSku || 'B')] ? String(row[colToIdx(rule.colSku || 'B')]).trim().toUpperCase() : 'SKU-GERAL';
+            const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
             novasVendas.push({
               id_pedido: idPedBruto,
@@ -224,7 +229,7 @@ export default function AdminPage() {
               canal: selectedChannel,
               sku: skuVal,
               quantidade: quantidade,
-              preco_venda: parseBrFloat(precoVendaRaw),
+              preco_venda: precoVendaUnitario,
               repasse_liquido: repasse
             });
           }
