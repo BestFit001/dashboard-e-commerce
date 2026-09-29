@@ -148,7 +148,7 @@ export default function AdminPage() {
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'S2'
+      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'S2 - (I2 * 9%)'
     };
 
     const reader = new FileReader();
@@ -157,7 +157,6 @@ export default function AdminPage() {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
-        // Mapeamento rigoroso dos faturados
         const fatMap = new Map();
         if (faturados && faturados.length > 0) {
           faturados.forEach((item: any) => {
@@ -184,7 +183,6 @@ export default function AdminPage() {
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
 
-          // CRUZAMENTO ESTRICTO: Se houver base de faturados carregada, ignora quem não estiver nela
           if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
             ignoradosPorNaoFaturados++;
             i++; 
@@ -195,7 +193,7 @@ export default function AdminPage() {
           
           const pdvColIdx = colToIdx(rule.colPdv || 'I');
           const precoVendaUnitario = parseBrFloat(row[pdvColIdx]);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'S2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'S2 - (I2 * 9%)', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
           let numItems = 0;
           for (let c = 0; c < Math.min(row.length, 20); c++) {
@@ -249,8 +247,8 @@ export default function AdminPage() {
         const updatedSales = [...salesWithKeys, ...sales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens cruzados e salvos. (${ignoradosPorNaoFaturados} ignorados por não estarem em faturados)`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos foram ignorados por não constarem na base de faturados.`);
+        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
+        alert(`Sucesso! ${novasVendas.length} itens importados e cruzados com faturados.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
