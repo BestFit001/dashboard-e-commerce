@@ -16,8 +16,8 @@ export default function AdminPage() {
   const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const [colFaturadosObs, setColFaturadosObs] = useState('AI');
-  const [colFaturadosData, setColFaturadosData] = useState('D');
+  const [colFaturadosObs, setColFaturadosObs] = useState('A'); // Ajustado para ler a Coluna A por padrão
+  const [colFaturadosData, setColFaturadosData] = useState('C'); // Ajustado para a coluna de Data comum
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -64,10 +64,15 @@ export default function AdminPage() {
       const date = new Date(Math.round((val - 25569) * 86400 * 1000));
       return date.toISOString().slice(0, 10);
     }
-    return String(val).trim().substring(0, 10);
+    const cleanStr = String(val).trim();
+    // Se estiver no formato DD/MM/YYYY
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanStr)) {
+      const parts = cleanStr.substring(0, 10).split('/');
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return cleanStr.substring(0, 10);
   };
 
-  // Motor de avaliação atualizado para suportar condicionais (? :) e operadores de comparação (<, >, =)
   const evaluateFormula = (formulaStr: string, row: any, rebateVal: number, channelName: string) => {
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
@@ -93,10 +98,26 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
+    
     reader.onload = async (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        let rows: any[] = [];
+        const fileName = file.name.toLowerCase();
+
+        if (fileName.endsWith('.csv')) {
+          // Leitura robusta para ficheiros CSV (suporta separador ponto e vírgula ou vírgula)
+          const text = evt.target?.result as string;
+          const lines = text.split(/\r?\n/);
+          rows = lines.map(line => {
+            // Divide respeitando ponto e vírgula ou vírgula
+            const sep = line.includes(';') ? ';' : ',';
+            return line.split(sep).map(cell => cell.replace(/^["']|["']$/g, '').trim());
+          });
+        } else {
+          // Leitura para ficheiros Excel (.xlsx, .xls)
+          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        }
         
         const novosFaturados: any[] = [];
         const idxObs = colToIdx(colFaturadosObs);
@@ -104,25 +125,35 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const obsText = String(row[idxObs] || row[34] || row[0] || '');
-          const match = obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{10,}\b/);
+          const rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
+          const obsText = String(row[34] || row[0] || '');
           
-          if (match) {
-            const pedidoId = match[0].trim();
-            const dataEmissao = parseExcelDate(row[idxData]);
+          // Extrai o ID do pedido (seja numérico do ML, alfanumérico da Shopee ou ID local)
+          const match = rawId.match(/20000[0-9]+/) || rawId.match(/\b[A-Z0-9]{6,}\b/) || obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{6,}\b/);
+          
+          const pedidoId = match ? match[0].trim() : (rawId.length >= 3 ? rawId : null);
+          
+          if (pedidoId) {
+            const dataEmissao = parseExcelDate(row[idxData] || row[2]);
             novosFaturados.push({ id: pedidoId, data: dataEmissao });
           }
         });
 
         const updatedFaturados = [...novosFaturados, ...faturados];
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
+        
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso!`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso! Total acumulado na base: ${updatedFaturados.length}`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
     };
-    reader.readAsArrayBuffer(file);
+
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(file, 'ISO-8859-1'); // Suporte a codificação padrão de relatórios CSV brasileiros
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
     e.target.value = '';
   };
 
@@ -197,7 +228,7 @@ export default function AdminPage() {
           const rawId = row[colToIdx(rule.colIdPedido || 'A')];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          if (!idPedBruto || idPedBruto.toLowerCase() === 'id do pedido') {
+          if (!idPedBruto || idPedBruto.toLowerCase() === 'id do pedido' || idPedBruto.toLowerCase() === 'pedido id') {
             i++; continue;
           }
 
@@ -239,7 +270,7 @@ export default function AdminPage() {
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados para o canal ${selectedChannel}.`);
+        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos ignorados por não estarem em faturados.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -346,16 +377,16 @@ export default function AdminPage() {
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
            <div className="flex gap-2">
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Observações (ID)</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações / A)</span>
                 <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (C)</span>
                 <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
            </div>
            <label className="cursor-pointer block text-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados (CSV/Excel)
            </label>
            <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {faturados.length}</p>
          </div>
