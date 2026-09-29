@@ -3,12 +3,28 @@ import React, { useState } from 'react';
 import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
+const LISTA_PAINEIS = [
+  { id: 'dashboard', label: 'Dashboard Principal' },
+  { id: 'produtos', label: 'Análise de Produtos (ABC)' },
+  { id: 'skus', label: 'SKUs & Custos' },
+  { id: 'regras', label: 'Regras de Canais' },
+  { id: 'admin', label: 'Central Admin (Importações)' },
+  { id: 'usuarios', label: 'Gestão de Utilizadores' },
+];
+
 export default function UsuariosPage() {
   const { users, setUsers, addLog } = useAppContext();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('user');
+  const [cargo, setCargo] = useState('Analistas');
+  const [permissoes, setPermissoes] = useState<string[]>(['dashboard', 'produtos']);
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleTogglePermissao = (id: string) => {
+    setPermissoes(prev => 
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,31 +33,34 @@ export default function UsuariosPage() {
     const cleanEmail = email.trim().toLowerCase();
 
     if (users.some((u: any) => u.username === cleanEmail)) {
-      addLog(`O utilizador ${cleanEmail} já existe.`, 'error');
       alert(`O utilizador ${cleanEmail} já existe.`);
       return;
     }
 
     setIsSaving(true);
-    const newUser = { username: cleanEmail, password: password.trim(), role };
+    const newUser = { 
+      username: cleanEmail, 
+      password: password.trim(), 
+      cargo, 
+      permissoes,
+      role: cargo === 'Gerência' ? 'admin' : 'user'
+    };
 
-    // 1. Grava no Supabase
     const { error } = await supabase.from('tb_usuarios').upsert([newUser], { onConflict: 'username' });
 
     if (error) {
-      addLog(`Erro ao salvar utilizador na nuvem: ${error.message}`, 'error');
       alert(`Erro ao salvar no Supabase: ${error.message}`);
       setIsSaving(false);
       return;
     }
 
-    // 2. Atualiza estado visual
     setUsers((prev: any[]) => [...prev, newUser]);
-    addLog(`Utilizador ${cleanEmail} cadastrado com sucesso.`, 'success');
+    addLog(`Utilizador ${cleanEmail} (${cargo}) cadastrado com sucesso.`, 'success');
     
     setEmail('');
     setPassword('');
-    setRole('user');
+    setCargo('Analistas');
+    setPermissoes(['dashboard', 'produtos']);
     setIsSaving(false);
     alert('Utilizador cadastrado com sucesso!');
   };
@@ -54,7 +73,6 @@ export default function UsuariosPage() {
 
     if (confirm(`Tem a certeza que deseja remover o acesso de ${username}?`)) {
       setUsers((prev: any[]) => prev.filter((u: any) => u.username !== username));
-      
       await supabase.from('tb_usuarios').delete().eq('username', username);
       addLog(`Utilizador ${username} removido com sucesso.`, 'warning');
     }
@@ -62,53 +80,75 @@ export default function UsuariosPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 shadow-xl">
+      <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6 shadow-xl">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Gestão de Utilizadores e Níveis de Acesso</h2>
-          <p className="text-xs text-slate-400 mt-1">Adicione utilizadores e defina se têm acesso total (Admin) ou apenas visualização (User).</p>
+          <h2 className="text-xl font-bold text-white tracking-tight">Gestão por Cargos e Permissões de Acesso</h2>
+          <p className="text-xs text-slate-400 mt-1">Cadastre utilizadores, defina o cargo corporativo e selecione exatamente quais abas cada um pode acessar.</p>
         </div>
 
-        <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
-          <div>
-            <label className="block text-xs font-bold text-slate-400 mb-1.5">E-mail / Utilizador</label>
-            <input 
-              type="email" 
-              required 
-              placeholder="ex: joao@usebestfit.com.br" 
-              value={email} 
-              onChange={e => setEmail(e.target.value)} 
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500" 
-            />
+        <form onSubmit={handleAddUser} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 mb-1.5">E-mail / Utilizador</label>
+              <input 
+                type="email" 
+                required 
+                placeholder="ex: analista@usebestfit.com.br" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 mb-1.5">Senha</label>
+              <input 
+                type="text" 
+                required 
+                placeholder="Senha de acesso" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-mono" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 mb-1.5">Cargo Corporativo</label>
+              <select 
+                value={cargo} 
+                onChange={e => setCargo(e.target.value)} 
+                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-bold cursor-pointer"
+              >
+                <option value="Gerência" className="bg-slate-900">Gerência</option>
+                <option value="Analistas" className="bg-slate-900">Analistas</option>
+                <option value="Vendedoras" className="bg-slate-900">Vendedoras</option>
+                <option value="Outros" className="bg-slate-900">Outros</option>
+              </select>
+            </div>
           </div>
+
           <div>
-            <label className="block text-xs font-bold text-slate-400 mb-1.5">Senha</label>
-            <input 
-              type="text" 
-              required 
-              placeholder="Senha de acesso" 
-              value={password} 
-              onChange={e => setPassword(e.target.value)} 
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-mono" 
-            />
+            <label className="block text-xs font-bold text-slate-400 mb-2">Painéis com Acesso Liberado:</label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
+              {LISTA_PAINEIS.map(painel => (
+                <label key={painel.id} className="flex items-center gap-2.5 cursor-pointer text-xs text-slate-300 font-medium select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={permissoes.includes(painel.id)}
+                    onChange={() => handleTogglePermissao(painel.id)}
+                    className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  {painel.label}
+                </label>
+              ))}
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-400 mb-1.5">Nível de Permissão</label>
-            <select 
-              value={role} 
-              onChange={e => setRole(e.target.value)} 
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-bold cursor-pointer"
-            >
-              <option value="user" className="bg-slate-900">Visualizador (Apenas Dashboard)</option>
-              <option value="admin" className="bg-slate-900">Administrador (Acesso Total)</option>
-            </select>
-          </div>
-          <div className="flex items-end">
+
+          <div className="flex justify-end">
             <button 
               type="submit" 
               disabled={isSaving}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+              className="py-3 px-8 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2"
             >
-              <i className="fa-solid fa-user-plus"></i> {isSaving ? 'A Guardar...' : 'Cadastrar Utilizador'}
+              <i className="fa-solid fa-user-plus"></i> {isSaving ? 'A Guardar...' : 'Cadastrar Utilizador com Permissões'}
             </button>
           </div>
         </form>
@@ -121,14 +161,21 @@ export default function UsuariosPage() {
           {users.map((u: any) => (
             <div key={u.username} className="flex justify-between items-center bg-slate-950 p-4 rounded-xl border border-slate-800/80">
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${u.role === 'admin' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'bg-slate-800 text-slate-300'}`}>
-                  <i className={`fa-solid ${u.role === 'admin' ? 'fa-shield-halved' : 'fa-user'}`}></i>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-purple-600/20 text-purple-400 border border-purple-500/30">
+                  <i className="fa-solid fa-user-shield"></i>
                 </div>
                 <div>
                   <h4 className="font-bold text-white text-xs">{u.username}</h4>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'text-purple-400' : 'text-slate-400'}`}>
-                    {u.role === 'admin' ? 'Administrador' : 'Visualizador'}
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">
+                    {u.cargo || 'Cargo não definido'}
                   </span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(u.permissoes || ['dashboard']).map((p: string) => (
+                      <span key={p} className="px-1.5 py-0.5 bg-slate-900 text-slate-400 rounded text-[9px] font-mono border border-slate-800">
+                        {p}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 

@@ -9,7 +9,7 @@ const INITIAL_CHANNELS = ['Mercado Livre 1', 'Mercado Livre 2', 'Amazon', 'Magal
 const AppContext = createContext<any>(null);
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
-  const [users, setUsers] = useState<any[]>([{ username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' }]);
+  const [users, setUsers] = useState<any[]>([{ username: 'gisele@usebestfit.com.br', password: '123', role: 'admin', cargo: 'Gerência', permissoes: ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] }]);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
 
@@ -37,12 +37,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
-      // Buscar utilizadores cadastrados na nuvem
       const { data: usuariosDb } = await supabase.from('tb_usuarios').select('*');
       if (usuariosDb && usuariosDb.length > 0) {
-        // Garante que o admin principal está sempre presente
         const hasAdmin = usuariosDb.some((u: any) => u.username === 'gisele@usebestfit.com.br');
-        const finalUsers = hasAdmin ? usuariosDb : [{ username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' }, ...usuariosDb];
+        const defaultAdmin = { username: 'gisele@usebestfit.com.br', password: '123', role: 'admin', cargo: 'Gerência', permissoes: ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] };
+        const finalUsers = hasAdmin ? usuariosDb : [defaultAdmin, ...usuariosDb];
         setUsers(finalUsers);
       }
 

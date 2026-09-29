@@ -10,22 +10,20 @@ export default function Navbar() {
 
   if (!currentUser) return null;
 
-  const isAdmin = currentUser.role === 'admin';
+  // Se o utilizador for o admin principal ou tiver permissões explícitas
+  const permissoes = currentUser.permissoes || (currentUser.role === 'admin' ? ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] : ['dashboard']);
 
-  // Nova rota adicionada: /produtos
   const navLinks = [
-    { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', reqAdmin: false },
-    { name: 'Análise (ABC)', path: '/produtos', icon: 'fa-solid fa-boxes-stacked', reqAdmin: false },
-    { name: 'SKUs & Custos', path: '/skus', icon: 'fa-solid fa-tags', reqAdmin: true },
-    { name: 'Regras Canal', path: '/regras', icon: 'fa-solid fa-calculator', reqAdmin: true },
-    { name: 'Admin', path: '/admin', icon: 'fa-solid fa-lock', reqAdmin: true },
-    { name: 'Usuários', path: '/usuarios', icon: 'fa-solid fa-users', reqAdmin: true },
+    { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', id: 'dashboard' },
+    { name: 'Análise (ABC)', path: '/produtos', icon: 'fa-solid fa-boxes-stacked', id: 'produtos' },
+    { name: 'SKUs & Custos', path: '/skus', icon: 'fa-solid fa-tags', id: 'skus' },
+    { name: 'Regras Canal', path: '/regras', icon: 'fa-solid fa-calculator', id: 'regras' },
+    { name: 'Admin', path: '/admin', icon: 'fa-solid fa-lock', id: 'admin' },
+    { name: 'Usuários', path: '/usuarios', icon: 'fa-solid fa-users', id: 'usuarios' },
   ];
 
   return (
     <div className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-      
-      {/* Logotipo */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/30">
           <span className="text-white font-black text-xl tracking-tighter">BF</span>
@@ -36,10 +34,10 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Menu Principal com Bloqueio de Role */}
       <div className="hidden md:flex items-center gap-2">
         {navLinks.map(link => {
-          if (link.reqAdmin && !isAdmin) return null;
+          // Oculta se o utilizador não tiver a permissão para esta aba
+          if (!permissoes.includes(link.id)) return null;
           
           const isActive = pathname === link.path;
           return (
@@ -50,11 +48,10 @@ export default function Navbar() {
         })}
       </div>
 
-      {/* Informações da Sessão e Saída */}
       <div className="flex items-center gap-6">
         <div className="text-right hidden sm:block">
-          <span className={`block text-[9px] font-black uppercase tracking-wider ${isAdmin ? 'text-slate-400' : 'text-purple-400'}`}>
-            {isAdmin ? 'Administrador' : 'Visualizador'}
+          <span className="block text-[9px] font-black uppercase tracking-wider text-purple-400">
+            {currentUser.cargo || (currentUser.role === 'admin' ? 'Gerência' : 'Visualizador')}
           </span>
           <span className="block text-xs font-medium text-slate-200">{currentUser.username}</span>
         </div>
@@ -62,7 +59,6 @@ export default function Navbar() {
           <i className="fa-solid fa-arrow-right-from-bracket"></i> Sair
         </button>
       </div>
-      
     </div>
   );
 }
