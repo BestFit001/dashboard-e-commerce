@@ -42,7 +42,6 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  // PARSER INTELIGENTE DE NÚMEROS (Suporta Ponto vs Vírgula conforme o Canal)
   const parseSmartFloat = (val: any, channelName: string) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
@@ -51,11 +50,9 @@ export default function AdminPage() {
     const isShopee = channelName.toLowerCase().includes('shopee');
 
     if (isShopee) {
-      // Shopee usa ponto como separador decimal (ex: 1234.56 ou 1,234.56)
       const clean = strVal.replace(/[^0-9.-]/g, '');
       return parseFloat(clean) || 0;
     } else {
-      // Mercado Livre usa vírgula como decimal e ponto como milhar (ex: 1.234,56)
       const clean = strVal.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
       return parseFloat(clean) || 0;
     }
@@ -70,6 +67,7 @@ export default function AdminPage() {
     return String(val).trim().substring(0, 10);
   };
 
+  // Motor de avaliação atualizado para suportar condicionais (? :) e operadores de comparação (<, >, =)
   const evaluateFormula = (formulaStr: string, row: any, rebateVal: number, channelName: string) => {
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
@@ -77,7 +75,7 @@ export default function AdminPage() {
         const val = row[colToIdx(colLet)];
         return (val !== undefined && val !== null ? parseSmartFloat(val, channelName) : 0).toString();
       });
-      const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s]/g, '')};`)();
+      const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s\?\:\<\=\>]/g, '')};`)();
       return (isNaN(result) ? 0 : Math.max(0, result)) + rebateVal;
     } catch { return 0; }
   };
@@ -171,7 +169,7 @@ export default function AdminPage() {
     const isShopee = selectedChannel.toLowerCase().includes('shopee');
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: isShopee ? 'S' : 'B', colRebate: 'C', colPdv: isShopee ? 'BA' : 'I', colQuantidade: isShopee ? 'X' : 'G', formulaExcel: isShopee ? 'BA2 - (BA2 * 12%)' : 'S2 - (I2 * 9%)'
+      colIdPedido: 'A', colSku: isShopee ? 'S' : 'B', colRebate: 'C', colPdv: isShopee ? 'BA' : 'I', colQuantidade: isShopee ? 'X' : 'G', formulaExcel: 'R2 - (R2 <= 50 ? (R2 * 10% + 4) : (R2 * 6% + 6)) - (R2 * 9%) - U2'
     };
 
     const reader = new FileReader();
@@ -213,12 +211,12 @@ export default function AdminPage() {
 
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 1]) || new Date().toISOString().slice(0, 10);
           
-          const pdvColIdx = colToIdx(rule.colPdv || (isShopee ? 'BA' : 'I'));
+          const pdvColIdx = colToIdx(rule.colPdv || 'R');
           const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || (isShopee ? 'BA2' : 'S2 - (I2 * 9%)'), row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'R2 - (R2 <= 50 ? (R2 * 10% + 4) : (R2 * 6% + 6)) - (R2 * 9%) - U2', row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
 
-          const skuVal = row[colToIdx(rule.colSku || (isShopee ? 'S' : 'B'))] ? String(row[colToIdx(rule.colSku || (isShopee ? 'S' : 'B'))]).trim().toUpperCase() : 'SKU-GERAL';
-          const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || (isShopee ? 'X' : 'G'))] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+          const skuVal = row[colToIdx(rule.colSku || 'H')] ? String(row[colToIdx(rule.colSku || 'H')]).trim().toUpperCase() : 'SKU-GERAL';
+          const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'L')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
           novasVendas.push({
             id_pedido: idPedBruto,
