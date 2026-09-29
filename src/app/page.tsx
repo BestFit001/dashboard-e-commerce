@@ -57,11 +57,12 @@ export default function DashboardPage() {
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        const repasse = Number(s.repasse_liquido) || 0; 
-        const ganhoBruto = repasse - custoCMV; 
+        // CORREÇÃO: Garante a leitura robusta do repasse líquido calculado pelas regras
+        const repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
+        const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
-        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse };
+        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: repasseLiquido };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
 
@@ -72,7 +73,7 @@ export default function DashboardPage() {
 
   const kpis = useMemo(() => {
     const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
-    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse) || 0), 0);
+    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
     const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     
@@ -96,7 +97,7 @@ export default function DashboardPage() {
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
       const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse) || 0), 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
       
       const canalAds = adsData.find((a: any) => a.canal === channelName)?.custo_ads || 0;
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
@@ -207,7 +208,6 @@ export default function DashboardPage() {
                </div>
              </div>
              
-             {/* Caixa central com maior contraste */}
              <div className="grid grid-cols-2 gap-3 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
                <div>
                  <span className="text-[10px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
@@ -219,7 +219,6 @@ export default function DashboardPage() {
                </div>
              </div>
              
-             {/* Rodapé das Margens com cores iluminadas */}
              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
                 <div>
                   <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
