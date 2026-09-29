@@ -148,7 +148,7 @@ export default function AdminPage() {
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPrecoVenda: 'D', colQuantidade: 'G', formulaExcel: 'D2 - (D2 * 0.12)'
+      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'I2 - (I2 * 0.12)'
     };
 
     const reader = new FileReader();
@@ -167,16 +167,14 @@ export default function AdminPage() {
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
         const novasVendas: any[] = [];
 
-        // Varre a planilha ignorando cabeçalhos e focando estritamente em linhas com IDs válidos (20000...)
         let i = 0;
         while (i < rows.length) {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
 
-          const rawId = row[colToIdx(rule.colIdPedido)];
+          const rawId = row[colToIdx(rule.colIdPedido || 'A')];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          // Validação estrita: O ID do pedido do Mercado Livre deve começar obrigatoriamente com '20000' ou ter 10+ dígitos numéricos
           if (!idPedBruto || !/^20000\d{5,}$/.test(idPedBruto)) {
             i++; continue;
           }
@@ -185,10 +183,11 @@ export default function AdminPage() {
 
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
           
-          // Pega o PDV exatamente da coluna configurada nas Regras (ex: Coluna D)
-          const precoVendaRaw = row[colToIdx(rule.colPrecoVenda)];
+          // LEITURA CORRETA DO PDV: Usa estritamente a coluna configurada nas Regras (ex: Coluna I)
+          const pdvColIdx = colToIdx(rule.colPdv || 'I');
+          const precoVendaRaw = row[pdvColIdx];
           const precoVendaUnitario = parseBrFloat(precoVendaRaw);
-          const repasse = evaluateFormula(rule.formulaExcel, row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
+          const repasse = evaluateFormula(rule.formulaExcel || 'I2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
           const descStatus = String(row[3] || row[4] || '').toLowerCase();
           const pkgMatch = descStatus.match(/pacote de (\d+) produt/i);
