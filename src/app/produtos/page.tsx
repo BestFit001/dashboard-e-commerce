@@ -3,11 +3,21 @@ import React, { useState, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function ProdutosPage() {
-  const { sales, products, cancelados, adsData, flexData } = useAppContext();
+  const { sales, products, cancelados } = useAppContext();
   
   const [dateFilter, setDateFilter] = useState('MES');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  
+  // Novos estados para os filtros de SKU e Marca
+  const [searchSku, setSearchSku] = useState('');
+  const [selectedBrand, setSelectedBrand] = useState('TODAS');
+
+  // Extrair lista única de marcas da base de SKUs
+  const availableBrands = useMemo(() => {
+    const brands = new Set(products.map((p: any) => p.marca?.trim()).filter(Boolean));
+    return ['TODAS', ...Array.from(brands).sort()];
+  }, [products]);
 
   // 1. Filtragem de Data
   const filteredSales = useMemo(() => {
@@ -32,12 +42,11 @@ export default function ProdutosPage() {
     });
   }, [sales, dateFilter, customStartDate, customEndDate]);
 
-  // 2. Processamento da Curva ABC de SKUs
+  // 2. Processamento da Curva ABC e Filtros de Texto/Marca
   const { abcCurve, kpis } = useMemo(() => {
     const skuStats: Record<string, any> = {};
-    let faturamentoTotal = 0;
 
-    // Agrupa vendas por SKU
+    // Agrupa vendas por SKU (Filtragem de data já aplicada)
     filteredSales.forEach((s: any) => {
       if (!skuStats[s.sku]) skuStats[s.sku] = { sku: s.sku, qtd: 0, revenue: 0, repasse: 0 };
       skuStats[s.sku].qtd += (Number(s.quantidade) || 1);
@@ -45,53 +54,65 @@ export default function ProdutosPage() {
       const preco = Number(s.preco_venda) || 0;
       skuStats[s.sku].revenue += preco;
       skuStats[s.sku].repasse += (Number(s.repasse_liquido) || 0);
-      faturamentoTotal += preco;
     });
 
-    // Enriquecer com dados de Produtos (Título e Marca)
+    // Enriquecer com dados de Produtos e Aplicar Filtros de Marca e SKU
     let enrichedSkus = Object.values(skuStats).map(s => {
       const p = products.find((prod: any) => prod.sku === s.sku) || {};
       const custoUn = (Number(p.preco_custo) || 0) + (Number(p.custo_embalagem) || 0);
       const cmvTotal = custoUn * s.qtd;
-      const lucroTotal = s.repasse - cmvTotal; // Estimativa simples, sem descontar ads/flex especifico por sku
+      const lucroTotal = s.repasse - cmvTotal; 
       
       return { 
         ...s, 
         titulo: p.titulo || 'Produto não cadastrado', 
-        marca: p.marca || 'Sem Marca',
+        marca: p.marca?.trim() || 'Sem Marca',
         cmvTotal,
         lucroTotal
       };
     });
 
+    // Aplicação do Filtro de SKU
+    if (searchSku.trim()) {
+      enrichedSkus = enrichedSkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
+    }
+
+    // Aplicação do Filtro de Marca
+    if (selectedBrand !== 'TODAS') {
+      enrichedSkus = enrichedSkus.filter(s => s.marca === selectedBrand);
+    }
+
+    // Recalcular Faturamento Total APENAS para os itens filtrados
+    let faturamentoTotalFiltrado = 0;
+    enrichedSkus.forEach(s => faturamentoTotalFiltrado += s.revenue);
+
     // Ordenar do maior para o menor faturamento
     enrichedSkus.sort((a, b) => b.revenue - a.revenue);
 
-    // Calcular Curva ABC (A = 80%, B = 15%, C = 5% do faturamento)
+    // Calcular Curva ABC (A = 80%, B = 15%, C = 5% do faturamento da visão atual)
     let cumulative = 0;
     let countA = 0, countB = 0, countC = 0;
 
     enrichedSkus.forEach(s => {
       cumulative += s.revenue;
-      const pct = (cumulative / (faturamentoTotal || 1)) * 100;
-      s.pctRepresentatividade = (s.revenue / (faturamentoTotal || 1)) * 100;
+      const pct = (cumulative / (faturamentoTotalFiltrado || 1)) * 100;
+      s.pctRepresentatividade = (s.revenue / (faturamentoTotalFiltrado || 1)) * 100;
 
       if (pct <= 80) { s.curva = 'A'; countA++; }
       else if (pct <= 95) { s.curva = 'B'; countB++; }
       else { s.curva = 'C'; countC++; }
     });
 
-    const ticketMedio = filteredSales.length > 0 ? faturamentoTotal / filteredSales.length : 0;
-    // Estimativa de cancelamento: Multiplica a QTD de cancelados pelo Ticket Médio do período
+    const ticketMedio = filteredSales.length > 0 ? faturamentoTotalFiltrado / filteredSales.length : 0;
     const valorEstimadoCancelado = cancelados.length * ticketMedio;
 
     return { 
       abcCurve: enrichedSkus, 
-      kpis: { faturamentoTotal, countA, countB, countC, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
+      kpis: { faturamentoTotal: faturamentoTotalFiltrado, countA, countB, countC, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
     };
-  }, [filteredSales, products, cancelados]);
+  }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
 
-  // 3. Processamento de Marcas
+  // 3. Processamento de Marcas (Reflete a visão filtrada)
   const brandStats = useMemo(() => {
     const brands: Record<string, any> = {};
     abcCurve.forEach(s => {
@@ -112,10 +133,37 @@ export default function ProdutosPage() {
           <p className="text-xs text-slate-400 mt-1">Análise de Curva ABC, Desempenho por Marca e Impacto de Cancelamentos</p>
         </div>
         
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+        <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          {/* Filtro de SKU */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
+            <i className="fa-solid fa-magnifying-glass text-slate-400 pl-2 text-xs"></i>
+            <input 
+              type="text" 
+              placeholder="Pesquisar SKU..." 
+              value={searchSku} 
+              onChange={e => setSearchSku(e.target.value)} 
+              className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none pr-2 w-full sm:w-32" 
+            />
+          </div>
+
+          {/* Filtro de Marca */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
+            <i className="fa-solid fa-tag text-emerald-400 pl-2 text-xs"></i>
+            <select 
+              value={selectedBrand} 
+              onChange={(e) => setSelectedBrand(e.target.value)} 
+              className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32"
+            >
+              {availableBrands.map(brand => (
+                <option key={brand} value={brand}>{brand}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro de Data */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
-            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-auto">
               <option value="TUDO">Todo o Histórico</option>
               <option value="HOJE">Hoje</option>
               <option value="SEMANA">Últimos 7 dias</option>
@@ -125,7 +173,7 @@ export default function ProdutosPage() {
             </select>
           </div>
           {dateFilter === 'PERSONALIZADO' && (
-            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
               <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
               <span className="text-slate-500 text-xs font-bold">até</span>
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
@@ -139,7 +187,7 @@ export default function ProdutosPage() {
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (Filtro Atual)</span>
           <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-          <p className="text-[10px] text-slate-500 mt-1">Ticket Médio: R$ {kpis.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          <p className="text-[10px] text-slate-500 mt-1">Ticket Médio Est.: R$ {kpis.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30">
           <span className="text-[10px] font-bold text-indigo-400 uppercase">Curva A (Top 80% Receita)</span>
@@ -154,7 +202,7 @@ export default function ProdutosPage() {
         <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
           <div className="flex justify-between items-start">
             <span className="text-[10px] font-bold text-rose-400 uppercase">Perda Est. em Cancelados</span>
-            <i className="fa-solid fa-circle-exclamation text-rose-500/50" title="Estimativa: Qtd Cancelados x Ticket Médio"></i>
+            <i className="fa-solid fa-circle-exclamation text-rose-500/50" title="Estimativa: Qtd Cancelados Globais x Ticket Médio"></i>
           </div>
           <h3 className="text-2xl font-black text-rose-400 mt-1">R$ {kpis.valorEstimadoCancelado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p className="text-[10px] text-slate-500 mt-1">{kpis.totalCancelados} pedidos cancelados globais</p>
@@ -166,7 +214,7 @@ export default function ProdutosPage() {
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 h-full">
             <h3 className="font-bold text-white text-base mb-4"><i className="fa-solid fa-medal text-amber-400 mr-2"></i>Faturamento por Marca</h3>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
               {brandStats.map((brand, i) => (
                 <div key={i} className="space-y-1.5">
                   <div className="flex justify-between items-end">
@@ -185,7 +233,7 @@ export default function ProdutosPage() {
                   </div>
                 </div>
               ))}
-              {brandStats.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Sem dados para o período.</p>}
+              {brandStats.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Sem dados para os filtros selecionados.</p>}
             </div>
           </div>
         </div>
@@ -196,7 +244,7 @@ export default function ProdutosPage() {
             <div className="p-5 border-b border-slate-800">
                <h3 className="font-bold text-white text-base">Relatório de Curva ABC (Classificação de SKUs)</h3>
             </div>
-            <div className="overflow-x-auto max-h-[600px]">
+            <div className="overflow-x-auto max-h-[530px]">
               <table className="w-full text-left text-xs text-slate-200">
                 <thead className="bg-slate-950 text-slate-400 uppercase text-[9px] font-bold border-b border-slate-800 sticky top-0 z-10">
                   <tr>
@@ -231,7 +279,7 @@ export default function ProdutosPage() {
                     </tr>
                   ))}
                   {abcCurve.length === 0 && (
-                    <tr><td colSpan={6} className="p-8 text-center text-slate-500 font-bold">Nenhum produto vendido neste período.</td></tr>
+                    <tr><td colSpan={6} className="p-8 text-center text-slate-500 font-bold">Nenhum produto encontrado com os filtros atuais.</td></tr>
                   )}
                 </tbody>
               </table>
