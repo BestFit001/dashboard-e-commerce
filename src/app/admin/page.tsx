@@ -42,14 +42,11 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  // PARSER INTELIGENTE DE NÚMEROS (Trata milhares, decimais, BRL, R$ e vírgulas/pontos perfeitamente)
   const parseSmartFloat = (val: any, channelName: string) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
     
     let strVal = String(val).trim();
-    
-    // Remove letras e símbolos de moeda, mantendo números, pontos, vírgulas e hífens
     strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
 
     if (strVal.includes(',') && strVal.includes('.')) {
@@ -57,14 +54,11 @@ export default function AdminPage() {
       const lastDot = strVal.lastIndexOf('.');
       
       if (lastComma > lastDot) {
-        // Padrão brasileiro (ex: 3.460,00) -> remove pontos de milhar, troca vírgula por ponto
         strVal = strVal.replace(/\./g, '').replace(',', '.');
       } else {
-        // Padrão americano (ex: 3,460.00) -> remove vírgulas de milhar
         strVal = strVal.replace(/,/g, '');
       }
     } else if (strVal.includes(',')) {
-      // Apenas vírgula decimal (ex: 3460,00 ou 206,91) -> troca por ponto
       strVal = strVal.replace(/\./g, '').replace(',', '.');
     }
     
@@ -207,14 +201,27 @@ export default function AdminPage() {
     const isShopee = selectedChannel.toLowerCase().includes('shopee');
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: isShopee ? 'S' : 'B', colRebate: 'C', colPdv: isShopee ? 'BA' : 'I', colQuantidade: isShopee ? 'X' : 'G', formulaExcel: 'R2 - (R2 <= 50 ? (R2 * 10% + 4) : (R2 * 6% + 6)) - (R2 * 9%) - U2'
+      colIdPedido: 'A', colSku: isShopee ? 'S' : 'AS', colRebate: 'C', colPdv: isShopee ? 'BA' : 'J', colQuantidade: isShopee ? 'X' : 'I', formulaExcel: 'J - (J * 9%) - K'
     };
 
     const reader = new FileReader();
+    
     reader.onload = async (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        let rows: any[] = [];
+        const fileName = file.name.toLowerCase();
+
+        if (fileName.endsWith('.csv')) {
+          const text = evt.target?.result as string;
+          const lines = text.split(/\r?\n/);
+          rows = lines.map(line => {
+            const sep = line.includes(';') ? ';' : ',';
+            return line.split(sep).map(cell => cell.replace(/^["']|["']$/g, '').trim());
+          });
+        } else {
+          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        }
         
         const fatMap = new Map();
         faturados.forEach((item: any) => {
@@ -247,14 +254,14 @@ export default function AdminPage() {
             continue;
           }
 
-          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 1]) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 2]) || new Date().toISOString().slice(0, 10);
           
-          const pdvColIdx = colToIdx(rule.colPdv || 'R');
+          const pdvColIdx = colToIdx(rule.colPdv || 'J');
           const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'R2 - (R2 <= 50 ? (R2 * 10% + 4) : (R2 * 6% + 6)) - (R2 * 9%) - U2', row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
 
-          const skuVal = row[colToIdx(rule.colSku || 'H')] ? String(row[colToIdx(rule.colSku || 'H')]).trim().toUpperCase() : 'SKU-GERAL';
-          const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'L')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+          const skuVal = row[colToIdx(rule.colSku || 'AS')] ? String(row[colToIdx(rule.colSku || 'AS')]).trim().toUpperCase() : 'SKU-GERAL';
+          const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'I')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
           novasVendas.push({
             id_pedido: idPedBruto,
@@ -285,7 +292,12 @@ export default function AdminPage() {
         setIsProcessing(false);
       }
     };
-    reader.readAsArrayBuffer(file);
+
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(file, 'ISO-8859-1');
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
     if (fileVendasRef.current) fileVendasRef.current.value = '';
   };
 
