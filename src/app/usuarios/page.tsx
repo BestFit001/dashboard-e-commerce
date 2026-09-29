@@ -17,7 +17,7 @@ export default function UsuariosPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cargo, setCargo] = useState('Analistas');
-  const [permissoes, setPermissoes] = useState<string[]>(['dashboard', 'produtos']);
+  const [permissoes, setPermissoes] = useState<string[]>(['dashboard']); // Inicia apenas com o Dashboard marcado
   const [isSaving, setIsSaving] = useState(false);
 
   const handleTogglePermissao = (id: string) => {
@@ -60,7 +60,7 @@ export default function UsuariosPage() {
     setEmail('');
     setPassword('');
     setCargo('Analistas');
-    setPermissoes(['dashboard', 'produtos']);
+    setPermissoes(['dashboard']);
     setIsSaving(false);
     alert('Utilizador cadastrado com sucesso!');
   };
@@ -83,7 +83,7 @@ export default function UsuariosPage() {
       <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6 shadow-xl">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Gestão por Cargos e Permissões de Acesso</h2>
-          <p className="text-xs text-slate-400 mt-1">Cadastre utilizadores, defina o cargo corporativo e selecione exatamente quais abas cada um pode acessar.</p>
+          <p className="text-xs text-slate-400 mt-1">Cadastre utilizadores, defina o cargo corporativo e selecione exatamente quais abas cada um pode aceder.</p>
         </div>
 
         <form onSubmit={handleAddUser} className="space-y-5">

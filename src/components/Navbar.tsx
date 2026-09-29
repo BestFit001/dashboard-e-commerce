@@ -10,8 +10,9 @@ export default function Navbar() {
 
   if (!currentUser) return null;
 
-  // Se o utilizador for o admin principal ou tiver permissões explícitas
-  const permissoes = currentUser.permissoes || (currentUser.role === 'admin' ? ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] : ['dashboard']);
+  // Se for o admin principal, libera tudo. Senão, respeita rigorosamente o array de permissões gravado.
+  const isAdminPrincipal = currentUser.username === 'gisele@usebestfit.com.br';
+  const permissoes = isAdminPrincipal ? ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] : (currentUser.permissoes || ['dashboard']);
 
   const navLinks = [
     { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', id: 'dashboard' },
@@ -36,7 +37,7 @@ export default function Navbar() {
 
       <div className="hidden md:flex items-center gap-2">
         {navLinks.map(link => {
-          // Oculta se o utilizador não tiver a permissão para esta aba
+          // Bloqueia rigorosamente caso a permissão não esteja incluída no array do utilizador
           if (!permissoes.includes(link.id)) return null;
           
           const isActive = pathname === link.path;
@@ -51,7 +52,7 @@ export default function Navbar() {
       <div className="flex items-center gap-6">
         <div className="text-right hidden sm:block">
           <span className="block text-[9px] font-black uppercase tracking-wider text-purple-400">
-            {currentUser.cargo || (currentUser.role === 'admin' ? 'Gerência' : 'Visualizador')}
+            {currentUser.cargo || (isAdminPrincipal ? 'Gerência' : 'Visualizador')}
           </span>
           <span className="block text-xs font-medium text-slate-200">{currentUser.username}</span>
         </div>
