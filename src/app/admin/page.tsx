@@ -104,9 +104,12 @@ export default function AdminPage() {
           }
         });
 
-        await saveToCloudAndState('faturados', novosFaturados, setFaturados);
+        // Acumula com os faturados existentes ou substitui (aqui acumulamos para suportar múltiplos lotes de NFe se necessário)
+        const updatedFaturados = [...novosFaturados, ...faturados];
+        await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
+        
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso e salvos no Supabase!`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso e salvos no Supabase! Total na base: ${updatedFaturados.length}`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -132,7 +135,8 @@ export default function AdminPage() {
           if (rawId) novosCancelados.push(String(rawId).trim());
         });
 
-        await saveToCloudAndState('cancelados', novosCancelados, setCancelados);
+        const updatedCancelados = [...novosCancelados, ...cancelados];
+        await saveToCloudAndState('cancelados', updatedCancelados, setCancelados);
         addLog(`${novosCancelados.length} IDs Cancelados salvos na nuvem.`, 'warning');
         alert(`${novosCancelados.length} cancelados salvos!`);
       } catch (err: any) {
@@ -146,6 +150,14 @@ export default function AdminPage() {
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // VALIDAÇÃO CRÍTICA: Impede importação se a base de faturados estiver vazia
+    if (!faturados || faturados.length === 0) {
+      alert('ATENÇÃO: A base de Faturados (NFes Saída) está vazia! Por favor, suba a planilha de Faturados no Passo 1 antes de importar as vendas do canal.');
+      if (fileVendasRef.current) fileVendasRef.current.value = '';
+      return;
+    }
+
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
@@ -159,11 +171,9 @@ export default function AdminPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const fatMap = new Map();
-        if (faturados && faturados.length > 0) {
-          faturados.forEach((item: any) => {
-            fatMap.set(String(item.id).trim(), item.data);
-          });
-        }
+        faturados.forEach((item: any) => {
+          fatMap.set(String(item.id).trim(), item.data);
+        });
 
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
         const novasVendas: any[] = [];
@@ -185,7 +195,8 @@ export default function AdminPage() {
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
 
-          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
+          // CRUZAMENTO RIGOROSO: Só prossegue se o ID estiver na base de faturados
+          if (!fatMap.has(idPedBruto)) {
             ignoradosPorNaoFaturados++;
             i++; 
             continue;
@@ -249,15 +260,13 @@ export default function AdminPage() {
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
         
-        // Remove vendas anteriores deste mesmo canal para garantir que a nova substitua o canal inteiro sem duplicar,
-        // ou mantém caso queira acumular. Como é reenvio de correção do canal, substitui as do canal atual e adiciona as novas.
         const filteredOldSales = sales.filter((s: any) => s.canal !== selectedChannel);
         const updatedSales = [...salesWithKeys, ...filteredOldSales];
         
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens do canal ${selectedChannel} importados com sucesso.`);
+        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens cruzados. (${ignoradosPorNaoFaturados} ignorados por não constarem em faturados)`, 'success');
+        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos foram ignorados por não estarem na base de faturados.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -292,18 +301,15 @@ export default function AdminPage() {
       return;
     }
 
-    // Identifica todos os lotes do canal selecionado
     const canalSales = sales.filter((s: any) => s.canal === targetChannelDelete);
     if (canalSales.length === 0) {
       alert(`Não existem vendas registadas para o canal ${targetChannelDelete}.`);
       return;
     }
 
-    // Pega o lote mais recente (último lote gerado)
     const lotes = Array.from(new Set(canalSales.map((s: any) => s.lote_id).filter(Boolean)));
     if (lotes.length === 0) {
-      // Se não tiver lote_id (vendas antigas importadas), apaga as vendas do canal por segurança
-      if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes separados. Deseja remover todas as vendas deste canal?`)) {
+      if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes. Deseja remover todas as vendas deste canal?`)) {
         const remainingSales = sales.filter((s: any) => s.canal !== targetChannelDelete);
         await saveToCloudAndState('vendas', remainingSales, setSales);
         alert(`Vendas do canal ${targetChannelDelete} removidas.`);
@@ -432,7 +438,6 @@ export default function AdminPage() {
          </div>
        </div>
 
-       {/* ZONA DE LIMPEZA INTELIGENTE POR CANAL / LOTE */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
              <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Vendas</h3>
