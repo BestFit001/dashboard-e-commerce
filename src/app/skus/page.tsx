@@ -8,7 +8,8 @@ export default function SkusPage() {
   const { products, setProducts, addLog } = useAppContext();
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+  // Estado atualizado para incluir a propriedade "marca"
+  const [newProduct, setNewProduct] = useState({ sku: '', titulo: '', marca: '', preco_custo: '', custo_embalagem: '' });
   const [isSaving, setIsSaving] = useState(false);
 
   // Estados para Busca e Paginação (50 por página)
@@ -16,12 +17,13 @@ export default function SkusPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
-  // Filtragem por SKU ou Título
+  // Filtragem por SKU, Título ou Marca
   const filteredProducts = useMemo(() => {
     if (!searchSku.trim()) return products;
     return products.filter((p: any) => 
       p.sku.toLowerCase().includes(searchSku.toLowerCase()) || 
-      (p.titulo && p.titulo.toLowerCase().includes(searchSku.toLowerCase()))
+      (p.titulo && p.titulo.toLowerCase().includes(searchSku.toLowerCase())) ||
+      (p.marca && p.marca.toLowerCase().includes(searchSku.toLowerCase()))
     );
   }, [products, searchSku]);
 
@@ -34,7 +36,7 @@ export default function SkusPage() {
 
   // Abertura do modal para criar novo
   const openNewModal = () => {
-    setNewProduct({ sku: '', titulo: '', preco_custo: '', custo_embalagem: '' });
+    setNewProduct({ sku: '', titulo: '', marca: '', preco_custo: '', custo_embalagem: '' });
     setIsEditing(false);
     setShowModal(true);
   };
@@ -44,6 +46,7 @@ export default function SkusPage() {
     setNewProduct({
       sku: prod.sku,
       titulo: prod.titulo,
+      marca: prod.marca || '',
       preco_custo: String(prod.preco_custo),
       custo_embalagem: String(prod.custo_embalagem)
     });
@@ -59,6 +62,7 @@ export default function SkusPage() {
     const item = {
       sku: newProduct.sku.toUpperCase().trim(),
       titulo: newProduct.titulo.trim(),
+      marca: newProduct.marca.trim(),
       preco_custo: parseFloat(String(newProduct.preco_custo).replace(',', '.')) || 0,
       custo_embalagem: parseFloat(String(newProduct.custo_embalagem).replace(',', '.')) || 0
     };
@@ -77,7 +81,7 @@ export default function SkusPage() {
       setShowModal(false);
     } catch (err: any) {
       addLog(`Erro ao salvar SKU no banco: ${err.message}`, 'error');
-      alert(`Falha ao gravar no Supabase: ${err.message}`);
+      alert(`Falha ao gravar no Supabase: ${err.message}\nVerifique se a coluna "marca" foi criada no Supabase.`);
     } finally {
       setIsSaving(false);
     }
@@ -117,7 +121,8 @@ export default function SkusPage() {
             sku: String(r[0]).trim().toUpperCase(),
             titulo: String(r[1] || 'Produto Importado').trim(),
             preco_custo: parseFloat(String(r[2]).replace(',', '.')) || 0,
-            custo_embalagem: parseFloat(String(r[3]).replace(',', '.')) || 0
+            custo_embalagem: parseFloat(String(r[3]).replace(',', '.')) || 0,
+            marca: r[4] ? String(r[4]).trim() : '' // Lendo a marca da Coluna E (índice 4)
           });
         });
 
@@ -143,7 +148,7 @@ export default function SkusPage() {
         alert(`Sucesso! Todos os ${novosCustos.length} SKUs foram guardados no banco de dados.`);
       } catch (err: any) {
         addLog(`Erro ao importar custos: ${err.message}`, 'error');
-        alert(`Erro na importação: ${err.message}`);
+        alert(`Erro na importação: ${err.message}\nLembre-se: A marca deve estar na Coluna E da planilha.`);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -163,7 +168,7 @@ export default function SkusPage() {
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           <input 
             type="text" 
-            placeholder="Buscar por SKU ou Título..." 
+            placeholder="Buscar SKU, Título ou Marca..." 
             value={searchSku} 
             onChange={e => { setSearchSku(e.target.value); setCurrentPage(1); }} 
             className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-64" 
@@ -185,6 +190,7 @@ export default function SkusPage() {
               <tr>
                 <th className="py-4 px-5">SKU</th>
                 <th className="py-4 px-5">Descrição</th>
+                <th className="py-4 px-5">Marca</th>
                 <th className="py-4 px-5">Custo Produto</th>
                 <th className="py-4 px-5">Custo Embalagem</th>
                 <th className="py-4 px-5 text-right">Custo Total Unitário</th>
@@ -196,6 +202,7 @@ export default function SkusPage() {
                 <tr key={p.sku} className="hover:bg-slate-800/40 transition">
                   <td className="py-3 px-5 font-mono font-bold text-indigo-400">{p.sku}</td>
                   <td className="py-3 px-5 text-slate-200">{p.titulo}</td>
+                  <td className="py-3 px-5 text-slate-300">{p.marca || '-'}</td>
                   <td className="py-3 px-5">R$ {(p.preco_custo || 0).toFixed(2).replace('.', ',')}</td>
                   <td className="py-3 px-5">R$ {(p.custo_embalagem || 0).toFixed(2).replace('.', ',')}</td>
                   <td className="py-3 px-5 text-right font-black text-amber-400">R$ {((p.preco_custo || 0) + (p.custo_embalagem || 0)).toFixed(2).replace('.', ',')}</td>
@@ -210,7 +217,7 @@ export default function SkusPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-500 font-bold">
+                  <td colSpan={7} className="py-8 text-center text-slate-500 font-bold">
                     Nenhum SKU encontrado. Clique em "Novo SKU" ou importe a sua planilha.
                   </td>
                 </tr>
@@ -251,10 +258,19 @@ export default function SkusPage() {
                  />
                  {isEditing && <span className="text-[10px] text-amber-400 mt-1 block">Não é possível alterar o código de um SKU já criado.</span>}
                </div>
-               <div>
-                 <label className="block text-xs font-bold text-slate-400 mb-1">Título do Produto *</label>
-                 <input type="text" required value={newProduct.titulo} onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:border-indigo-500 focus:outline-none" />
+               
+               <div className="grid grid-cols-2 gap-3">
+                 <div className="col-span-2">
+                   <label className="block text-xs font-bold text-slate-400 mb-1">Título do Produto *</label>
+                   <input type="text" required value={newProduct.titulo} onChange={e => setNewProduct({...newProduct, titulo: e.target.value})} className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:border-indigo-500 focus:outline-none" />
+                 </div>
+                 
+                 <div className="col-span-2">
+                   <label className="block text-xs font-bold text-slate-400 mb-1">Marca</label>
+                   <input type="text" value={newProduct.marca} onChange={e => setNewProduct({...newProduct, marca: e.target.value})} placeholder="Ex: Farm, Speedo, Só Dança..." className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:border-indigo-500 focus:outline-none" />
+                 </div>
                </div>
+
                <div className="grid grid-cols-2 gap-3">
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1">Custo Prod. (R$) *</label>
