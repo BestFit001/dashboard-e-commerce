@@ -105,7 +105,7 @@ export default function AdminPage() {
 
         await saveToCloudAndState('faturados', novosFaturados, setFaturados);
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso das observações e salvos no Supabase!`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso e salvos no Supabase!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -180,9 +180,8 @@ export default function AdminPage() {
           }
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
-          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) { i++; continue; }
 
-          const dataFaturamento = fatMap.get(idPedBruto) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
           const precoVendaRaw = row[colToIdx(rule.colPrecoVenda || 'E')];
           const repasse = evaluateFormula(rule.formulaExcel, row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
