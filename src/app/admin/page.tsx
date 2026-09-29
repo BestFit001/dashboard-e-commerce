@@ -16,8 +16,8 @@ export default function AdminPage() {
   const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const [colFaturadosObs, setColFaturadosObs] = useState('A');
-  const [colFaturadosData, setColFaturadosData] = useState('F');
+  const [colFaturadosObs, setColFaturadosObs] = useState('AI');
+  const [colFaturadosData, setColFaturadosData] = useState('D');
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -131,24 +131,15 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          let rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
+          const obsText = row[idxObs] !== undefined ? String(row[idxObs]) : '';
           
-          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) return;
-
-          // Tratamento robusto para notação científica (ex: 1,00129E+11) ou números
-          rawId = rawId.replace(/\.0$/, '');
-          if (rawId.toUpperCase().includes('E+')) {
-            try {
-              const numVal = parseFloat(rawId.replace(',', '.'));
-              if (!isNaN(numVal)) {
-                rawId = Math.round(numVal).toString();
-              }
-            } catch {}
-          }
-
-          if (rawId) {
-            const dataEmissao = parseExcelDate(row[idxData] || row[5] || row[2]);
-            novosFaturados.push({ id: rawId, data: dataEmissao });
+          // Extrai o ID do pedido de dentro do texto da coluna Observações (AI)
+          const match = obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{6,}\b/);
+          
+          if (match) {
+            const pedidoId = match[0].trim();
+            const dataEmissao = parseExcelDate(row[idxData]);
+            novosFaturados.push({ id: pedidoId, data: dataEmissao });
           }
         });
 
@@ -156,7 +147,7 @@ export default function AdminPage() {
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
         
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`Sucesso! ${novosFaturados.length} faturados lidos e salvos. Total acumulado: ${updatedFaturados.length}`);
+        alert(`Sucesso! ${novosFaturados.length} faturados lidos da coluna ${colFaturadosObs} e salvos. Total acumulado: ${updatedFaturados.length}`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -251,29 +242,22 @@ export default function AdminPage() {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
 
-          let rawId = row[colToIdx(rule.colIdPedido || 'A')] ? String(row[colToIdx(rule.colIdPedido || 'A')]).trim() : '';
-          
-          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) {
+          const rawId = row[colToIdx(rule.colIdPedido || 'A')];
+          const idPedBruto = rawId ? String(rawId).trim() : '';
+
+          if (!idPedBruto || idPedBruto.toLowerCase().includes('pedido') || idPedBruto.toLowerCase().includes('id')) {
             i++; continue;
           }
 
-          rawId = rawId.replace(/\.0$/, '');
-          if (rawId.toUpperCase().includes('E+')) {
-            try {
-              const numVal = parseFloat(rawId.replace(',', '.'));
-              if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
-            } catch {}
-          }
+          if (cancSet.has(idPedBruto)) { i++; continue; }
 
-          if (cancSet.has(rawId)) { i++; continue; }
-
-          if (!fatMap.has(rawId)) {
+          if (!fatMap.has(idPedBruto)) {
             ignoradosPorNaoFaturados++;
             i++; 
             continue;
           }
 
-          const dataFaturamento = fatMap.get(rawId) || parseExcelDate(row[isShopee ? 8 : 5]) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 3]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || 'J');
           const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
@@ -283,7 +267,7 @@ export default function AdminPage() {
           const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'I')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
           novasVendas.push({
-            id_pedido: rawId,
+            id_pedido: idPedBruto,
             data_faturamento: dataFaturamento,
             canal: selectedChannel,
             sku: skuVal,
@@ -415,16 +399,16 @@ export default function AdminPage() {
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
            <div className="flex gap-2">
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (NumeroPedido / A)</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações / AI)</span>
                 <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (F)</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (D)</span>
                 <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
            </div>
            <label className="cursor-pointer block text-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados (CSV/Excel)
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados (Excel/CSV)
            </label>
            <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {faturados.length}</p>
          </div>
