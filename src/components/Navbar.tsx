@@ -12,9 +12,10 @@ export default function Navbar() {
 
   const isAdmin = currentUser.role === 'admin';
 
-  // Array de rotas. O atributo reqAdmin define se a rota exige nível Administrador.
+  // Nova rota adicionada: /produtos
   const navLinks = [
     { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', reqAdmin: false },
+    { name: 'Análise (ABC)', path: '/produtos', icon: 'fa-solid fa-boxes-stacked', reqAdmin: false },
     { name: 'SKUs & Custos', path: '/skus', icon: 'fa-solid fa-tags', reqAdmin: true },
     { name: 'Regras Canal', path: '/regras', icon: 'fa-solid fa-calculator', reqAdmin: true },
     { name: 'Admin', path: '/admin', icon: 'fa-solid fa-lock', reqAdmin: true },
@@ -38,7 +39,6 @@ export default function Navbar() {
       {/* Menu Principal com Bloqueio de Role */}
       <div className="hidden md:flex items-center gap-2">
         {navLinks.map(link => {
-          // Se o link exige admin e o utilizador atual não é admin, não renderiza o botão
           if (link.reqAdmin && !isAdmin) return null;
           
           const isActive = pathname === link.path;
