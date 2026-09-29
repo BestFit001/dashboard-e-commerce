@@ -16,13 +16,14 @@ export default function ProdutosPage() {
   // Estados para a Tabela de Pedidos
   const [searchOrderId, setSearchOrderId] = useState('');
   const [sortOrder, setSortOrder] = useState('DEFAULT');
+  const [cmvFilter, setCmvFilter] = useState('TODOS'); // NOVO: Estado para filtrar CMV
   const [currentPageOrders, setCurrentPageOrders] = useState(1);
   const itemsPerPageOrders = 20;
 
   // Resetar página da tabela de pedidos ao mudar filtros
   useEffect(() => {
     setCurrentPageOrders(1);
-  }, [searchOrderId, sortOrder, dateFilter, customStartDate, customEndDate]);
+  }, [searchOrderId, sortOrder, cmvFilter, dateFilter, customStartDate, customEndDate]);
 
   // Extrair lista única de marcas
   const availableBrands = useMemo(() => {
@@ -69,7 +70,7 @@ export default function ProdutosPage() {
       skuStats[s.sku].repasse += (Number(s.repasse_liquido) || 0);
     });
 
-    let faturamentoTotalPeriodo = 0; // Variável para o total global do período
+    let faturamentoTotalPeriodo = 0;
 
     let allSkus = Object.values(skuStats).map(s => {
       const p = products.find((prod: any) => prod.sku === s.sku) || {};
@@ -80,12 +81,11 @@ export default function ProdutosPage() {
       const marcaRaw = p.marca?.trim();
       const marcaNormalizada = marcaRaw ? marcaRaw.toUpperCase() : 'SEM MARCA';
       
-      faturamentoTotalPeriodo += s.revenue; // Soma global do faturamento
+      faturamentoTotalPeriodo += s.revenue; 
 
       return { ...s, titulo: p.titulo || 'Produto não cadastrado', marca: marcaNormalizada, cmvTotal, lucroTotal };
     });
 
-    // Ordenar e calcular Curva ABC GLOBAL (Baseado no faturamento total do período antes dos filtros)
     allSkus.sort((a, b) => b.revenue - a.revenue);
 
     let cumulative = 0;
@@ -99,13 +99,11 @@ export default function ProdutosPage() {
       else { s.curva = 'C'; }
     });
 
-    // AGORA aplicamos os filtros de pesquisa de SKU e Marca para exibição
     let displaySkus = allSkus;
     
     if (searchSku.trim()) displaySkus = displaySkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
     if (selectedBrand !== 'TODAS') displaySkus = displaySkus.filter(s => s.marca === selectedBrand);
 
-    // Variáveis para os KPIs do topo da tela (estes sim refletem apenas o que está filtrado/pesquisado)
     let faturamentoTotalFiltrado = 0;
     let lucroTotalFiltrado = 0;
     let countAFiltrado = 0, countBFiltrado = 0, countCFiltrado = 0;
@@ -166,16 +164,23 @@ export default function ProdutosPage() {
 
   const displayOrders = useMemo(() => {
     let result = enrichedOrders;
+
+    // NOVO: Filtro para mostrar apenas pedidos com CMV zerado
+    if (cmvFilter === 'SEM_CMV') {
+      result = result.filter((s: any) => !s.custoCMV || s.custoCMV === 0);
+    }
+
     if (searchOrderId.trim()) {
       result = result.filter((s: any) => s.id_pedido && String(s.id_pedido).includes(searchOrderId.trim()));
     }
+    
     if (sortOrder === 'MAIOR_LIQUIDEZ') {
       result = [...result].sort((a: any, b: any) => b.ganhoLiquido - a.ganhoLiquido);
     } else if (sortOrder === 'MENOR_LIQUIDEZ') {
       result = [...result].sort((a: any, b: any) => a.ganhoLiquido - b.ganhoLiquido);
     }
     return result;
-  }, [enrichedOrders, searchOrderId, sortOrder]);
+  }, [enrichedOrders, searchOrderId, sortOrder, cmvFilter]);
 
   const totalPagesOrders = Math.ceil(displayOrders.length / itemsPerPageOrders) || 1;
   const paginatedOrders = useMemo(() => {
@@ -352,7 +357,17 @@ export default function ProdutosPage() {
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
           <h3 className="font-bold text-white text-base">Fragmentação por Pedido (Ganho Real)</h3>
           
-          <div className="flex gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            {/* NOVO: Filtro para localizar Pedidos Sem CMV */}
+            <select 
+              value={cmvFilter} 
+              onChange={(e) => setCmvFilter(e.target.value)}
+              className="p-2.5 bg-slate-950 border border-amber-700/50 text-amber-400 rounded-xl text-xs outline-none focus:border-amber-500 cursor-pointer w-full sm:w-auto font-bold"
+            >
+              <option value="TODOS" className="bg-slate-900 text-slate-200">Todos os Pedidos</option>
+              <option value="SEM_CMV" className="bg-slate-900 text-rose-400">Aviso: Sem Custo (CMV 0)</option>
+            </select>
+
             <input 
               type="text" 
               placeholder="Buscar ID Pedido..." 
@@ -395,7 +410,9 @@ export default function ProdutosPage() {
                 <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2.5">R$ {(s.repasse || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className={`py-2.5 ${!s.custoCMV || s.custoCMV === 0 ? 'text-rose-400 font-bold bg-rose-950/20' : 'text-amber-300'}`}>
+                  - R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
                 <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className={`py-2.5 pr-3 text-right font-extrabold ${(s.ganhoLiquido || 0) < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
                   R$ {(s.ganhoLiquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
