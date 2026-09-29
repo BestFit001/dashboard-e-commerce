@@ -18,17 +18,19 @@ export default function UsuariosPage() {
 
     if (users.some((u: any) => u.username === cleanEmail)) {
       addLog(`O utilizador ${cleanEmail} já existe.`, 'error');
+      alert(`O utilizador ${cleanEmail} já existe.`);
       return;
     }
 
     setIsSaving(true);
     const newUser = { username: cleanEmail, password: password.trim(), role };
 
-    // 1. Grava no Supabase (Nuvem)
-    const { error } = await supabase.from('tb_usuarios').upsert([newUser]);
+    // 1. Grava no Supabase
+    const { error } = await supabase.from('tb_usuarios').upsert([newUser], { onConflict: 'username' });
 
     if (error) {
       addLog(`Erro ao salvar utilizador na nuvem: ${error.message}`, 'error');
+      alert(`Erro ao salvar no Supabase: ${error.message}`);
       setIsSaving(false);
       return;
     }
@@ -41,6 +43,7 @@ export default function UsuariosPage() {
     setPassword('');
     setRole('user');
     setIsSaving(false);
+    alert('Utilizador cadastrado com sucesso!');
   };
 
   const handleDeleteUser = async (username: string) => {
@@ -93,10 +96,10 @@ export default function UsuariosPage() {
             <select 
               value={role} 
               onChange={e => setRole(e.target.value)} 
-              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-bold"
+              className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-bold cursor-pointer"
             >
-              <option value="user">Visualizador (Apenas Dashboard)</option>
-              <option value="admin">Administrador (Acesso Total)</option>
+              <option value="user" className="bg-slate-900">Visualizador (Apenas Dashboard)</option>
+              <option value="admin" className="bg-slate-900">Administrador (Acesso Total)</option>
             </select>
           </div>
           <div className="flex items-end">

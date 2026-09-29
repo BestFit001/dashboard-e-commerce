@@ -37,6 +37,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
+      // Buscar utilizadores cadastrados na nuvem
+      const { data: usuariosDb } = await supabase.from('tb_usuarios').select('*');
+      if (usuariosDb && usuariosDb.length > 0) {
+        // Garante que o admin principal está sempre presente
+        const hasAdmin = usuariosDb.some((u: any) => u.username === 'gisele@usebestfit.com.br');
+        const finalUsers = hasAdmin ? usuariosDb : [{ username: 'gisele@usebestfit.com.br', password: '123', role: 'admin' }, ...usuariosDb];
+        setUsers(finalUsers);
+      }
+
       const { data: globalState } = await supabase.from('tb_estado_global').select('*');
       if (globalState) {
         globalState.forEach((item: any) => {
@@ -54,13 +63,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
-      // Requisição para buscar as metas do banco de dados na inicialização
       const { data: metasDb } = await supabase.from('tb_metas').select('*');
       if (metasDb && metasDb.length > 0) {
         setGoals(metasDb);
       }
 
-      // Produtos com paginação de 1000 em 1000
       let allProducts: any[] = [];
       let page = 0;
       let fetchMore = true;
