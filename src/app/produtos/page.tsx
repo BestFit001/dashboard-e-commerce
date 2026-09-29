@@ -13,9 +13,12 @@ export default function ProdutosPage() {
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
 
-  // Extrair lista única de marcas (transformando vazios em "Sem Marca")
+  // Extrair lista única de marcas (Normalizando para MAIÚSCULAS para evitar duplicidades de digitação)
   const availableBrands = useMemo(() => {
-    const brands = new Set(products.map((p: any) => p.marca?.trim() || 'Sem Marca'));
+    const brands = new Set(products.map((p: any) => {
+      const m = p.marca?.trim();
+      return m ? m.toUpperCase() : 'SEM MARCA';
+    }));
     return ['TODAS', ...Array.from(brands).sort((a: any, b: any) => a.localeCompare(b))];
   }, [products]);
 
@@ -63,10 +66,14 @@ export default function ProdutosPage() {
       const cmvTotal = custoUn * s.qtd;
       const lucroTotal = s.repasse - cmvTotal; 
       
+      // Normalização da marca para letras maiúsculas
+      const marcaRaw = p.marca?.trim();
+      const marcaNormalizada = marcaRaw ? marcaRaw.toUpperCase() : 'SEM MARCA';
+      
       return { 
         ...s, 
         titulo: p.titulo || 'Produto não cadastrado', 
-        marca: p.marca?.trim() || 'Sem Marca',
+        marca: marcaNormalizada,
         cmvTotal,
         lucroTotal
       };
