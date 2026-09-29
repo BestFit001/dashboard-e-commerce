@@ -13,7 +13,6 @@ export default function AdminPage() {
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState(canais[0] || 'Mercado Livre 1');
-  const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
   const [isProcessing, setIsProcessing] = useState(false);
   
   const [colFaturadosObs, setColFaturadosObs] = useState('AI');
@@ -104,12 +103,9 @@ export default function AdminPage() {
           }
         });
 
-        // Acumula com os faturados existentes ou substitui (aqui acumulamos para suportar múltiplos lotes de NFe se necessário)
-        const updatedFaturados = [...novosFaturados, ...faturados];
-        await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
-        
+        await saveToCloudAndState('faturados', novosFaturados, setFaturados);
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso e salvos no Supabase! Total na base: ${updatedFaturados.length}`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso e salvos no Supabase!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -135,8 +131,7 @@ export default function AdminPage() {
           if (rawId) novosCancelados.push(String(rawId).trim());
         });
 
-        const updatedCancelados = [...novosCancelados, ...cancelados];
-        await saveToCloudAndState('cancelados', updatedCancelados, setCancelados);
+        await saveToCloudAndState('cancelados', novosCancelados, setCancelados);
         addLog(`${novosCancelados.length} IDs Cancelados salvos na nuvem.`, 'warning');
         alert(`${novosCancelados.length} cancelados salvos!`);
       } catch (err: any) {
@@ -150,18 +145,10 @@ export default function AdminPage() {
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    // VALIDAÇÃO CRÍTICA: Impede importação se a base de faturados estiver vazia
-    if (!faturados || faturados.length === 0) {
-      alert('ATENÇÃO: A base de Faturados (NFes Saída) está vazia! Por favor, suba a planilha de Faturados no Passo 1 antes de importar as vendas do canal.');
-      if (fileVendasRef.current) fileVendasRef.current.value = '';
-      return;
-    }
-
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'S2 - (I2 * 9%)'
+      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'I2 - (I2 * 0.12)'
     };
 
     const reader = new FileReader();
@@ -171,17 +158,16 @@ export default function AdminPage() {
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
         const fatMap = new Map();
-        faturados.forEach((item: any) => {
-          fatMap.set(String(item.id).trim(), item.data);
-        });
+        if (faturados && faturados.length > 0) {
+          faturados.forEach((item: any) => {
+            fatMap.set(String(item.id).trim(), item.data);
+          });
+        }
 
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
         const novasVendas: any[] = [];
-        const loteId = `lote_${selectedChannel}_${Date.now()}`;
 
         let i = 0;
-        let ignoradosPorNaoFaturados = 0;
-
         while (i < rows.length) {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
@@ -195,19 +181,14 @@ export default function AdminPage() {
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
 
-          // CRUZAMENTO RIGOROSO: Só prossegue se o ID estiver na base de faturados
-          if (!fatMap.has(idPedBruto)) {
-            ignoradosPorNaoFaturados++;
-            i++; 
-            continue;
-          }
-
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || 'I');
-          const precoVendaUnitario = parseBrFloat(row[pdvColIdx]);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'S2 - (I2 * 9%)', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
+          const precoVendaRaw = row[pdvColIdx];
+          const precoVendaUnitario = parseBrFloat(precoVendaRaw);
+          const repasse = evaluateFormula(rule.formulaExcel || 'I2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
+          // Buscador Dinâmico de Pacotes/Carrinhos: Varre as colunas em busca da identificação de carrinho
           let numItems = 0;
           for (let c = 0; c < Math.min(row.length, 20); c++) {
              const m = String(row[c] || '').toLowerCase().match(/pacote de (\d+)/i);
@@ -217,6 +198,7 @@ export default function AdminPage() {
           if (numItems > 1) {
             let processed = 0;
             let sub = 1;
+            // Varre rigorosamente as próximas X linhas atreladas ao carrinho
             while (sub <= numItems && (i + sub) < rows.length) {
               const subRow = rows[i + sub];
               if (subRow) {
@@ -231,15 +213,14 @@ export default function AdminPage() {
                     sku: subSku,
                     quantidade: subQtd,
                     preco_venda: processed === 0 ? precoVendaUnitario : 0,
-                    repasse_liquido: processed === 0 ? repasseCalculado : 0,
-                    lote_id: loteId
+                    repasse_liquido: processed === 0 ? repasse : 0
                   });
                   processed++;
                 }
               }
               sub++;
             }
-            i += numItems;
+            i += numItems; // Pula as linhas filhas lidas para evitar repetições
           } else {
             const skuVal = row[colToIdx(rule.colSku || 'B')] ? String(row[colToIdx(rule.colSku || 'B')]).trim().toUpperCase() : 'SKU-GERAL';
             const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
@@ -251,22 +232,18 @@ export default function AdminPage() {
               sku: skuVal,
               quantidade: quantidade,
               preco_venda: precoVendaUnitario,
-              repasse_liquido: repasseCalculado,
-              lote_id: loteId
+              repasse_liquido: repasse
             });
           }
           i++;
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        
-        const filteredOldSales = sales.filter((s: any) => s.canal !== selectedChannel);
-        const updatedSales = [...salesWithKeys, ...filteredOldSales];
-        
+        const updatedSales = [...salesWithKeys, ...sales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens cruzados. (${ignoradosPorNaoFaturados} ignorados por não constarem em faturados)`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos foram ignorados por não estarem na base de faturados.`);
+        addLog(`Sucesso: ${novasVendas.length} itens de vendas importados e salvos na nuvem.`, 'success');
+        alert(`Importação concluída com sucesso! ${novasVendas.length} itens gravados no Supabase.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -276,54 +253,6 @@ export default function AdminPage() {
     };
     reader.readAsArrayBuffer(file);
     if (fileVendasRef.current) fileVendasRef.current.value = '';
-  };
-
-  const handleExcluirVendasPorCanal = async () => {
-    if (targetChannelDelete === 'TODOS') {
-      if (confirm('Tem a certeza absoluta que deseja apagar TODAS AS VENDAS de todos os canais?')) {
-        await saveToCloudAndState('vendas', [], setSales);
-        addLog('Base global de vendas limpa.', 'warning');
-        alert('Todas as vendas foram apagadas.');
-      }
-    } else {
-      if (confirm(`Tem a certeza que deseja apagar todas as vendas do canal [${targetChannelDelete}]?`)) {
-        const remainingSales = sales.filter((s: any) => s.canal !== targetChannelDelete);
-        await saveToCloudAndState('vendas', remainingSales, setSales);
-        addLog(`Vendas do canal [${targetChannelDelete}] apagadas.`, 'warning');
-        alert(`Vendas do canal ${targetChannelDelete} removidas com sucesso.`);
-      }
-    }
-  };
-
-  const handleExcluirUltimoLoteCanal = async () => {
-    if (targetChannelDelete === 'TODOS') {
-      alert('Por favor, selecione um canal específico acima para excluir o último lote enviado.');
-      return;
-    }
-
-    const canalSales = sales.filter((s: any) => s.canal === targetChannelDelete);
-    if (canalSales.length === 0) {
-      alert(`Não existem vendas registadas para o canal ${targetChannelDelete}.`);
-      return;
-    }
-
-    const lotes = Array.from(new Set(canalSales.map((s: any) => s.lote_id).filter(Boolean)));
-    if (lotes.length === 0) {
-      if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes. Deseja remover todas as vendas deste canal?`)) {
-        const remainingSales = sales.filter((s: any) => s.canal !== targetChannelDelete);
-        await saveToCloudAndState('vendas', remainingSales, setSales);
-        alert(`Vendas do canal ${targetChannelDelete} removidas.`);
-      }
-      return;
-    }
-
-    const ultimoLote = lotes[lotes.length - 1];
-    if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}]?`)) {
-      const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
-      await saveToCloudAndState('vendas', remainingSales, setSales);
-      addLog(`Último lote do canal [${targetChannelDelete}] removido.`, 'warning');
-      alert(`Último envio do canal ${targetChannelDelete} foi desfeito/removido com sucesso!`);
-    }
   };
 
   const readGeneric = async (e: any, setter: any, type: string, keyName: string, currentArr: any[], mapper: (row: any[]) => { val: number; obj: any }) => {
@@ -438,39 +367,10 @@ export default function AdminPage() {
          </div>
        </div>
 
-       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-             <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Vendas</h3>
-             
-             <div className="flex items-center gap-2 w-full sm:w-auto">
-               <span className="text-xs text-slate-400 font-bold">Canal Alvo:</span>
-               <select 
-                 value={targetChannelDelete} 
-                 onChange={e => setTargetChannelDelete(e.target.value)} 
-                 className="p-2 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none cursor-pointer"
-               >
-                 <option value="TODOS">Todos os Canais</option>
-                 {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
-               </select>
-             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <button 
-              onClick={handleExcluirUltimoLoteCanal} 
-              className="py-3 bg-rose-950/50 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <i className="fa-solid fa-rotate-left"></i> Excluir Último Lote (Envio) do Canal Selecionado
-            </button>
-            <button 
-              onClick={handleExcluirVendasPorCanal} 
-              className="py-3 bg-rose-900 hover:bg-rose-800 border border-rose-700 text-white text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <i className="fa-solid fa-trash-can"></i> Apagar Todas as Vendas do Canal Selecionado
-            </button>
-          </div>
-
-          <div className="pt-3 border-t border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-3">
+       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-3">
+          <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <button onClick={() => clearData('vendas', 'vendas', setSales)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
             <button onClick={() => clearData('faturados', 'faturados', setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
             <button onClick={() => clearData('cancelados', 'cancelados', setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
             <button onClick={() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
