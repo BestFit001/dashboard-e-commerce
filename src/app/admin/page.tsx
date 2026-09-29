@@ -42,11 +42,23 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  const parseBrFloat = (val: any) => {
-    if (!val) return 0;
+  // PARSER INTELIGENTE DE NÚMEROS (Suporta Ponto vs Vírgula conforme o Canal)
+  const parseSmartFloat = (val: any, channelName: string) => {
+    if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
-    const strVal = String(val).replace(/[^0-9,-]/g, '').replace(',', '.');
-    return parseFloat(strVal) || 0;
+    
+    const strVal = String(val).trim();
+    const isShopee = channelName.toLowerCase().includes('shopee');
+
+    if (isShopee) {
+      // Shopee usa ponto como separador decimal (ex: 1234.56 ou 1,234.56)
+      const clean = strVal.replace(/[^0-9.-]/g, '');
+      return parseFloat(clean) || 0;
+    } else {
+      // Mercado Livre usa vírgula como decimal e ponto como milhar (ex: 1.234,56)
+      const clean = strVal.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+      return parseFloat(clean) || 0;
+    }
   };
 
   const parseExcelDate = (val: any) => {
@@ -58,12 +70,12 @@ export default function AdminPage() {
     return String(val).trim().substring(0, 10);
   };
 
-  const evaluateFormula = (formulaStr: string, row: any, rebateVal: number) => {
+  const evaluateFormula = (formulaStr: string, row: any, rebateVal: number, channelName: string) => {
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
       expr = expr.replace(/([A-Z]+)\d*/g, (m, colLet) => {
         const val = row[colToIdx(colLet)];
-        return (val !== undefined && val !== null ? parseFloat(val) || 0 : 0).toString();
+        return (val !== undefined && val !== null ? parseSmartFloat(val, channelName) : 0).toString();
       });
       const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s]/g, '')};`)();
       return (isNaN(result) ? 0 : Math.max(0, result)) + rebateVal;
@@ -95,8 +107,6 @@ export default function AdminPage() {
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
           const obsText = String(row[idxObs] || row[34] || row[0] || '');
-          
-          // Compatibilidade Universal: Aceita IDs do Mercado Livre (20000...) e IDs da Shopee/outros (alfanuméricos com 10+ caracteres)
           const match = obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{10,}\b/);
           
           if (match) {
@@ -108,9 +118,8 @@ export default function AdminPage() {
 
         const updatedFaturados = [...novosFaturados, ...faturados];
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
-        
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso! Total na base: ${updatedFaturados.length}`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso!`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -205,8 +214,8 @@ export default function AdminPage() {
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 1]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || (isShopee ? 'BA' : 'I'));
-          const precoVendaUnitario = parseBrFloat(row[pdvColIdx]);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || (isShopee ? 'BA2' : 'S2 - (I2 * 9%)'), row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
+          const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || (isShopee ? 'BA2' : 'S2 - (I2 * 9%)'), row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
 
           const skuVal = row[colToIdx(rule.colSku || (isShopee ? 'S' : 'B'))] ? String(row[colToIdx(rule.colSku || (isShopee ? 'S' : 'B'))]).trim().toUpperCase() : 'SKU-GERAL';
           const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || (isShopee ? 'X' : 'G'))] || '1').replace(/[^0-9]/g, ''), 10) || 1;
@@ -232,7 +241,7 @@ export default function AdminPage() {
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos ignorados por não estarem em faturados.`);
+        alert(`Sucesso! ${novasVendas.length} itens importados para o canal ${selectedChannel}.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -387,7 +396,7 @@ export default function AdminPage() {
              <p className="text-[10px] text-slate-400 mb-3">Coluna A: ID do Pedido | Coluna B: Valor do Frete</p>
            </div>
            <label className="cursor-pointer block py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', 'flex', flexData, (r:any) => ({val: parseBrFloat(r[1]), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseBrFloat(r[1])}}))} />
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setFlexData, 'FLEX', 'flex', flexData, (r:any) => ({val: parseSmartFloat(r[1], 'FLEX'), obj: {id_pedido: String(r[0]||'').trim(), valor_frete: parseSmartFloat(r[1], 'FLEX')}}))} />
              Importar Frete Flex
            </label>
          </div>
@@ -398,7 +407,7 @@ export default function AdminPage() {
              <p className="text-[10px] text-slate-400 mb-3">Coluna A: Nome do Canal | Coluna B: Valor Gasto</p>
            </div>
            <label className="cursor-pointer block py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', adsData, (r:any) => ({val: parseBrFloat(r[1]), obj: {canal: String(r[0]||'').trim(), custo_ads: parseBrFloat(r[1])}}))} />
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', adsData, (r:any) => ({val: parseSmartFloat(r[1], 'ADS'), obj: {canal: String(r[0]||'').trim(), custo_ads: parseSmartFloat(r[1], 'ADS')}}))} />
              Importar ADS
            </label>
          </div>
