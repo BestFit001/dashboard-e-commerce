@@ -17,7 +17,7 @@ export default function AdminPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const [colFaturadosObs, setColFaturadosObs] = useState('A');
-  const [colFaturadosData, setColFaturadosData] = useState('C');
+  const [colFaturadosData, setColFaturadosData] = useState('F'); // Coluna F: DataFaturamento comum neste relatório
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -72,6 +72,9 @@ export default function AdminPage() {
       return date.toISOString().slice(0, 10);
     }
     const cleanStr = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
+      return cleanStr.substring(0, 10);
+    }
     if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanStr)) {
       const parts = cleanStr.substring(0, 10).split('/');
       return `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -129,13 +132,21 @@ export default function AdminPage() {
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
           const rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
-          const obsText = String(row[34] || row[0] || '');
           
-          const match = rawId.match(/20000[0-9]+/) || rawId.match(/\b[A-Z0-9]{6,}\b/) || obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{6,}\b/);
-          const pedidoId = match ? match[0].trim() : (rawId.length >= 3 ? rawId : null);
+          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) return;
+
+          // Extrai ID numérico, alfanumérico ou científico (ex: 1,00129E+11 ou 2177552)
+          let pedidoId = rawId.replace(/\.0$/, '');
+          if (pedidoId.includes('E+')) {
+            try {
+              pedidoId = Math.round(parseFloat(pedidoId.replace(',', '.'))).toString();
+            } catch {
+              pedidoId = rawId;
+            }
+          }
           
-          if (pedidoId) {
-            const dataEmissao = parseExcelDate(row[idxData] || row[2]);
+          if (pedidoId && pedidoId.length >= 3) {
+            const dataEmissao = parseExcelDate(row[idxData] || row[5] || row[2]);
             novosFaturados.push({ id: pedidoId, data: dataEmissao });
           }
         });
@@ -144,7 +155,7 @@ export default function AdminPage() {
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
         
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso! Total acumulado: ${updatedFaturados.length}`);
+        alert(`Sucesso! ${novosFaturados.length} faturados lidos e salvos. Total acumulado: ${updatedFaturados.length}`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -242,7 +253,7 @@ export default function AdminPage() {
           const rawId = row[colToIdx(rule.colIdPedido || 'A')];
           const idPedBruto = rawId ? String(rawId).trim() : '';
 
-          if (!idPedBruto || idPedBruto.toLowerCase() === 'id do pedido' || idPedBruto.toLowerCase() === 'pedido id') {
+          if (!idPedBruto || idPedBruto.toLowerCase().includes('pedido') || idPedBruto.toLowerCase().includes('id')) {
             i++; continue;
           }
 
@@ -254,7 +265,7 @@ export default function AdminPage() {
             continue;
           }
 
-          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 2]) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 5]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || 'J');
           const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
@@ -344,7 +355,7 @@ export default function AdminPage() {
     if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}]?`)) {
       const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
       await saveToCloudAndState('vendas', remainingSales, setSales);
-      addLog(`Último lote do canal [${targetChannelDelete}] removido.`, 'warning');
+      addLog(`Último lote do canal [${targetChannelDelete}] removed.`, 'warning');
       alert(`Último envio do canal ${targetChannelDelete} foi desfeito/removido com sucesso!`);
     }
   };
@@ -396,11 +407,11 @@ export default function AdminPage() {
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
            <div className="flex gap-2">
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações / A)</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (NumeroPedido / A)</span>
                 <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
               <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (C)</span>
+                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (F)</span>
                 <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
               </div>
            </div>
