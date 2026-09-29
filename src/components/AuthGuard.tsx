@@ -14,15 +14,26 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
     const inputUser = username.toLowerCase().trim();
+    const inputPass = password.trim();
 
-    let validUser = users.find((u: any) => u.username.toLowerCase().trim() === inputUser && u.password === password);
-    if (!validUser && inputUser === 'felipe.camargo@usebestfit.com.br') {
-       validUser = { username: 'felipe.camargo@usebestfit.com.br', role: 'admin' };
+    // Procura na lista de utilizadores sincronizada do contexto
+    let validUser = users.find((u: any) => 
+      u.username.toLowerCase().trim() === inputUser && 
+      String(u.password).trim() === inputPass
+    );
+
+    // Credencial de contingência para o administrador principal
+    if (!validUser && inputUser === 'gisele@usebestfit.com.br' && inputPass === '123') {
+       validUser = { username: 'gisele@usebestfit.com.br', role: 'admin' };
     }
 
-    if (validUser) { setCurrentUser(validUser); } 
-    else { setError('Credenciais Inválidas. Verifique o usuário e a senha.'); }
+    if (validUser) { 
+      setCurrentUser(validUser); 
+    } else { 
+      setError('Credenciais Inválidas. Verifique o e-mail e a senha.'); 
+    }
   };
 
   return (
