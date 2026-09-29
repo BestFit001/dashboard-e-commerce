@@ -148,7 +148,7 @@ export default function AdminPage() {
     setIsProcessing(true);
 
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'I2 - (I2 * 0.12)'
+      colIdPedido: 'A', colSku: 'B', colRebate: 'C', colPdv: 'I', colQuantidade: 'G', formulaExcel: 'S2'
     };
 
     const reader = new FileReader();
@@ -157,6 +157,7 @@ export default function AdminPage() {
         const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         
+        // Mapeamento rigoroso dos faturados
         const fatMap = new Map();
         if (faturados && faturados.length > 0) {
           faturados.forEach((item: any) => {
@@ -168,6 +169,8 @@ export default function AdminPage() {
         const novasVendas: any[] = [];
 
         let i = 0;
+        let ignoradosPorNaoFaturados = 0;
+
         while (i < rows.length) {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
@@ -181,14 +184,19 @@ export default function AdminPage() {
 
           if (cancSet.has(idPedBruto)) { i++; continue; }
 
+          // CRUZAMENTO ESTRICTO: Se houver base de faturados carregada, ignora quem não estiver nela
+          if (fatMap.size > 0 && !fatMap.has(idPedBruto)) {
+            ignoradosPorNaoFaturados++;
+            i++; 
+            continue;
+          }
+
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || 'I');
-          const precoVendaRaw = row[pdvColIdx];
-          const precoVendaUnitario = parseBrFloat(precoVendaRaw);
-          const repasse = evaluateFormula(rule.formulaExcel || 'I2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
+          const precoVendaUnitario = parseBrFloat(row[pdvColIdx]);
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'S2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
-          // Buscador Dinâmico de Pacotes/Carrinhos: Varre as colunas em busca da identificação de carrinho
           let numItems = 0;
           for (let c = 0; c < Math.min(row.length, 20); c++) {
              const m = String(row[c] || '').toLowerCase().match(/pacote de (\d+)/i);
@@ -198,7 +206,6 @@ export default function AdminPage() {
           if (numItems > 1) {
             let processed = 0;
             let sub = 1;
-            // Varre rigorosamente as próximas X linhas atreladas ao carrinho
             while (sub <= numItems && (i + sub) < rows.length) {
               const subRow = rows[i + sub];
               if (subRow) {
@@ -213,14 +220,14 @@ export default function AdminPage() {
                     sku: subSku,
                     quantidade: subQtd,
                     preco_venda: processed === 0 ? precoVendaUnitario : 0,
-                    repasse_liquido: processed === 0 ? repasse : 0
+                    repasse_liquido: processed === 0 ? repasseCalculado : 0
                   });
                   processed++;
                 }
               }
               sub++;
             }
-            i += numItems; // Pula as linhas filhas lidas para evitar repetições
+            i += numItems;
           } else {
             const skuVal = row[colToIdx(rule.colSku || 'B')] ? String(row[colToIdx(rule.colSku || 'B')]).trim().toUpperCase() : 'SKU-GERAL';
             const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
@@ -232,7 +239,7 @@ export default function AdminPage() {
               sku: skuVal,
               quantidade: quantidade,
               preco_venda: precoVendaUnitario,
-              repasse_liquido: repasse
+              repasse_liquido: repasseCalculado
             });
           }
           i++;
@@ -242,8 +249,8 @@ export default function AdminPage() {
         const updatedSales = [...salesWithKeys, ...sales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        addLog(`Sucesso: ${novasVendas.length} itens de vendas importados e salvos na nuvem.`, 'success');
-        alert(`Importação concluída com sucesso! ${novasVendas.length} itens gravados no Supabase.`);
+        addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens cruzados e salvos. (${ignoradosPorNaoFaturados} ignorados por não estarem em faturados)`, 'success');
+        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos foram ignorados por não constarem na base de faturados.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
