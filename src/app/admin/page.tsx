@@ -34,8 +34,9 @@ export default function AdminPage() {
 
   const colToIdx = (colStr: string) => {
     if (!colStr) return 0;
+    const clean = String(colStr).replace(/[^a-zA-Z]/g, '').toUpperCase();
+    if (!clean) return -1; // Retorna -1 se não houver letra válida para não cair na coluna 0 por engano
     let base = 0;
-    const clean = String(colStr).trim().toUpperCase();
     for (let i = 0; i < clean.length; i++) {
       base = base * 26 + (clean.charCodeAt(i) - 64);
     }
@@ -82,16 +83,52 @@ export default function AdminPage() {
     return cleanStr.substring(0, 10);
   };
 
+  const extractCPF = (row: any[]) => {
+    for (let cell of row) {
+      if (cell === undefined || cell === null) continue;
+      const str = String(cell).trim();
+      if (/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/.test(str)) {
+        return str.replace(/\D/g, '');
+      }
+      if (/^\d{9,14}$/.test(str)) {
+        const numStr = str.replace(/\D/g, '');
+        if (numStr.length >= 9 && numStr.length <= 11) {
+          return numStr.padStart(11, '0');
+        } else if (numStr.length > 11 && numStr.length <= 14) {
+          return numStr.padStart(14, '0');
+        }
+      }
+    }
+    return null;
+  };
+
   const evaluateFormula = (formulaStr: string, row: any, rebateVal: number, channelName: string) => {
+    if (!formulaStr) return 0;
     try {
       let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
       expr = expr.replace(/([A-Z]+)\d*/g, (m, colLet) => {
-        const val = row[colToIdx(colLet)];
+        const idx = colToIdx(colLet);
+        const val = idx >= 0 ? row[idx] : 0;
         return (val !== undefined && val !== null ? parseSmartFloat(val, channelName) : 0).toString();
       });
       const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s\?\:\<\=\>]/g, '')};`)();
       return (isNaN(result) ? 0 : Math.max(0, result)) + rebateVal;
     } catch { return 0; }
+  };
+
+  // Função dedicada para avaliar PDV (Evita cair na Coluna A por acidente)
+  const getPdvValue = (pdvConfig: string, row: any, channelName: string) => {
+    if (!pdvConfig) return 0;
+    
+    // Se for uma fórmula complexa (ex: contém +, -, *, /)
+    if (/[+\-*/()]/.test(pdvConfig)) {
+      return evaluateFormula(pdvConfig, row, 0, channelName);
+    }
+    
+    // Se for apenas a letra da coluna (ex: 'J' ou 'BA')
+    const idx = colToIdx(pdvConfig);
+    if (idx < 0) return 0; 
+    return parseSmartFloat(row[idx], channelName);
   };
 
   const saveToCloudAndState = async (key: string, data: any, setter: any) => {
@@ -131,23 +168,27 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const obsText = row[idxObs] !== undefined ? String(row[idxObs]) : '';
+          const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
-          // Extrai o ID do pedido de dentro do texto da coluna Observações (AI)
-          const match = obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{6,}\b/);
+          let pedidoId = null;
+          const matchId = rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
+          if (matchId) {
+            pedidoId = matchId[0].trim();
+          }
+
+          const cpfMatch = extractCPF(row);
           
-          if (match) {
-            const pedidoId = match[0].trim();
-            const dataEmissao = parseExcelDate(row[idxData]);
-            novosFaturados.push({ id: pedidoId, data: dataEmissao });
+          if (pedidoId || cpfMatch) {
+            const dataEmissao = parseExcelDate(idxData >= 0 ? row[idxData] : (row[3] || row[2]));
+            novosFaturados.push({ id: pedidoId || `s-id-${Math.random()}`, data: dataEmissao, cpf: cpfMatch });
           }
         });
 
         const updatedFaturados = [...novosFaturados, ...faturados];
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
         
-        addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`Sucesso! ${novosFaturados.length} faturados lidos da coluna ${colFaturadosObs} e salvos. Total acumulado: ${updatedFaturados.length}`);
+        addLog(`${novosFaturados.length} Registos Faturados extraídos e salvos.`, 'success');
+        alert(`Sucesso! ${novosFaturados.length} faturados lidos e mapeados na base.`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
@@ -174,7 +215,7 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const rawId = row[idxId];
+          const rawId = idxId >= 0 ? row[idxId] : null;
           if (rawId) novosCancelados.push(String(rawId).trim());
         });
 
@@ -226,9 +267,11 @@ export default function AdminPage() {
           rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         }
         
-        const fatMap = new Map();
+        const fatIdMap = new Map();
+        const fatCpfMap = new Map();
         faturados.forEach((item: any) => {
-          fatMap.set(String(item.id).trim(), item.data);
+          if (item.id && !item.id.includes('s-id-')) fatIdMap.set(String(item.id).trim(), item.data);
+          if (item.cpf) fatCpfMap.set(String(item.cpf).trim(), item.data);
         });
 
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
@@ -242,32 +285,56 @@ export default function AdminPage() {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
 
-          const rawId = row[colToIdx(rule.colIdPedido || 'A')];
-          const idPedBruto = rawId ? String(rawId).trim() : '';
-
-          if (!idPedBruto || idPedBruto.toLowerCase().includes('pedido') || idPedBruto.toLowerCase().includes('id')) {
+          const colIdIdx = colToIdx(rule.colIdPedido || 'A');
+          let rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
+          
+          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) {
             i++; continue;
           }
 
-          if (cancSet.has(idPedBruto)) { i++; continue; }
+          rawId = rawId.replace(/\.0$/, '');
+          if (rawId.toUpperCase().includes('E+')) {
+            try {
+              const numVal = parseFloat(rawId.replace(',', '.'));
+              if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
+            } catch {}
+          }
 
-          if (!fatMap.has(idPedBruto)) {
+          if (cancSet.has(rawId)) { i++; continue; }
+
+          const rowCpf = extractCPF(row);
+          let isFaturado = false;
+          let dataFaturamento = new Date().toISOString().slice(0, 10);
+
+          if (fatIdMap.has(rawId)) {
+            isFaturado = true;
+            dataFaturamento = fatIdMap.get(rawId);
+          } else if (rowCpf && fatCpfMap.has(rowCpf)) {
+            isFaturado = true;
+            dataFaturamento = fatCpfMap.get(rowCpf);
+          }
+
+          if (!isFaturado && (fatIdMap.size > 0 || fatCpfMap.size > 0)) {
             ignoradosPorNaoFaturados++;
             i++; 
             continue;
           }
 
-          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 3]) || new Date().toISOString().slice(0, 10);
-          
-          const pdvColIdx = colToIdx(rule.colPdv || 'J');
-          const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, parseSmartFloat(row[colToIdx(rule.colRebate || 'C')], selectedChannel), selectedChannel);
+          // Preço Venda Blindado - Aceita fórmulas como "(P - Q) * O" sem bugar para a coluna A!
+          const precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
 
-          const skuVal = row[colToIdx(rule.colSku || 'AS')] ? String(row[colToIdx(rule.colSku || 'AS')]).trim().toUpperCase() : 'SKU-GERAL';
-          const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'I')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
+          const colRebateIdx = colToIdx(rule.colRebate || 'C');
+          const rebateRowValue = colRebateIdx >= 0 ? parseSmartFloat(row[colRebateIdx], selectedChannel) : 0;
+          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, rebateRowValue, selectedChannel);
+
+          const colSkuIdx = colToIdx(rule.colSku || 'AS');
+          const skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
+          
+          const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
+          const quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
 
           novasVendas.push({
-            id_pedido: idPedBruto,
+            id_pedido: rawId,
             data_faturamento: dataFaturamento,
             canal: selectedChannel,
             sku: skuVal,
@@ -287,7 +354,7 @@ export default function AdminPage() {
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados. ${ignoradosPorNaoFaturados} pedidos ignorados por não estarem em faturados.`);
+        alert(`Sucesso! ${novasVendas.length} itens importados cruzando IDs e CPFs. ${ignoradosPorNaoFaturados} ignorados.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
