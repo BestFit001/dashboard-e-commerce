@@ -69,7 +69,9 @@ export default function ProdutosPage() {
       skuStats[s.sku].repasse += (Number(s.repasse_liquido) || 0);
     });
 
-    let enrichedSkus = Object.values(skuStats).map(s => {
+    let faturamentoTotalPeriodo = 0; // Variável para o total global do período
+
+    let allSkus = Object.values(skuStats).map(s => {
       const p = products.find((prod: any) => prod.sku === s.sku) || {};
       const custoUn = (Number(p.preco_custo) || 0) + (Number(p.custo_embalagem) || 0);
       const cmvTotal = custoUn * s.qtd;
@@ -78,40 +80,59 @@ export default function ProdutosPage() {
       const marcaRaw = p.marca?.trim();
       const marcaNormalizada = marcaRaw ? marcaRaw.toUpperCase() : 'SEM MARCA';
       
+      faturamentoTotalPeriodo += s.revenue; // Soma global do faturamento
+
       return { ...s, titulo: p.titulo || 'Produto não cadastrado', marca: marcaNormalizada, cmvTotal, lucroTotal };
     });
 
-    if (searchSku.trim()) enrichedSkus = enrichedSkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
-    if (selectedBrand !== 'TODAS') enrichedSkus = enrichedSkus.filter(s => s.marca === selectedBrand);
-
-    let faturamentoTotalFiltrado = 0;
-    let lucroTotalFiltrado = 0;
-    enrichedSkus.forEach(s => {
-      faturamentoTotalFiltrado += s.revenue;
-      lucroTotalFiltrado += s.lucroTotal;
-    });
-
-    enrichedSkus.sort((a, b) => b.revenue - a.revenue);
+    // Ordenar e calcular Curva ABC GLOBAL (Baseado no faturamento total do período antes dos filtros)
+    allSkus.sort((a, b) => b.revenue - a.revenue);
 
     let cumulative = 0;
-    let countA = 0, countB = 0, countC = 0;
-
-    enrichedSkus.forEach(s => {
+    allSkus.forEach(s => {
       cumulative += s.revenue;
-      const pct = (cumulative / (faturamentoTotalFiltrado || 1)) * 100;
-      s.pctRepresentatividade = (s.revenue / (faturamentoTotalFiltrado || 1)) * 100;
+      const pct = (cumulative / (faturamentoTotalPeriodo || 1)) * 100;
+      s.pctRepresentatividade = (s.revenue / (faturamentoTotalPeriodo || 1)) * 100;
 
-      if (pct <= 80) { s.curva = 'A'; countA++; }
-      else if (pct <= 95) { s.curva = 'B'; countB++; }
-      else { s.curva = 'C'; countC++; }
+      if (pct <= 80) { s.curva = 'A'; }
+      else if (pct <= 95) { s.curva = 'B'; }
+      else { s.curva = 'C'; }
     });
 
-    const ticketMedio = filteredSales.length > 0 ? faturamentoTotalFiltrado / filteredSales.length : 0;
+    // AGORA aplicamos os filtros de pesquisa de SKU e Marca para exibição
+    let displaySkus = allSkus;
+    
+    if (searchSku.trim()) displaySkus = displaySkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
+    if (selectedBrand !== 'TODAS') displaySkus = displaySkus.filter(s => s.marca === selectedBrand);
+
+    // Variáveis para os KPIs do topo da tela (estes sim refletem apenas o que está filtrado/pesquisado)
+    let faturamentoTotalFiltrado = 0;
+    let lucroTotalFiltrado = 0;
+    let countAFiltrado = 0, countBFiltrado = 0, countCFiltrado = 0;
+
+    displaySkus.forEach(s => {
+      faturamentoTotalFiltrado += s.revenue;
+      lucroTotalFiltrado += s.lucroTotal;
+      if (s.curva === 'A') countAFiltrado++;
+      if (s.curva === 'B') countBFiltrado++;
+      if (s.curva === 'C') countCFiltrado++;
+    });
+
+    const ticketMedio = filteredSales.length > 0 ? faturamentoTotalPeriodo / filteredSales.length : 0;
     const valorEstimadoCancelado = cancelados.length * ticketMedio;
 
     return { 
-      abcCurve: enrichedSkus, 
-      kpis: { faturamentoTotal: faturamentoTotalFiltrado, lucroTotal: lucroTotalFiltrado, countA, countB, countC, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
+      abcCurve: displaySkus, 
+      kpis: { 
+        faturamentoTotal: faturamentoTotalFiltrado, 
+        lucroTotal: lucroTotalFiltrado, 
+        countA: countAFiltrado, 
+        countB: countBFiltrado, 
+        countC: countCFiltrado, 
+        ticketMedio, 
+        totalCancelados: cancelados.length, 
+        valorEstimadoCancelado 
+      }
     };
   }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
 
@@ -237,7 +258,7 @@ export default function ProdutosPage() {
         <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30">
           <div className="flex justify-between items-start">
             <span className="text-[10px] font-bold text-rose-400 uppercase">Perda Est. em Cancelados</span>
-            <i className="fa-solid fa-circle-exclamation text-rose-500/50" title="Estimativa: Qtd Cancelados Globais x Ticket Médio"></i>
+            <i className="fa-solid fa-circle-exclamation text-rose-500/50" title="Estimativa: Qtd Cancelados Globais x Ticket Médio Global"></i>
           </div>
           <h3 className="text-2xl font-black text-rose-400 mt-1">R$ {kpis.valorEstimadoCancelado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p className="text-[10px] text-slate-500 mt-1">{kpis.totalCancelados} pedidos cancelados globais</p>
