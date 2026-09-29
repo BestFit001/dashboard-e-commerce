@@ -13,6 +13,7 @@ export default function AdminPage() {
   
   const [password, setPassword] = useState('');
   const [selectedChannel, setSelectedChannel] = useState(canais[0] || 'Mercado Livre 1');
+  const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
   const [isProcessing, setIsProcessing] = useState(false);
   
   const [colFaturadosObs, setColFaturadosObs] = useState('AI');
@@ -166,6 +167,7 @@ export default function AdminPage() {
 
         const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
         const novasVendas: any[] = [];
+        const loteId = `lote_${selectedChannel}_${Date.now()}`;
 
         let i = 0;
         let ignoradosPorNaoFaturados = 0;
@@ -218,7 +220,8 @@ export default function AdminPage() {
                     sku: subSku,
                     quantidade: subQtd,
                     preco_venda: processed === 0 ? precoVendaUnitario : 0,
-                    repasse_liquido: processed === 0 ? repasseCalculado : 0
+                    repasse_liquido: processed === 0 ? repasseCalculado : 0,
+                    lote_id: loteId
                   });
                   processed++;
                 }
@@ -237,18 +240,24 @@ export default function AdminPage() {
               sku: skuVal,
               quantidade: quantidade,
               preco_venda: precoVendaUnitario,
-              repasse_liquido: repasseCalculado
+              repasse_liquido: repasseCalculado,
+              lote_id: loteId
             });
           }
           i++;
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        const updatedSales = [...salesWithKeys, ...sales];
+        
+        // Remove vendas anteriores deste mesmo canal para garantir que a nova substitua o canal inteiro sem duplicar,
+        // ou mantém caso queira acumular. Como é reenvio de correção do canal, substitui as do canal atual e adiciona as novas.
+        const filteredOldSales = sales.filter((s: any) => s.canal !== selectedChannel);
+        const updatedSales = [...salesWithKeys, ...filteredOldSales];
+        
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} itens importados e cruzados com faturados.`);
+        alert(`Sucesso! ${novasVendas.length} itens do canal ${selectedChannel} importados com sucesso.`);
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
@@ -258,6 +267,57 @@ export default function AdminPage() {
     };
     reader.readAsArrayBuffer(file);
     if (fileVendasRef.current) fileVendasRef.current.value = '';
+  };
+
+  const handleExcluirVendasPorCanal = async () => {
+    if (targetChannelDelete === 'TODOS') {
+      if (confirm('Tem a certeza absoluta que deseja apagar TODAS AS VENDAS de todos os canais?')) {
+        await saveToCloudAndState('vendas', [], setSales);
+        addLog('Base global de vendas limpa.', 'warning');
+        alert('Todas as vendas foram apagadas.');
+      }
+    } else {
+      if (confirm(`Tem a certeza que deseja apagar todas as vendas do canal [${targetChannelDelete}]?`)) {
+        const remainingSales = sales.filter((s: any) => s.canal !== targetChannelDelete);
+        await saveToCloudAndState('vendas', remainingSales, setSales);
+        addLog(`Vendas do canal [${targetChannelDelete}] apagadas.`, 'warning');
+        alert(`Vendas do canal ${targetChannelDelete} removidas com sucesso.`);
+      }
+    }
+  };
+
+  const handleExcluirUltimoLoteCanal = async () => {
+    if (targetChannelDelete === 'TODOS') {
+      alert('Por favor, selecione um canal específico acima para excluir o último lote enviado.');
+      return;
+    }
+
+    // Identifica todos os lotes do canal selecionado
+    const canalSales = sales.filter((s: any) => s.canal === targetChannelDelete);
+    if (canalSales.length === 0) {
+      alert(`Não existem vendas registadas para o canal ${targetChannelDelete}.`);
+      return;
+    }
+
+    // Pega o lote mais recente (último lote gerado)
+    const lotes = Array.from(new Set(canalSales.map((s: any) => s.lote_id).filter(Boolean)));
+    if (lotes.length === 0) {
+      // Se não tiver lote_id (vendas antigas importadas), apaga as vendas do canal por segurança
+      if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes separados. Deseja remover todas as vendas deste canal?`)) {
+        const remainingSales = sales.filter((s: any) => s.canal !== targetChannelDelete);
+        await saveToCloudAndState('vendas', remainingSales, setSales);
+        alert(`Vendas do canal ${targetChannelDelete} removidas.`);
+      }
+      return;
+    }
+
+    const ultimoLote = lotes[lotes.length - 1];
+    if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}]?`)) {
+      const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
+      await saveToCloudAndState('vendas', remainingSales, setSales);
+      addLog(`Último lote do canal [${targetChannelDelete}] removido.`, 'warning');
+      alert(`Último envio do canal ${targetChannelDelete} foi desfeito/removido com sucesso!`);
+    }
   };
 
   const readGeneric = async (e: any, setter: any, type: string, keyName: string, currentArr: any[], mapper: (row: any[]) => { val: number; obj: any }) => {
@@ -372,10 +432,40 @@ export default function AdminPage() {
          </div>
        </div>
 
-       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-3">
-          <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <button onClick={() => clearData('vendas', 'vendas', setSales)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Vendas</button>
+       {/* ZONA DE LIMPEZA INTELIGENTE POR CANAL / LOTE */}
+       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+             <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Vendas</h3>
+             
+             <div className="flex items-center gap-2 w-full sm:w-auto">
+               <span className="text-xs text-slate-400 font-bold">Canal Alvo:</span>
+               <select 
+                 value={targetChannelDelete} 
+                 onChange={e => setTargetChannelDelete(e.target.value)} 
+                 className="p-2 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none cursor-pointer"
+               >
+                 <option value="TODOS">Todos os Canais</option>
+                 {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
+               </select>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <button 
+              onClick={handleExcluirUltimoLoteCanal} 
+              className="py-3 bg-rose-950/50 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <i className="fa-solid fa-rotate-left"></i> Excluir Último Lote (Envio) do Canal Selecionado
+            </button>
+            <button 
+              onClick={handleExcluirVendasPorCanal} 
+              className="py-3 bg-rose-900 hover:bg-rose-800 border border-rose-700 text-white text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <i className="fa-solid fa-trash-can"></i> Apagar Todas as Vendas do Canal Selecionado
+            </button>
+          </div>
+
+          <div className="pt-3 border-t border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-3">
             <button onClick={() => clearData('faturados', 'faturados', setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados</button>
             <button onClick={() => clearData('cancelados', 'cancelados', setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados</button>
             <button onClick={() => clearData('flex', 'flex', setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX</button>
