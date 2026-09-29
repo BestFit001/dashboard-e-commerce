@@ -1,19 +1,30 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function ProdutosPage() {
-  const { sales, products, cancelados } = useAppContext();
+  const { sales, products, cancelados, flexData } = useAppContext();
   
   const [dateFilter, setDateFilter] = useState('MES');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   
-  // Estados para os filtros de SKU e Marca
+  // Estados para os filtros de SKU e Marca (Curva ABC)
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
 
-  // Extrair lista única de marcas (Normalizando para MAIÚSCULAS para evitar duplicidades de digitação)
+  // Estados para a Tabela de Pedidos
+  const [searchOrderId, setSearchOrderId] = useState('');
+  const [sortOrder, setSortOrder] = useState('DEFAULT');
+  const [currentPageOrders, setCurrentPageOrders] = useState(1);
+  const itemsPerPageOrders = 20;
+
+  // Resetar página da tabela de pedidos ao mudar filtros
+  useEffect(() => {
+    setCurrentPageOrders(1);
+  }, [searchOrderId, sortOrder, dateFilter, customStartDate, customEndDate]);
+
+  // Extrair lista única de marcas
   const availableBrands = useMemo(() => {
     const brands = new Set(products.map((p: any) => {
       const m = p.marca?.trim();
@@ -22,7 +33,7 @@ export default function ProdutosPage() {
     return ['TODAS', ...Array.from(brands).sort((a: any, b: any) => a.localeCompare(b))];
   }, [products]);
 
-  // 1. Filtragem de Data
+  // 1. Filtragem Global de Data
   const filteredSales = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -49,7 +60,6 @@ export default function ProdutosPage() {
   const { abcCurve, kpis } = useMemo(() => {
     const skuStats: Record<string, any> = {};
 
-    // Agrupa vendas por SKU (Filtragem de data já aplicada)
     filteredSales.forEach((s: any) => {
       if (!skuStats[s.sku]) skuStats[s.sku] = { sku: s.sku, qtd: 0, revenue: 0, repasse: 0 };
       skuStats[s.sku].qtd += (Number(s.quantidade) || 1);
@@ -59,37 +69,21 @@ export default function ProdutosPage() {
       skuStats[s.sku].repasse += (Number(s.repasse_liquido) || 0);
     });
 
-    // Enriquecer com dados de Produtos e Aplicar Filtros de Marca e SKU
     let enrichedSkus = Object.values(skuStats).map(s => {
       const p = products.find((prod: any) => prod.sku === s.sku) || {};
       const custoUn = (Number(p.preco_custo) || 0) + (Number(p.custo_embalagem) || 0);
       const cmvTotal = custoUn * s.qtd;
       const lucroTotal = s.repasse - cmvTotal; 
       
-      // Normalização da marca para letras maiúsculas
       const marcaRaw = p.marca?.trim();
       const marcaNormalizada = marcaRaw ? marcaRaw.toUpperCase() : 'SEM MARCA';
       
-      return { 
-        ...s, 
-        titulo: p.titulo || 'Produto não cadastrado', 
-        marca: marcaNormalizada,
-        cmvTotal,
-        lucroTotal
-      };
+      return { ...s, titulo: p.titulo || 'Produto não cadastrado', marca: marcaNormalizada, cmvTotal, lucroTotal };
     });
 
-    // Aplicação do Filtro de SKU
-    if (searchSku.trim()) {
-      enrichedSkus = enrichedSkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
-    }
+    if (searchSku.trim()) enrichedSkus = enrichedSkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
+    if (selectedBrand !== 'TODAS') enrichedSkus = enrichedSkus.filter(s => s.marca === selectedBrand);
 
-    // Aplicação do Filtro de Marca
-    if (selectedBrand !== 'TODAS') {
-      enrichedSkus = enrichedSkus.filter(s => s.marca === selectedBrand);
-    }
-
-    // Recalcular Faturamento Total e Lucro Total APENAS para os itens filtrados
     let faturamentoTotalFiltrado = 0;
     let lucroTotalFiltrado = 0;
     enrichedSkus.forEach(s => {
@@ -97,10 +91,8 @@ export default function ProdutosPage() {
       lucroTotalFiltrado += s.lucroTotal;
     });
 
-    // Ordenar do maior para o menor faturamento
     enrichedSkus.sort((a, b) => b.revenue - a.revenue);
 
-    // Calcular Curva ABC (A = 80%, B = 15%, C = 5% do faturamento da visão atual)
     let cumulative = 0;
     let countA = 0, countB = 0, countC = 0;
 
@@ -123,7 +115,7 @@ export default function ProdutosPage() {
     };
   }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
 
-  // 3. Processamento de Marcas (Reflete a visão filtrada)
+  // 3. Processamento de Marcas
   const brandStats = useMemo(() => {
     const brands: Record<string, any> = {};
     abcCurve.forEach(s => {
@@ -136,6 +128,40 @@ export default function ProdutosPage() {
     return Object.values(brands).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [abcCurve]);
 
+  // 4. Lógica para a Tabela de Pedidos
+  const enrichedOrders = useMemo(() => {
+    return filteredSales.map((s: any) => {
+      const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
+      const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
+      const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
+      const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
+      
+      const repasse = Number(s.repasse_liquido) || 0; 
+      const ganhoLiquido = repasse - custoCMV - custoFlex;
+      
+      return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse };
+    });
+  }, [filteredSales, products, flexData]);
+
+  const displayOrders = useMemo(() => {
+    let result = enrichedOrders;
+    if (searchOrderId.trim()) {
+      result = result.filter((s: any) => s.id_pedido && String(s.id_pedido).includes(searchOrderId.trim()));
+    }
+    if (sortOrder === 'MAIOR_LIQUIDEZ') {
+      result = [...result].sort((a: any, b: any) => b.ganhoLiquido - a.ganhoLiquido);
+    } else if (sortOrder === 'MENOR_LIQUIDEZ') {
+      result = [...result].sort((a: any, b: any) => a.ganhoLiquido - b.ganhoLiquido);
+    }
+    return result;
+  }, [enrichedOrders, searchOrderId, sortOrder]);
+
+  const totalPagesOrders = Math.ceil(displayOrders.length / itemsPerPageOrders) || 1;
+  const paginatedOrders = useMemo(() => {
+    const start = (currentPageOrders - 1) * itemsPerPageOrders;
+    return displayOrders.slice(start, start + itemsPerPageOrders);
+  }, [displayOrders, currentPageOrders]);
+
   return (
     <div className="space-y-6">
       {/* Header e Filtros */}
@@ -146,7 +172,6 @@ export default function ProdutosPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* Filtro de SKU */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-solid fa-magnifying-glass text-slate-400 pl-2 text-xs"></i>
             <input 
@@ -158,7 +183,6 @@ export default function ProdutosPage() {
             />
           </div>
 
-          {/* Filtro de Marca */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-solid fa-tag text-purple-400 pl-2 text-xs"></i>
             <select 
@@ -172,7 +196,6 @@ export default function ProdutosPage() {
             </select>
           </div>
 
-          {/* Filtro de Data */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-auto">
@@ -236,7 +259,6 @@ export default function ProdutosPage() {
                       <span className="block text-[9px] text-emerald-400 font-bold">Lucro: R$ {brand.lucro.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
-                  {/* Barra de Progresso visual */}
                   <div className="w-full bg-slate-950 rounded-full h-1.5 border border-slate-800">
                     <div 
                       className="bg-gradient-to-r from-purple-600 to-indigo-500 h-1.5 rounded-full" 
@@ -302,6 +324,93 @@ export default function ProdutosPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Nova Seção Adicionada: Fragmentação por Pedido */}
+      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 overflow-x-auto shadow-xl">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+          <h3 className="font-bold text-white text-base">Fragmentação por Pedido (Ganho Real)</h3>
+          
+          <div className="flex gap-3 w-full sm:w-auto">
+            <input 
+              type="text" 
+              placeholder="Buscar ID Pedido..." 
+              value={searchOrderId}
+              onChange={(e) => setSearchOrderId(e.target.value)}
+              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-48"
+            />
+            <select 
+              value={sortOrder} 
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto"
+            >
+              <option value="DEFAULT" className="bg-slate-900 text-slate-200">Ordem Padrão (Data)</option>
+              <option value="MAIOR_LIQUIDEZ" className="bg-slate-900 text-slate-200">Maior Liquidez (Lucro)</option>
+              <option value="MENOR_LIQUIDEZ" className="bg-slate-900 text-slate-200">Menor Liquidez (Prejuízo)</option>
+            </select>
+          </div>
+        </div>
+
+        <table className="w-full text-left text-xs text-slate-200">
+          <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
+            <tr>
+              <th className="py-3 pl-3">Data</th>
+              <th>ID Pedido</th>
+              <th>Canal</th>
+              <th>SKU (Qtd)</th>
+              <th>PDV</th>
+              <th>Repasse</th>
+              <th>CMV</th>
+              <th className="text-rose-300">FLEX</th>
+              <th className="text-emerald-400 font-extrabold pr-3 text-right">Líquido Real</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60 font-medium">
+            {paginatedOrders.map((s: any, i: number) => (
+              <tr key={i} className="hover:bg-slate-800/40 transition">
+                <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
+                <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
+                <td className="py-2.5">{s.canal}</td>
+                <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
+                <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5">R$ {(s.repasse || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className={`py-2.5 pr-3 text-right font-extrabold ${(s.ganhoLiquido || 0) < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
+                  R$ {(s.ganhoLiquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+              </tr>
+            ))}
+            {paginatedOrders.length === 0 && (
+              <tr><td colSpan={9} className="p-6 text-center text-slate-500 font-bold">Nenhum pedido encontrado.</td></tr>
+            )}
+          </tbody>
+        </table>
+
+        {/* Controles de Paginação */}
+        {totalPagesOrders > 1 && (
+          <div className="flex justify-between items-center pt-4 mt-2 border-t border-slate-800 text-xs">
+            <span className="text-slate-400 font-bold">
+              Página {currentPageOrders} de {totalPagesOrders} ({displayOrders.length} pedidos)
+            </span>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setCurrentPageOrders(p => Math.max(1, p - 1))} 
+                disabled={currentPageOrders === 1} 
+                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
+              >
+                Anterior
+              </button>
+              <button 
+                onClick={() => setCurrentPageOrders(p => Math.min(totalPagesOrders, p + 1))} 
+                disabled={currentPageOrders === totalPagesOrders} 
+                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function DashboardPage() {
@@ -15,17 +15,6 @@ export default function DashboardPage() {
   const [appliedStartDate, setAppliedStartDate] = useState('');
   const [appliedEndDate, setAppliedEndDate] = useState('');
   const [isRecalculating, setIsRecalculating] = useState(false);
-
-  // Novos estados para a Tabela de Pedidos
-  const [searchOrderId, setSearchOrderId] = useState('');
-  const [sortOrder, setSortOrder] = useState('DEFAULT');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-
-  // Resetar página quando os filtros de busca/ordem mudarem
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchOrderId, sortOrder, appliedChannelFilter, appliedDateFilter]);
 
   const handleRecalculate = () => {
     setIsRecalculating(true);
@@ -72,32 +61,9 @@ export default function DashboardPage() {
         const ganhoBruto = repasse - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
-        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse }; // Ganho Bruto removido do retorno para otimizar
+        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
-
-  // Filtros, Ordenação e Paginação da Tabela de Pedidos
-  const displaySales = useMemo(() => {
-    let result = enrichedSales;
-
-    if (searchOrderId.trim()) {
-      result = result.filter((s: any) => s.id_pedido && String(s.id_pedido).includes(searchOrderId.trim()));
-    }
-
-    if (sortOrder === 'MAIOR_LIQUIDEZ') {
-      result = [...result].sort((a: any, b: any) => b.ganhoLiquido - a.ganhoLiquido);
-    } else if (sortOrder === 'MENOR_LIQUIDEZ') {
-      result = [...result].sort((a: any, b: any) => a.ganhoLiquido - b.ganhoLiquido);
-    }
-
-    return result;
-  }, [enrichedSales, searchOrderId, sortOrder]);
-
-  const totalPages = Math.ceil(displaySales.length / itemsPerPage) || 1;
-  const paginatedSales = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return displaySales.slice(start, start + itemsPerPage);
-  }, [displaySales, currentPage]);
 
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
@@ -266,92 +232,6 @@ export default function DashboardPage() {
              </div>
           </div>
         ))}
-      </div>
-
-      <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 overflow-x-auto">
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-          <h3 className="font-bold text-white text-base">Fragmentação por Pedido (Ganho Real)</h3>
-          
-          <div className="flex gap-3 w-full sm:w-auto">
-            <input 
-              type="text" 
-              placeholder="Buscar ID Pedido..." 
-              value={searchOrderId}
-              onChange={(e) => setSearchOrderId(e.target.value)}
-              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-48"
-            />
-            <select 
-              value={sortOrder} 
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto"
-            >
-              <option value="DEFAULT">Ordem Padrão (Data)</option>
-              <option value="MAIOR_LIQUIDEZ">Maior Liquidez (Lucro)</option>
-              <option value="MENOR_LIQUIDEZ">Menor Liquidez (Prejuízo)</option>
-            </select>
-          </div>
-        </div>
-
-        <table className="w-full text-left text-xs text-slate-200">
-          <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-            <tr>
-              <th className="py-3 pl-3">Data</th>
-              <th>ID Pedido</th>
-              <th>Canal</th>
-              <th>SKU (Qtd)</th>
-              <th>PDV</th>
-              <th>Repasse</th>
-              <th>CMV</th>
-              <th className="text-rose-300">FLEX</th>
-              <th className="text-emerald-400 font-extrabold pr-3 text-right">Líquido Real</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/60 font-medium">
-            {paginatedSales.map((s: any, i: number) => (
-              <tr key={i} className="hover:bg-slate-800/40 transition">
-                <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
-                <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
-                <td className="py-2.5">{s.canal}</td>
-                <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
-                <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5">R$ {(s.repasse || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5 text-amber-300">- R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5 text-rose-300">- R$ {(s.custoFlex || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className={`py-2.5 pr-3 text-right font-extrabold ${(s.ganhoLiquido || 0) < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                  R$ {(s.ganhoLiquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </td>
-              </tr>
-            ))}
-            {paginatedSales.length === 0 && (
-              <tr><td colSpan={9} className="p-6 text-center text-slate-500 font-bold">Nenhum pedido encontrado.</td></tr>
-            )}
-          </tbody>
-        </table>
-
-        {/* Controles de Paginação */}
-        {totalPages > 1 && (
-          <div className="flex justify-between items-center pt-4 mt-2 border-t border-slate-800 text-xs">
-            <span className="text-slate-400 font-bold">
-              Página {currentPage} de {totalPages} ({displaySales.length} pedidos)
-            </span>
-            <div className="flex gap-2">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                disabled={currentPage === 1} 
-                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
-              >
-                Anterior
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                disabled={currentPage === totalPages} 
-                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
-              >
-                Próxima
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
