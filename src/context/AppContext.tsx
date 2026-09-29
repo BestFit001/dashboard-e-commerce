@@ -54,6 +54,12 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
+      // Requisição para buscar as metas do banco de dados na inicialização
+      const { data: metasDb } = await supabase.from('tb_metas').select('*');
+      if (metasDb && metasDb.length > 0) {
+        setGoals(metasDb);
+      }
+
       // Produtos com paginação de 1000 em 1000
       let allProducts: any[] = [];
       let page = 0;
