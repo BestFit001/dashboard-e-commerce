@@ -16,8 +16,8 @@ export default function AdminPage() {
   const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const [colFaturadosObs, setColFaturadosObs] = useState('A'); // Ajustado para ler a Coluna A por padrão
-  const [colFaturadosData, setColFaturadosData] = useState('C'); // Ajustado para a coluna de Data comum
+  const [colFaturadosObs, setColFaturadosObs] = useState('A');
+  const [colFaturadosData, setColFaturadosData] = useState('C');
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -42,20 +42,33 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
+  // PARSER INTELIGENTE DE NÚMEROS (Detecta automaticamente vírgula/ponto decimal e milhar)
   const parseSmartFloat = (val: any, channelName: string) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
     
-    const strVal = String(val).trim();
-    const isShopee = channelName.toLowerCase().includes('shopee');
+    let strVal = String(val).trim();
+    
+    // Remove prefixos de moeda e letras
+    strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
 
-    if (isShopee) {
-      const clean = strVal.replace(/[^0-9.-]/g, '');
-      return parseFloat(clean) || 0;
-    } else {
-      const clean = strVal.replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
-      return parseFloat(clean) || 0;
+    if (strVal.includes(',') && strVal.includes('.')) {
+      const lastComma = strVal.lastIndexOf(',');
+      const lastDot = strVal.lastIndexOf('.');
+      
+      if (lastComma > lastDot) {
+        // Padrão brasileiro: 3.460,00 -> remove pontos, troca vírgula por ponto
+        strVal = strVal.replace(/\./g, '').replace(',', '.');
+      } else {
+        // Padrão americano: 3,460.00 -> remove vírgulas
+        strVal = strVal.replace(/,/g, '');
+      }
+    } else if (strVal.includes(',')) {
+      // Apenas vírgula (ex: 3460,00 ou 229,9)
+      strVal = strVal.replace(/\./g, '').replace(',', '.');
     }
+    
+    return parseFloat(strVal) || 0;
   };
 
   const parseExcelDate = (val: any) => {
@@ -65,7 +78,6 @@ export default function AdminPage() {
       return date.toISOString().slice(0, 10);
     }
     const cleanStr = String(val).trim();
-    // Se estiver no formato DD/MM/YYYY
     if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanStr)) {
       const parts = cleanStr.substring(0, 10).split('/');
       return `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -105,16 +117,13 @@ export default function AdminPage() {
         const fileName = file.name.toLowerCase();
 
         if (fileName.endsWith('.csv')) {
-          // Leitura robusta para ficheiros CSV (suporta separador ponto e vírgula ou vírgula)
           const text = evt.target?.result as string;
           const lines = text.split(/\r?\n/);
           rows = lines.map(line => {
-            // Divide respeitando ponto e vírgula ou vírgula
             const sep = line.includes(';') ? ';' : ',';
             return line.split(sep).map(cell => cell.replace(/^["']|["']$/g, '').trim());
           });
         } else {
-          // Leitura para ficheiros Excel (.xlsx, .xls)
           const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
           rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         }
@@ -128,9 +137,7 @@ export default function AdminPage() {
           const rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           const obsText = String(row[34] || row[0] || '');
           
-          // Extrai o ID do pedido (seja numérico do ML, alfanumérico da Shopee ou ID local)
           const match = rawId.match(/20000[0-9]+/) || rawId.match(/\b[A-Z0-9]{6,}\b/) || obsText.match(/20000[0-9]+/) || obsText.match(/\b[A-Z0-9]{6,}\b/);
-          
           const pedidoId = match ? match[0].trim() : (rawId.length >= 3 ? rawId : null);
           
           if (pedidoId) {
@@ -143,14 +150,14 @@ export default function AdminPage() {
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
         
         addLog(`${novosFaturados.length} IDs Faturados extraídos e salvos na nuvem.`, 'success');
-        alert(`${novosFaturados.length} faturados lidos com sucesso! Total acumulado na base: ${updatedFaturados.length}`);
+        alert(`${novosFaturados.length} faturados lidos com sucesso! Total acumulado: ${updatedFaturados.length}`);
       } catch (err: any) {
         alert(`Erro ao ler faturados: ${err.message}`);
       }
     };
 
     if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'ISO-8859-1'); // Suporte a codificação padrão de relatórios CSV brasileiros
+      reader.readAsText(file, 'ISO-8859-1');
     } else {
       reader.readAsArrayBuffer(file);
     }
