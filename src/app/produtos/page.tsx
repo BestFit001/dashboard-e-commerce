@@ -9,23 +9,19 @@ export default function ProdutosPage() {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   
-  // Estados para os filtros de SKU e Marca (Curva ABC)
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
 
-  // Estados para a Tabela de Pedidos
   const [searchOrderId, setSearchOrderId] = useState('');
   const [sortOrder, setSortOrder] = useState('DEFAULT');
-  const [cmvFilter, setCmvFilter] = useState('TODOS'); // NOVO: Estado para filtrar CMV
+  const [cmvFilter, setCmvFilter] = useState('TODOS');
   const [currentPageOrders, setCurrentPageOrders] = useState(1);
   const itemsPerPageOrders = 20;
 
-  // Resetar página da tabela de pedidos ao mudar filtros
   useEffect(() => {
     setCurrentPageOrders(1);
   }, [searchOrderId, sortOrder, cmvFilter, dateFilter, customStartDate, customEndDate]);
 
-  // Extrair lista única de marcas
   const availableBrands = useMemo(() => {
     const brands = new Set(products.map((p: any) => {
       const m = p.marca?.trim();
@@ -34,7 +30,6 @@ export default function ProdutosPage() {
     return ['TODAS', ...Array.from(brands).sort((a: any, b: any) => a.localeCompare(b))];
   }, [products]);
 
-  // 1. Filtragem Global de Data
   const filteredSales = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -57,7 +52,6 @@ export default function ProdutosPage() {
     });
   }, [sales, dateFilter, customStartDate, customEndDate]);
 
-  // 2. Processamento da Curva ABC e Filtros de Texto/Marca
   const { abcCurve, kpis } = useMemo(() => {
     const skuStats: Record<string, any> = {};
 
@@ -121,20 +115,10 @@ export default function ProdutosPage() {
 
     return { 
       abcCurve: displaySkus, 
-      kpis: { 
-        faturamentoTotal: faturamentoTotalFiltrado, 
-        lucroTotal: lucroTotalFiltrado, 
-        countA: countAFiltrado, 
-        countB: countBFiltrado, 
-        countC: countCFiltrado, 
-        ticketMedio, 
-        totalCancelados: cancelados.length, 
-        valorEstimadoCancelado 
-      }
+      kpis: { faturamentoTotal: faturamentoTotalFiltrado, lucroTotal: lucroTotalFiltrado, countA: countAFiltrado, countB: countBFiltrado, countC: countCFiltrado, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
     };
   }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
 
-  // 3. Processamento de Marcas
   const brandStats = useMemo(() => {
     const brands: Record<string, any> = {};
     abcCurve.forEach(s => {
@@ -147,25 +131,47 @@ export default function ProdutosPage() {
     return Object.values(brands).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [abcCurve]);
 
-  // 4. Lógica para a Tabela de Pedidos
+  // Agrupamento Inteligente de Carrinhos para a Fragmentação
   const enrichedOrders = useMemo(() => {
-    return filteredSales.map((s: any) => {
+    const orderMap: Record<string, any> = {};
+
+    filteredSales.forEach((s: any) => {
       const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
       const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
-      const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
+      
+      if (!orderMap[s.id_pedido]) {
+         orderMap[s.id_pedido] = {
+            ...s, 
+            custoCMV: 0,
+            repasse_liquido: 0,
+            preco_venda: 0,
+            skus_concat: []
+         };
+      }
+      
+      orderMap[s.id_pedido].custoCMV += custoCMV;
+      orderMap[s.id_pedido].preco_venda += Number(s.preco_venda) || 0;
+      orderMap[s.id_pedido].repasse_liquido += Number(s.repasse_liquido) || 0;
+      orderMap[s.id_pedido].skus_concat.push(`${s.sku} (x${s.quantidade})`);
+    });
+
+    return Object.values(orderMap).map((o: any) => {
+      const flexOrder = flexData.find((f: any) => f.id_pedido === o.id_pedido);
       const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
+      const ganhoLiquido = o.repasse_liquido - o.custoCMV - custoFlex;
       
-      const repasse = Number(s.repasse_liquido) || 0; 
-      const ganhoLiquido = repasse - custoCMV - custoFlex;
-      
-      return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse };
+      return { 
+        ...o, 
+        sku_display: o.skus_concat.join(' + '), 
+        custoFlex, 
+        ganhoLiquido 
+      };
     });
   }, [filteredSales, products, flexData]);
 
   const displayOrders = useMemo(() => {
     let result = enrichedOrders;
 
-    // NOVO: Filtro para mostrar apenas pedidos com CMV zerado
     if (cmvFilter === 'SEM_CMV') {
       result = result.filter((s: any) => !s.custoCMV || s.custoCMV === 0);
     }
@@ -190,7 +196,6 @@ export default function ProdutosPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header e Filtros */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Inteligência de Produtos</h2>
@@ -200,22 +205,12 @@ export default function ProdutosPage() {
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-solid fa-magnifying-glass text-slate-400 pl-2 text-xs"></i>
-            <input 
-              type="text" 
-              placeholder="Pesquisar SKU..." 
-              value={searchSku} 
-              onChange={e => setSearchSku(e.target.value)} 
-              className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none pr-2 w-full sm:w-32" 
-            />
+            <input type="text" placeholder="Pesquisar SKU..." value={searchSku} onChange={e => setSearchSku(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none pr-2 w-full sm:w-32" />
           </div>
 
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-solid fa-tag text-purple-400 pl-2 text-xs"></i>
-            <select 
-              value={selectedBrand} 
-              onChange={(e) => setSelectedBrand(e.target.value)} 
-              className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32"
-            >
+            <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32">
               {availableBrands.map(brand => (
                 <option key={brand} value={brand} className="bg-slate-900 text-slate-200">{brand}</option>
               ))}
@@ -243,7 +238,6 @@ export default function ProdutosPage() {
         </div>
       </div>
 
-      {/* Top KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (Filtro Atual)</span>
@@ -271,7 +265,6 @@ export default function ProdutosPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Painel Lateral: Ranking de Marcas */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 h-full">
             <h3 className="font-bold text-white text-base mb-4"><i className="fa-solid fa-medal text-amber-400 mr-2"></i>Faturamento por Marca</h3>
@@ -286,10 +279,7 @@ export default function ProdutosPage() {
                     </div>
                   </div>
                   <div className="w-full bg-slate-950 rounded-full h-1.5 border border-slate-800">
-                    <div 
-                      className="bg-gradient-to-r from-purple-600 to-indigo-500 h-1.5 rounded-full" 
-                      style={{ width: `${Math.min((brand.revenue / (kpis.faturamentoTotal || 1)) * 100, 100)}%` }}
-                    ></div>
+                    <div className="bg-gradient-to-r from-purple-600 to-indigo-500 h-1.5 rounded-full" style={{ width: `${Math.min((brand.revenue / (kpis.faturamentoTotal || 1)) * 100, 100)}%` }}></div>
                   </div>
                 </div>
               ))}
@@ -298,7 +288,6 @@ export default function ProdutosPage() {
           </div>
         </div>
 
-        {/* Painel Principal: Tabela Curva ABC */}
         <div className="lg:col-span-2">
           <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
             <div className="p-5 border-b border-slate-800">
@@ -321,11 +310,7 @@ export default function ProdutosPage() {
                   {abcCurve.map((sku: any, i: number) => (
                     <tr key={i} className="hover:bg-slate-800/40 transition">
                       <td className="py-3 px-4">
-                        <span className={`flex items-center justify-center w-6 h-6 rounded-lg font-black text-xs ${
-                          sku.curva === 'A' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 
-                          sku.curva === 'B' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 
-                          'bg-slate-800 text-slate-400'
-                        }`}>
+                        <span className={`flex items-center justify-center w-6 h-6 rounded-lg font-black text-xs ${sku.curva === 'A' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : sku.curva === 'B' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
                           {sku.curva}
                         </span>
                       </td>
@@ -336,9 +321,7 @@ export default function ProdutosPage() {
                       <td className="py-3 px-4 text-slate-300 truncate max-w-[200px]" title={sku.titulo}>{sku.titulo}</td>
                       <td className="py-3 px-4 text-center font-bold text-slate-200">{sku.qtd}</td>
                       <td className="py-3 px-4 text-right font-black text-amber-400">R$ {sku.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className={`py-3 px-4 text-right font-black ${sku.lucroTotal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        R$ {sku.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
+                      <td className={`py-3 px-4 text-right font-black ${sku.lucroTotal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>R$ {sku.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="py-3 px-4 text-right text-slate-300">{sku.pctRepresentatividade.toFixed(2)}%</td>
                     </tr>
                   ))}
@@ -352,34 +335,17 @@ export default function ProdutosPage() {
         </div>
       </div>
 
-      {/* Nova Seção Adicionada: Fragmentação por Pedido */}
       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 overflow-x-auto shadow-xl">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
           <h3 className="font-bold text-white text-base">Fragmentação por Pedido (Ganho Real)</h3>
           
           <div className="flex flex-wrap gap-3 w-full sm:w-auto">
-            {/* NOVO: Filtro para localizar Pedidos Sem CMV */}
-            <select 
-              value={cmvFilter} 
-              onChange={(e) => setCmvFilter(e.target.value)}
-              className="p-2.5 bg-slate-950 border border-amber-700/50 text-amber-400 rounded-xl text-xs outline-none focus:border-amber-500 cursor-pointer w-full sm:w-auto font-bold"
-            >
+            <select value={cmvFilter} onChange={(e) => setCmvFilter(e.target.value)} className="p-2.5 bg-slate-950 border border-amber-700/50 text-amber-400 rounded-xl text-xs outline-none focus:border-amber-500 cursor-pointer w-full sm:w-auto font-bold">
               <option value="TODOS" className="bg-slate-900 text-slate-200">Todos os Pedidos</option>
               <option value="SEM_CMV" className="bg-slate-900 text-rose-400">Aviso: Sem Custo (CMV 0)</option>
             </select>
-
-            <input 
-              type="text" 
-              placeholder="Buscar ID Pedido..." 
-              value={searchOrderId}
-              onChange={(e) => setSearchOrderId(e.target.value)}
-              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-48"
-            />
-            <select 
-              value={sortOrder} 
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto"
-            >
+            <input type="text" placeholder="Buscar ID Pedido..." value={searchOrderId} onChange={(e) => setSearchOrderId(e.target.value)} className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 w-full sm:w-48" />
+            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto">
               <option value="DEFAULT" className="bg-slate-900 text-slate-200">Ordem Padrão (Data)</option>
               <option value="MAIOR_LIQUIDEZ" className="bg-slate-900 text-slate-200">Maior Liquidez (Lucro)</option>
               <option value="MENOR_LIQUIDEZ" className="bg-slate-900 text-slate-200">Menor Liquidez (Prejuízo)</option>
@@ -407,9 +373,9 @@ export default function ProdutosPage() {
                 <td className="py-2.5 pl-3 text-slate-400">{s.data_faturamento ? s.data_faturamento.split('-').reverse().join('/') : '-'}</td>
                 <td className="py-2.5 font-bold text-indigo-400">{s.id_pedido}</td>
                 <td className="py-2.5">{s.canal}</td>
-                <td className="py-2.5 font-mono text-[10px]">{s.sku} (x{s.quantidade})</td>
+                <td className="py-2.5 font-mono text-[10px]">{s.sku_display}</td>
                 <td className="py-2.5">R$ {(s.preco_venda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2.5">R$ {(s.repasse || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2.5">R$ {(s.repasse_liquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className={`py-2.5 ${!s.custoCMV || s.custoCMV === 0 ? 'text-rose-400 font-bold bg-rose-950/20' : 'text-amber-300'}`}>
                   - R$ {(s.custoCMV || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
@@ -425,27 +391,14 @@ export default function ProdutosPage() {
           </tbody>
         </table>
 
-        {/* Controles de Paginação */}
         {totalPagesOrders > 1 && (
           <div className="flex justify-between items-center pt-4 mt-2 border-t border-slate-800 text-xs">
             <span className="text-slate-400 font-bold">
               Página {currentPageOrders} de {totalPagesOrders} ({displayOrders.length} pedidos)
             </span>
             <div className="flex gap-2">
-              <button 
-                onClick={() => setCurrentPageOrders(p => Math.max(1, p - 1))} 
-                disabled={currentPageOrders === 1} 
-                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
-              >
-                Anterior
-              </button>
-              <button 
-                onClick={() => setCurrentPageOrders(p => Math.min(totalPagesOrders, p + 1))} 
-                disabled={currentPageOrders === totalPagesOrders} 
-                className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition"
-              >
-                Próxima
-              </button>
+              <button onClick={() => setCurrentPageOrders(p => Math.max(1, p - 1))} disabled={currentPageOrders === 1} className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition">Anterior</button>
+              <button onClick={() => setCurrentPageOrders(p => Math.min(totalPagesOrders, p + 1))} disabled={currentPageOrders === totalPagesOrders} className="px-4 py-2 bg-slate-950 border border-slate-700 hover:bg-slate-800 rounded-lg text-slate-300 disabled:opacity-40 font-bold transition">Próxima</button>
             </div>
           </div>
         )}

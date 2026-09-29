@@ -183,19 +183,22 @@ export default function AdminPage() {
 
           const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[1]) || new Date().toISOString().slice(0, 10);
           
-          // LEITURA CORRETA DO PDV: Usa estritamente a coluna configurada nas Regras (ex: Coluna I)
           const pdvColIdx = colToIdx(rule.colPdv || 'I');
           const precoVendaRaw = row[pdvColIdx];
           const precoVendaUnitario = parseBrFloat(precoVendaRaw);
           const repasse = evaluateFormula(rule.formulaExcel || 'I2', row, parseBrFloat(row[colToIdx(rule.colRebate || 'C')]));
 
-          const descStatus = String(row[3] || row[4] || '').toLowerCase();
-          const pkgMatch = descStatus.match(/pacote de (\d+) produt/i);
-          const numItems = pkgMatch ? parseInt(pkgMatch[1], 10) : 0;
+          // Buscador Dinâmico de Pacotes/Carrinhos: Varre as colunas em busca da identificação de carrinho
+          let numItems = 0;
+          for (let c = 0; c < Math.min(row.length, 20); c++) {
+             const m = String(row[c] || '').toLowerCase().match(/pacote de (\d+)/i);
+             if (m) { numItems = parseInt(m[1], 10); break; }
+          }
 
           if (numItems > 1) {
             let processed = 0;
             let sub = 1;
+            // Varre rigorosamente as próximas X linhas atreladas ao carrinho
             while (sub <= numItems && (i + sub) < rows.length) {
               const subRow = rows[i + sub];
               if (subRow) {
@@ -217,7 +220,7 @@ export default function AdminPage() {
               }
               sub++;
             }
-            i += numItems;
+            i += numItems; // Pula as linhas filhas lidas para evitar repetições
           } else {
             const skuVal = row[colToIdx(rule.colSku || 'B')] ? String(row[colToIdx(rule.colSku || 'B')]).trim().toUpperCase() : 'SKU-GERAL';
             const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'G')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
