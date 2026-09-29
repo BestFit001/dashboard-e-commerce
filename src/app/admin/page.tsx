@@ -17,7 +17,7 @@ export default function AdminPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   
   const [colFaturadosObs, setColFaturadosObs] = useState('A');
-  const [colFaturadosData, setColFaturadosData] = useState('F'); // Coluna F: DataFaturamento comum neste relatório
+  const [colFaturadosData, setColFaturadosData] = useState('F');
   const [colCancelados, setColCancelados] = useState('A');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
@@ -131,23 +131,24 @@ export default function AdminPage() {
 
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
-          const rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
+          let rawId = row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
           if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) return;
 
-          // Extrai ID numérico, alfanumérico ou científico (ex: 1,00129E+11 ou 2177552)
-          let pedidoId = rawId.replace(/\.0$/, '');
-          if (pedidoId.includes('E+')) {
+          // Tratamento robusto para notação científica (ex: 1,00129E+11) ou números
+          rawId = rawId.replace(/\.0$/, '');
+          if (rawId.toUpperCase().includes('E+')) {
             try {
-              pedidoId = Math.round(parseFloat(pedidoId.replace(',', '.'))).toString();
-            } catch {
-              pedidoId = rawId;
-            }
+              const numVal = parseFloat(rawId.replace(',', '.'));
+              if (!isNaN(numVal)) {
+                rawId = Math.round(numVal).toString();
+              }
+            } catch {}
           }
-          
-          if (pedidoId && pedidoId.length >= 3) {
+
+          if (rawId) {
             const dataEmissao = parseExcelDate(row[idxData] || row[5] || row[2]);
-            novosFaturados.push({ id: pedidoId, data: dataEmissao });
+            novosFaturados.push({ id: rawId, data: dataEmissao });
           }
         });
 
@@ -250,22 +251,29 @@ export default function AdminPage() {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
 
-          const rawId = row[colToIdx(rule.colIdPedido || 'A')];
-          const idPedBruto = rawId ? String(rawId).trim() : '';
-
-          if (!idPedBruto || idPedBruto.toLowerCase().includes('pedido') || idPedBruto.toLowerCase().includes('id')) {
+          let rawId = row[colToIdx(rule.colIdPedido || 'A')] ? String(row[colToIdx(rule.colIdPedido || 'A')]).trim() : '';
+          
+          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) {
             i++; continue;
           }
 
-          if (cancSet.has(idPedBruto)) { i++; continue; }
+          rawId = rawId.replace(/\.0$/, '');
+          if (rawId.toUpperCase().includes('E+')) {
+            try {
+              const numVal = parseFloat(rawId.replace(',', '.'));
+              if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
+            } catch {}
+          }
 
-          if (!fatMap.has(idPedBruto)) {
+          if (cancSet.has(rawId)) { i++; continue; }
+
+          if (!fatMap.has(rawId)) {
             ignoradosPorNaoFaturados++;
             i++; 
             continue;
           }
 
-          const dataFaturamento = fatMap.get(idPedBruto) || parseExcelDate(row[isShopee ? 8 : 5]) || new Date().toISOString().slice(0, 10);
+          const dataFaturamento = fatMap.get(rawId) || parseExcelDate(row[isShopee ? 8 : 5]) || new Date().toISOString().slice(0, 10);
           
           const pdvColIdx = colToIdx(rule.colPdv || 'J');
           const precoVendaUnitario = parseSmartFloat(row[pdvColIdx], selectedChannel);
@@ -275,7 +283,7 @@ export default function AdminPage() {
           const quantidade = parseInt(String(row[colToIdx(rule.colQuantidade || 'I')] || '1').replace(/[^0-9]/g, ''), 10) || 1;
 
           novasVendas.push({
-            id_pedido: idPedBruto,
+            id_pedido: rawId,
             data_faturamento: dataFaturamento,
             canal: selectedChannel,
             sku: skuVal,
@@ -355,7 +363,7 @@ export default function AdminPage() {
     if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}]?`)) {
       const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
       await saveToCloudAndState('vendas', remainingSales, setSales);
-      addLog(`Último lote do canal [${targetChannelDelete}] removed.`, 'warning');
+      addLog(`Último lote do canal [${targetChannelDelete}] removido.`, 'warning');
       alert(`Último envio do canal ${targetChannelDelete} foi desfeito/removido com sucesso!`);
     }
   };
