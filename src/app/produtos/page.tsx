@@ -13,10 +13,10 @@ export default function ProdutosPage() {
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
 
-  // Extrair lista única de marcas da base de SKUs
+  // Extrair lista única de marcas (transformando vazios em "Sem Marca")
   const availableBrands = useMemo(() => {
-    const brands = new Set(products.map((p: any) => p.marca?.trim()).filter(Boolean));
-    return ['TODAS', ...Array.from(brands).sort()];
+    const brands = new Set(products.map((p: any) => p.marca?.trim() || 'Sem Marca'));
+    return ['TODAS', ...Array.from(brands).sort((a: any, b: any) => a.localeCompare(b))];
   }, [products]);
 
   // 1. Filtragem de Data
@@ -153,14 +153,14 @@ export default function ProdutosPage() {
 
           {/* Filtro de Marca */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
-            <i className="fa-solid fa-tag text-emerald-400 pl-2 text-xs"></i>
+            <i className="fa-solid fa-tag text-purple-400 pl-2 text-xs"></i>
             <select 
               value={selectedBrand} 
               onChange={(e) => setSelectedBrand(e.target.value)} 
-              className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32"
+              className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32"
             >
               {availableBrands.map(brand => (
-                <option key={brand} value={brand}>{brand}</option>
+                <option key={brand} value={brand} className="bg-slate-900 text-slate-200">{brand}</option>
               ))}
             </select>
           </div>
@@ -169,12 +169,12 @@ export default function ProdutosPage() {
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-auto">
-              <option value="TUDO">Todo o Histórico</option>
-              <option value="HOJE">Hoje</option>
-              <option value="SEMANA">Últimos 7 dias</option>
-              <option value="QUINZENA">Últimos 15 dias</option>
-              <option value="MES">Últimos 30 dias</option>
-              <option value="PERSONALIZADO">Personalizado</option>
+              <option value="TUDO" className="bg-slate-900 text-slate-200">Todo o Histórico</option>
+              <option value="HOJE" className="bg-slate-900 text-slate-200">Hoje</option>
+              <option value="SEMANA" className="bg-slate-900 text-slate-200">Últimos 7 dias</option>
+              <option value="QUINZENA" className="bg-slate-900 text-slate-200">Últimos 15 dias</option>
+              <option value="MES" className="bg-slate-900 text-slate-200">Últimos 30 dias</option>
+              <option value="PERSONALIZADO" className="bg-slate-900 text-slate-200">Personalizado</option>
             </select>
           </div>
           {dateFilter === 'PERSONALIZADO' && (
