@@ -9,7 +9,7 @@ export default function ProdutosPage() {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   
-  // Novos estados para os filtros de SKU e Marca
+  // Estados para os filtros de SKU e Marca
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
 
@@ -82,9 +82,13 @@ export default function ProdutosPage() {
       enrichedSkus = enrichedSkus.filter(s => s.marca === selectedBrand);
     }
 
-    // Recalcular Faturamento Total APENAS para os itens filtrados
+    // Recalcular Faturamento Total e Lucro Total APENAS para os itens filtrados
     let faturamentoTotalFiltrado = 0;
-    enrichedSkus.forEach(s => faturamentoTotalFiltrado += s.revenue);
+    let lucroTotalFiltrado = 0;
+    enrichedSkus.forEach(s => {
+      faturamentoTotalFiltrado += s.revenue;
+      lucroTotalFiltrado += s.lucroTotal;
+    });
 
     // Ordenar do maior para o menor faturamento
     enrichedSkus.sort((a, b) => b.revenue - a.revenue);
@@ -108,7 +112,7 @@ export default function ProdutosPage() {
 
     return { 
       abcCurve: enrichedSkus, 
-      kpis: { faturamentoTotal: faturamentoTotalFiltrado, countA, countB, countC, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
+      kpis: { faturamentoTotal: faturamentoTotalFiltrado, lucroTotal: lucroTotalFiltrado, countA, countB, countC, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
     };
   }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
 
@@ -117,8 +121,9 @@ export default function ProdutosPage() {
     const brands: Record<string, any> = {};
     abcCurve.forEach(s => {
       const b = s.marca;
-      if (!brands[b]) brands[b] = { marca: b, revenue: 0, qtd: 0 };
+      if (!brands[b]) brands[b] = { marca: b, revenue: 0, lucro: 0, qtd: 0 };
       brands[b].revenue += s.revenue;
+      brands[b].lucro += s.lucroTotal;
       brands[b].qtd += s.qtd;
     });
     return Object.values(brands).sort((a: any, b: any) => b.revenue - a.revenue);
@@ -187,7 +192,7 @@ export default function ProdutosPage() {
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (Filtro Atual)</span>
           <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-          <p className="text-[10px] text-slate-500 mt-1">Ticket Médio Est.: R$ {kpis.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          <p className="text-[10px] text-emerald-400 font-bold mt-1">Lucro: R$ {kpis.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
         <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30">
           <span className="text-[10px] font-bold text-indigo-400 uppercase">Curva A (Top 80% Receita)</span>
@@ -218,10 +223,10 @@ export default function ProdutosPage() {
               {brandStats.map((brand, i) => (
                 <div key={i} className="space-y-1.5">
                   <div className="flex justify-between items-end">
-                    <span className="text-xs font-bold text-slate-300 truncate max-w-[60%]">{brand.marca}</span>
+                    <span className="text-xs font-bold text-slate-300 truncate max-w-[50%]">{brand.marca}</span>
                     <div className="text-right">
                       <span className="block text-xs font-black text-white">R$ {brand.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      <span className="block text-[9px] text-slate-400">{brand.qtd} un. vendidas</span>
+                      <span className="block text-[9px] text-emerald-400 font-bold">Lucro: R$ {brand.lucro.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                   {/* Barra de Progresso visual */}
@@ -253,6 +258,7 @@ export default function ProdutosPage() {
                     <th className="py-3 px-4">Produto</th>
                     <th className="py-3 px-4 text-center">Un. Vendidas</th>
                     <th className="py-3 px-4 text-right">Fat. Bruto</th>
+                    <th className="py-3 px-4 text-right text-emerald-400">Liquidez (Lucro)</th>
                     <th className="py-3 px-4 text-right">Participação</th>
                   </tr>
                 </thead>
@@ -275,11 +281,14 @@ export default function ProdutosPage() {
                       <td className="py-3 px-4 text-slate-300 truncate max-w-[200px]" title={sku.titulo}>{sku.titulo}</td>
                       <td className="py-3 px-4 text-center font-bold text-slate-200">{sku.qtd}</td>
                       <td className="py-3 px-4 text-right font-black text-amber-400">R$ {sku.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className={`py-3 px-4 text-right font-black ${sku.lucroTotal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        R$ {sku.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
                       <td className="py-3 px-4 text-right text-slate-300">{sku.pctRepresentatividade.toFixed(2)}%</td>
                     </tr>
                   ))}
                   {abcCurve.length === 0 && (
-                    <tr><td colSpan={6} className="p-8 text-center text-slate-500 font-bold">Nenhum produto encontrado com os filtros atuais.</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-slate-500 font-bold">Nenhum produto encontrado com os filtros atuais.</td></tr>
                   )}
                 </tbody>
               </table>
