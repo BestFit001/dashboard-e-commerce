@@ -42,14 +42,14 @@ export default function AdminPage() {
     return Math.max(0, base - 1);
   };
 
-  // PARSER INTELIGENTE DE NÚMEROS (Detecta automaticamente vírgula/ponto decimal e milhar)
+  // PARSER INTELIGENTE DE NÚMEROS (Trata milhares, decimais, BRL, R$ e vírgulas/pontos perfeitamente)
   const parseSmartFloat = (val: any, channelName: string) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
     
     let strVal = String(val).trim();
     
-    // Remove prefixos de moeda e letras
+    // Remove letras e símbolos de moeda, mantendo números, pontos, vírgulas e hífens
     strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
 
     if (strVal.includes(',') && strVal.includes('.')) {
@@ -57,14 +57,14 @@ export default function AdminPage() {
       const lastDot = strVal.lastIndexOf('.');
       
       if (lastComma > lastDot) {
-        // Padrão brasileiro: 3.460,00 -> remove pontos, troca vírgula por ponto
+        // Padrão brasileiro (ex: 3.460,00) -> remove pontos de milhar, troca vírgula por ponto
         strVal = strVal.replace(/\./g, '').replace(',', '.');
       } else {
-        // Padrão americano: 3,460.00 -> remove vírgulas
+        // Padrão americano (ex: 3,460.00) -> remove vírgulas de milhar
         strVal = strVal.replace(/,/g, '');
       }
     } else if (strVal.includes(',')) {
-      // Apenas vírgula (ex: 3460,00 ou 229,9)
+      // Apenas vírgula decimal (ex: 3460,00 ou 206,91) -> troca por ponto
       strVal = strVal.replace(/\./g, '').replace(',', '.');
     }
     
