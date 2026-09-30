@@ -49,6 +49,7 @@ export default function AdminPage() {
     
     let strVal = String(val).trim();
 
+    // Impede que anos ou formatos de data virem dinheiro acidentalmente
     if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) {
       return 0;
     }
@@ -235,6 +236,7 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
 
+    // DETEÇÃO DE CLUBE/LOJA FÍSICA
     const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
 
     if (!isClube && (!faturados || faturados.length === 0)) {
@@ -287,29 +289,58 @@ export default function AdminPage() {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
 
-          const pdvColIdx = colToIdx(rule.colPdv || 'J');
-          const pdvCheckStr = pdvColIdx >= 0 && row[pdvColIdx] !== undefined ? String(row[pdvColIdx]).toLowerCase() : '';
-          
-          if (pdvCheckStr.includes('faturamento') || pdvCheckStr.includes('bruto') || pdvCheckStr.includes('valor')) {
-            i++; continue;
-          }
+          let rawId = '';
+          let dataFaturamento = new Date().toISOString().slice(0, 10);
+          let precoVendaUnitario = 0;
+          let repasseCalculado = 0;
+          let skuVal = 'SKU-GERAL';
+          let quantidade = 1;
 
-          const colIdIdx = colToIdx(rule.colIdPedido || 'A');
-          let rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
-          
           if (isClube) {
-            // TRAVA DE DUPLICAÇÃO PARA CLUBES:
-            // Lojas geram planilhas com uma linha "Total" no final onde a Coluna A é vazia ou NaN. 
-            // Ignoramos essa linha para não somar o total ao faturamento!
-            const colA = row[0] !== undefined ? String(row[0]).trim() : '';
-            if (!colA || colA.toLowerCase().includes('total') || colA.toLowerCase() === 'nan') {
+            // ==========================================
+            // MODO LOJA FÍSICA: LEITURA PURA E DIRETA
+            // ==========================================
+            const colAStr = row[0] !== undefined ? String(row[0]).trim().toLowerCase() : '';
+            const colFStr = row[5] !== undefined ? String(row[5]).trim().toLowerCase() : '';
+            
+            // Pula cabeçalhos e linhas sem valores úteis (como 'Empresa :', 'Filial :')
+            if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') {
               i++; continue;
             }
-            rawId = `clube-venda-${Date.now()}-${i}`;
+
+            rawId = `clube-${Date.now()}-${i}`;
+            dataFaturamento = parseExcelDate(row[0]);
+            
+            // Puxa o Bruto e Líquido estritamente pelas letras configuradas no Painel (F e I)
+            precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
+            
+            const apuracaoStr = (rule.formulaExcel || 'I').trim();
+            if (!/[+\-*/()]/.test(apuracaoStr)) {
+                const apIdx = colToIdx(apuracaoStr);
+                repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
+            } else {
+                repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel);
+            }
+
+            skuVal = 'SKU-CLUBE-ISENTO'; 
+            
+            const colQtdIdx = colToIdx(rule.colQuantidade || 'ZZZ');
+            quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
+            
+            // Se a linha leu zerado, ignora
+            if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
+
           } else {
+            // ==========================================
+            // MODO E-COMMERCE: LÓGICA DE CRUZAMENTO
+            // ==========================================
+            const colIdIdx = colToIdx(rule.colIdPedido || 'A');
+            rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
+            
             if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) {
               i++; continue;
             }
+
             rawId = rawId.replace(/\.0$/, '');
             if (rawId.toUpperCase().includes('E+')) {
               try {
@@ -317,16 +348,12 @@ export default function AdminPage() {
                 if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
               } catch {}
             }
+
             if (cancSet.has(rawId)) { i++; continue; }
-          }
 
-          let isFaturado = false;
-          let dataFaturamento = new Date().toISOString().slice(0, 10);
-
-          if (isClube) {
-            isFaturado = true;
-          } else {
             const rowCpf = extractCPF(row);
+            let isFaturado = false;
+
             if (fatIdMap.has(rawId)) {
               isFaturado = true;
               dataFaturamento = fatIdMap.get(rawId);
@@ -334,30 +361,27 @@ export default function AdminPage() {
               isFaturado = true;
               dataFaturamento = fatCpfMap.get(rowCpf);
             }
+
             if (!isFaturado && (fatIdMap.size > 0 || fatCpfMap.size > 0)) {
               ignoradosPorNaoFaturados++;
               i++; 
               continue;
             }
+
+            precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
+
+            const colRebateIdx = colToIdx(rule.colRebate || 'C');
+            const rebateRowValue = colRebateIdx >= 0 ? parseSmartFloat(row[colRebateIdx], selectedChannel) : 0;
+            repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, rebateRowValue, selectedChannel);
+
+            const colSkuIdx = colToIdx(rule.colSku || 'AS');
+            skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
+            
+            const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
+            quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
+            
+            if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
           }
-
-          const precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
-
-          const colRebateIdx = colToIdx(rule.colRebate || 'C');
-          const rebateRowValue = colRebateIdx >= 0 ? parseSmartFloat(row[colRebateIdx], selectedChannel) : 0;
-          const repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, rebateRowValue, selectedChannel);
-
-          const colSkuIdx = colToIdx(rule.colSku || 'AS');
-          let skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
-          
-          if (isClube) {
-             skuVal = 'SKU-CLUBE-ISENTO';
-          }
-
-          const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
-          const quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
-
-          if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
 
           novasVendas.push({
             id_pedido: rawId,
@@ -379,7 +403,7 @@ export default function AdminPage() {
         
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        const clubeMsg = isClube ? ' (Linhas de Totais ignoradas com sucesso)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
+        const clubeMsg = isClube ? ' (Modo Loja Física: Leitura Direta s/ Cruzamentos)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
         alert(`Sucesso! ${novasVendas.length} vendas importadas para ${selectedChannel}${clubeMsg}.`);
       } catch (err: any) {
