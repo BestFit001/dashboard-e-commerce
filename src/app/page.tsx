@@ -8,7 +8,6 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  // TRAVA DE DATA: Inicia sempre no mês atual (ex: '2026-09') para alinhar com as metas mensais
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
   const [dateFilter, setDateFilter] = useState('MES_ATUAL');
   const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
@@ -118,10 +117,8 @@ export default function DashboardPage() {
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
-    // Distribuindo custos fixos (flex e ads) proporcionalmente ou mantendo o líquido real total
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     
-    // Lucro por modalidade (Repasse - CMV - Custos proporcionais)
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
@@ -254,7 +251,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL */}
+        {/* 3. CMV TOTAL (Com aviso para Lojas Físicas) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -263,7 +260,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.cmvFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-[10px] font-bold text-slate-400 italic">Sem custos detalhados</span>
             </div>
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
