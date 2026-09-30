@@ -63,7 +63,10 @@ export default function DashboardPage() {
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        const repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
+        // Blindagem robusta do repasse líquido para nunca zerar
+        const rawRepasse = Number(s.repasse_liquido);
+        const repasseLiquido = (!isNaN(rawRepasse) && rawRepasse !== 0) ? rawRepasse : (Number(s.repasse) || 0);
+        
         const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
