@@ -9,6 +9,10 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
+  // Novo filtro de modalidade: 'TODAS', 'FISICO', 'DIGITAL'
+  const [modalidadeFilter, setModalidadeFilter] = useState('TODAS');
+  const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
+
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
   const [dateFilter, setDateFilter] = useState('MES_ATUAL');
   const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
@@ -33,12 +37,18 @@ export default function DashboardPage() {
     setIsRecalculating(true);
     setTimeout(() => {
       setAppliedChannelFilter(selectedChannelFilter);
+      setAppliedModalidadeFilter(modalidadeFilter);
       setAppliedDateFilter(dateFilter);
       setAppliedStartDate(customStartDate);
       setAppliedEndDate(customEndDate);
       setIsRecalculating(false);
-      addLog(`Painel recalculado. Canal: [${selectedChannelFilter}] | Período: [${dateFilter}]`, 'success');
+      addLog(`Painel recalculado. Canal: [${selectedChannelFilter}] | Modalidade: [${modalidadeFilter}] | Período: [${dateFilter}]`, 'success');
     }, 300);
+  };
+
+  const isChannelFisico = (canalName: string) => {
+    const nome = String(canalName || '').toLowerCase();
+    return nome.includes('clube') || nome.includes('loja') || nome.includes('paineiras') || nome.includes('hebraica');
   };
 
   const enrichedSales = useMemo(() => {
@@ -47,6 +57,10 @@ export default function DashboardPage() {
 
     return sales.filter((s: any) => {
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
+
+        const fisico = isChannelFisico(s.canal);
+        if (appliedModalidadeFilter === 'FISICO' && !fisico) return false;
+        if (appliedModalidadeFilter === 'DIGITAL' && fisico) return false;
 
         if (s.data_faturamento) {
            const d = new Date(s.data_faturamento + 'T00:00:00');
@@ -86,7 +100,7 @@ export default function DashboardPage() {
         
         return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido };
       });
-  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, tarifasSiteMap]);
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, tarifasSiteMap]);
 
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
@@ -108,8 +122,7 @@ export default function DashboardPage() {
     let cmvDigital = 0;
 
     enrichedSales.forEach((s: any) => {
-      const nomeCanal = String(s.canal || '').toLowerCase();
-      const isFisico = nomeCanal.includes('clube') || nomeCanal.includes('loja') || nomeCanal.includes('paineiras') || nomeCanal.includes('hebraica');
+      const fisico = isChannelFisico(s.canal);
       
       const valBruto = Number(s.preco_venda) || 0;
       const valRepasse = Number(s.repasse_liquido) || 0;
@@ -119,7 +132,7 @@ export default function DashboardPage() {
       faturamentoLiquidoRepasse += isNaN(valRepasse) ? 0 : valRepasse;
       custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
-      if (isFisico) {
+      if (fisico) {
         fatBrutoFisico += isNaN(valBruto) ? 0 : valBruto;
         repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
         cmvFisico += isNaN(valCmv) ? 0 : valCmv;
@@ -156,12 +169,16 @@ export default function DashboardPage() {
     };
   }, [enrichedSales, adsData, appliedChannelFilter]);
 
-  // Cálculo de projeção de dias do mês atual
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
-    const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
+    let channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
 
-    // Datas do mês atual para projeção
+    if (appliedModalidadeFilter === 'FISICO') {
+      channelsToAnalyze = channelsToAnalyze.filter(c => isChannelFisico(c));
+    } else if (appliedModalidadeFilter === 'DIGITAL') {
+      channelsToAnalyze = channelsToAnalyze.filter(c => !isChannelFisico(c));
+    }
+
     const now = new Date();
     const ano = now.getFullYear();
     const mes = now.getMonth();
@@ -191,7 +208,6 @@ export default function DashboardPage() {
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
 
-      // Projeção de Faturamento e Média Diária Necessária
       const projecaoFaturamento = (faturadoBruto / diasPassados) * totalDiasMes;
       const valorFaltante = Math.max(0, metaBase - faturadoBruto);
       const mediaDiariaNecessaria = valorFaltante > 0 ? valorFaltante / diasFaltantes : 0;
@@ -213,7 +229,7 @@ export default function DashboardPage() {
         logoUrl 
       };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, channelRules, channelLogos, currentRefMonth, canais]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
   return (
     <div className="space-y-6">
@@ -224,6 +240,7 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          {/* Filtro Período */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -241,6 +258,18 @@ export default function DashboardPage() {
               <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
             </div>
           )}
+
+          {/* NOVO FILTRO DE MODALIDADE (Físico vs E-commerce) */}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-solid fa-layer-group text-emerald-400 pl-2 text-xs"></i>
+            <select value={modalidadeFilter} onChange={(e) => setModalidadeFilter(e.target.value)} className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="TODAS">Todas as Modalidades</option>
+              <option value="FISICO">Lojas Físicas</option>
+              <option value="DIGITAL">E-commerce / Marketplaces</option>
+            </select>
+          </div>
+
+          {/* Filtro Canal */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -248,6 +277,7 @@ export default function DashboardPage() {
               {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
             </select>
           </div>
+
           <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg">
             {isRecalculating ? 'A calcular...' : 'Recalcular'}
           </button>
@@ -332,7 +362,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* CARDS DOS CANAIS COM PROJEÇÃO E MÉDIA DIÁRIA */}
+      {/* CARDS DOS CANAIS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => (
           <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
@@ -366,7 +396,6 @@ export default function DashboardPage() {
                </div>
              </div>
 
-             {/* PROJEÇÃO E MÉDIA DIÁRIA NECESSÁRIA */}
              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
                <div className="flex justify-between items-center">
                  <span className="text-[10px] text-slate-400 font-bold uppercase">Projeção Fechamento:</span>
