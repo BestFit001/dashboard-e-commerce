@@ -25,11 +25,17 @@ export default function DashboardPage() {
   const [tarifasSiteMap, setTarifasSiteMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    supabase.from('tb_estado_global').select('dados').eq('chave', 'tarifas_site').single().then(({ data }) => {
-      if (data && data.dados) {
-        setTarifasSiteMap(data.dados);
+    async function fetchTarifas() {
+      try {
+        const { data } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'tarifas_site').single();
+        if (data && data.dados) {
+          setTarifasSiteMap(data.dados);
+        }
+      } catch (err) {
+        // Ignora caso não exista
       }
-    }).catch(() => {});
+    }
+    fetchTarifas();
   }, []);
 
   const handleRecalculate = () => {
@@ -107,22 +113,20 @@ export default function DashboardPage() {
     return new Date().toISOString().slice(0, 7);
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
-  // Cálculo Fracionado de Metas e Faturamento por Modalidade
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     
-    let fatBrutoFisico = 0;
-    let metaFisicaTotal = 0;
-    let fatBrutoDigital = 0;
-    let metaDigitalTotal = 0;
-
     let faturamentoBrutoVendas = 0;
     let faturamentoLiquidoRepasse = 0;
+    let fatBrutoFisico = 0;
+    let fatBrutoDigital = 0;
+    let metaDigitalTotal = 0;
     let repasseFisico = 0;
     let repasseDigital = 0;
     let custoTotalCMV = 0;
-    let cmvFisico = 0;
     let cmvDigital = 0;
+
+    const lojasFisicasDetalhes: any[] = [];
 
     activeChannels.forEach(channelName => {
       const fisico = isChannelFisico(channelName);
@@ -131,8 +135,27 @@ export default function DashboardPage() {
                    || { meta_valor: 0 };
       const metaCanal = Number(goalObj.meta_valor) || 0;
 
-      if (fisico) metaFisicaTotal += metaCanal;
-      else metaDigitalTotal += metaCanal;
+      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
+      const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+
+      if (fisico) {
+        fatBrutoFisico += faturadoCanal;
+        const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
+        const diff = Math.abs(progresso - 100);
+
+        let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
+        if (!nomeLimpo) nomeLimpo = channelName;
+
+        lojasFisicasDetalhes.push({
+          nome: nomeLimpo,
+          faturado: faturadoCanal,
+          progresso,
+          diff,
+          abaixo: progresso < 100
+        });
+      } else {
+        metaDigitalTotal += metaCanal;
+      }
     });
 
     enrichedSales.forEach((s: any) => {
@@ -145,30 +168,24 @@ export default function DashboardPage() {
       faturamentoLiquidoRepasse += isNaN(valRepasse) ? 0 : valRepasse;
       custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
-      if (fisico) {
-        fatBrutoFisico += isNaN(valBruto) ? 0 : valBruto;
-        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
-        cmvFisico += isNaN(valCmv) ? 0 : valCmv;
-      } else {
+      if (!fisico) {
         fatBrutoDigital += isNaN(valBruto) ? 0 : valBruto;
         repasseDigital += isNaN(valRepasse) ? 0 : valRepasse;
         cmvDigital += isNaN(valCmv) ? 0 : valCmv;
+      } else {
+        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
       }
     });
 
-    const progressoFisicoPct = metaFisicaTotal > 0 ? (fatBrutoFisico / metaFisicaTotal) * 100 : 0;
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
-
-    const diffFisico = progressoFisicoPct - 100;
-    const diffDigital = progressoDigitalPct - 100;
+    const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
-    
-    const lucroFisico = repasseFisico - cmvFisico;
+    const lucroFisico = repasseFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
@@ -179,15 +196,14 @@ export default function DashboardPage() {
       repasseFisico: isNaN(repasseFisico) ? 0 : repasseFisico, 
       repasseDigital: isNaN(repasseDigital) ? 0 : repasseDigital,
       custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
-      cmvFisico: isNaN(cmvFisico) ? 0 : cmvFisico, 
+      cmvFisico: 0, 
       cmvDigital: isNaN(cmvDigital) ? 0 : cmvDigital,
       lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
       lucroFisico: isNaN(lucroFisico) ? 0 : lucroFisico, 
       lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
       totalPedidos: enrichedSales.length,
-      progressoFisicoPct,
+      lojasFisicasDetalhes,
       progressoDigitalPct,
-      diffFisico,
       diffDigital
     };
   }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth]);
@@ -343,7 +359,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E % ABAIXO/ACIMA DA META */}
+      {/* 4 PAINÉIS DO TOPO COM LOJAS FÍSICAS DESMEMBRADAS */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
@@ -354,18 +370,27 @@ export default function DashboardPage() {
             <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+            {/* Lojas Físicas Desmembradas Individualmente */}
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoFisicoPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpis.progressoFisicoPct >= 100 ? `▲ ${kpis.diffFisico.toFixed(1)}% acima` : `▼ ${Math.abs(kpis.diffFisico).toFixed(1)}% abaixo`}
-              </span>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <div className="space-y-1.5">
+                {kpis.lojasFisicasDetalhes.map((loja: any) => (
+                  <div key={loja.nome} className="text-xs">
+                    <span className="font-bold text-slate-200 block">{loja.nome}: R$ {loja.faturado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className={`text-[10px] font-black block ${loja.abaixo ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {loja.abaixo ? `▼ ${loja.diff.toFixed(1)}% abaixo` : `▲ ${loja.diff.toFixed(1)}% acima`}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {/* E-commerce Consolidado */}
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpis.progressoDigitalPct >= 100 ? `▲ ${kpis.diffDigital.toFixed(1)}% acima` : `▼ ${Math.abs(kpis.diffDigital).toFixed(1)}% abaixo`}
+                {kpis.progressoDigitalPct >= 100 ? `▲ ${kpis.diffDigital.toFixed(1)}% acima` : `▼ ${kpis.diffDigital.toFixed(1)}% abaixo`}
               </span>
             </div>
           </div>
