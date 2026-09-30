@@ -235,7 +235,6 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // MAGIA DOS CLUBES FÍSICOS: O sistema verifica se o canal é uma loja/clube e adapta as regras.
     const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
 
     if (!isClube && (!faturados || faturados.length === 0)) {
@@ -291,7 +290,6 @@ export default function AdminPage() {
           const pdvColIdx = colToIdx(rule.colPdv || 'J');
           const pdvCheckStr = pdvColIdx >= 0 && row[pdvColIdx] !== undefined ? String(row[pdvColIdx]).toLowerCase() : '';
           
-          // Ignora cabeçalhos
           if (pdvCheckStr.includes('faturamento') || pdvCheckStr.includes('bruto') || pdvCheckStr.includes('valor')) {
             i++; continue;
           }
@@ -300,7 +298,14 @@ export default function AdminPage() {
           let rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
           
           if (isClube) {
-            if (!rawId) rawId = `clube-venda-${Date.now()}-${i}`; // Cria ID fictício para a venda física
+            // TRAVA DE DUPLICAÇÃO PARA CLUBES:
+            // Lojas geram planilhas com uma linha "Total" no final onde a Coluna A é vazia ou NaN. 
+            // Ignoramos essa linha para não somar o total ao faturamento!
+            const colA = row[0] !== undefined ? String(row[0]).trim() : '';
+            if (!colA || colA.toLowerCase().includes('total') || colA.toLowerCase() === 'nan') {
+              i++; continue;
+            }
+            rawId = `clube-venda-${Date.now()}-${i}`;
           } else {
             if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) {
               i++; continue;
@@ -319,7 +324,7 @@ export default function AdminPage() {
           let dataFaturamento = new Date().toISOString().slice(0, 10);
 
           if (isClube) {
-            isFaturado = true; // Aprovação imediata para relatórios de lojas
+            isFaturado = true;
           } else {
             const rowCpf = extractCPF(row);
             if (fatIdMap.has(rawId)) {
@@ -346,13 +351,12 @@ export default function AdminPage() {
           let skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
           
           if (isClube) {
-             skuVal = 'SKU-CLUBE-ISENTO'; // Protege o CMV na central para que não deduza os custos novamente
+             skuVal = 'SKU-CLUBE-ISENTO';
           }
 
           const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
           const quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
 
-          // Se a linha leu algo vazio e avaliou como 0 em tudo, ignora (linhas mortas)
           if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
 
           novasVendas.push({
@@ -375,7 +379,7 @@ export default function AdminPage() {
         
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        const clubeMsg = isClube ? ' (Cruzamento Faturados Desativado)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
+        const clubeMsg = isClube ? ' (Linhas de Totais ignoradas com sucesso)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
         alert(`Sucesso! ${novasVendas.length} vendas importadas para ${selectedChannel}${clubeMsg}.`);
       } catch (err: any) {
