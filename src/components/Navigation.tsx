@@ -9,7 +9,7 @@ export default function Navigation() {
   const { currentUser, setCurrentUser } = useAppContext();
 
   if (!currentUser) return null;
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'admin' || currentUser.username === 'gisele@usebestfit.com.br';
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4 sticky top-0 z-50 shadow-md">
@@ -38,6 +38,9 @@ export default function Navigation() {
             <Link href="/regras" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/regras' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-calculator"></i> Regras Canal
             </Link>
+            <Link href="/auxiliar" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/auxiliar' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+              <i className="fa-solid fa-file-excel"></i> Auxiliar
+            </Link>
             <Link href="/admin" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/admin' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
               <i className="fa-solid fa-lock"></i> Admin
             </Link>
@@ -50,7 +53,7 @@ export default function Navigation() {
 
       <div className="flex items-center gap-4">
         <div className="text-right hidden sm:block">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">{currentUser.role === 'admin' ? 'Administrador' : 'Visualizador'}</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">{isAdmin ? 'Administrador' : 'Visualizador'}</span>
           <span className="text-xs font-bold text-slate-200">{currentUser.username}</span>
         </div>
         <button onClick={() => setCurrentUser(null)} className="px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-xs rounded-xl transition flex items-center gap-2">

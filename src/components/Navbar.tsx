@@ -10,15 +10,15 @@ export default function Navbar() {
 
   if (!currentUser) return null;
 
-  // Se for o admin principal, libera tudo. Senão, respeita rigorosamente o array de permissões gravado.
   const isAdminPrincipal = currentUser.username === 'gisele@usebestfit.com.br';
-  const permissoes = isAdminPrincipal ? ['dashboard', 'produtos', 'skus', 'regras', 'admin', 'usuarios'] : (currentUser.permissoes || ['dashboard']);
+  const permissoes = isAdminPrincipal ? ['dashboard', 'produtos', 'skus', 'regras', 'auxiliar', 'admin', 'usuarios'] : (currentUser.permissoes || ['dashboard']);
 
   const navLinks = [
     { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', id: 'dashboard' },
     { name: 'Análise (ABC)', path: '/produtos', icon: 'fa-solid fa-boxes-stacked', id: 'produtos' },
     { name: 'SKUs & Custos', path: '/skus', icon: 'fa-solid fa-tags', id: 'skus' },
     { name: 'Regras Canal', path: '/regras', icon: 'fa-solid fa-calculator', id: 'regras' },
+    { name: 'Auxiliar', path: '/auxiliar', icon: 'fa-solid fa-file-excel', id: 'auxiliar' },
     { name: 'Admin', path: '/admin', icon: 'fa-solid fa-lock', id: 'admin' },
     { name: 'Usuários', path: '/usuarios', icon: 'fa-solid fa-users', id: 'usuarios' },
   ];
@@ -37,7 +37,6 @@ export default function Navbar() {
 
       <div className="hidden md:flex items-center gap-2">
         {navLinks.map(link => {
-          // Bloqueia rigorosamente caso a permissão não esteja incluída no array do utilizador
           if (!permissoes.includes(link.id)) return null;
           
           const isActive = pathname === link.path;
