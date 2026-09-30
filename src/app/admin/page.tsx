@@ -48,6 +48,12 @@ export default function AdminPage() {
     if (typeof val === 'number') return val;
     
     let strVal = String(val).trim();
+
+    // ESCUDO ANTI-DATAS: Impede que anos (ex: 2026-09-30) sejam interpretados como R$ 2.026,00
+    if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) {
+      return 0;
+    }
+
     strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
 
     if (strVal.includes(',') && strVal.includes('.')) {
@@ -166,7 +172,6 @@ export default function AdminPage() {
           const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
           let pedidoId = null;
-          // INSTRUÇÃO VITAL: Suporta o padrão da Amazon "114-1234567-1234567" primeiro!
           const matchId = rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
           if (matchId) {
             pedidoId = matchId[0].trim();
