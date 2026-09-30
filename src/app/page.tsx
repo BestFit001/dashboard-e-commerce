@@ -21,7 +21,6 @@ export default function DashboardPage() {
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [tarifasSiteMap, setTarifasSiteMap] = useState<Record<string, number>>({});
 
-  // Carrega as tarifas do site gravadas na nuvem pelo Admin
   useEffect(() => {
     supabase.from('tb_estado_global').select('dados').eq('chave', 'tarifas_site').single().then(({ data }) => {
       if (data && data.dados) {
@@ -76,7 +75,6 @@ export default function DashboardPage() {
         
         let repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
         
-        // Se for venda do Site e houver tarifa Vindi mapeada para este ID de pedido, abate do repasse líquido
         const nomeCanal = String(s.canal || '').toLowerCase();
         if ((nomeCanal.includes('site') || nomeCanal.includes('loja virtual')) && tarifasSiteMap[String(s.id_pedido)]) {
            const taxaVindi = Number(tarifasSiteMap[String(s.id_pedido)]) || 0;
@@ -158,9 +156,19 @@ export default function DashboardPage() {
     };
   }, [enrichedSales, adsData, appliedChannelFilter]);
 
+  // Cálculo de projeção de dias do mês atual
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     const channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
+
+    // Datas do mês atual para projeção
+    const now = new Date();
+    const ano = now.getFullYear();
+    const mes = now.getMonth();
+    const totalDiasMes = new Date(ano, mes + 1, 0).getDate();
+    const diaAtual = now.getDate();
+    const diasPassados = Math.max(1, diaAtual);
+    const diasFaltantes = Math.max(1, totalDiasMes - diaAtual);
 
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
@@ -183,6 +191,11 @@ export default function DashboardPage() {
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
 
+      // Projeção de Faturamento e Média Diária Necessária
+      const projecaoFaturamento = (faturadoBruto / diasPassados) * totalDiasMes;
+      const valorFaltante = Math.max(0, metaBase - faturadoBruto);
+      const mediaDiariaNecessaria = valorFaltante > 0 ? valorFaltante / diasFaltantes : 0;
+
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
 
       return { 
@@ -194,6 +207,9 @@ export default function DashboardPage() {
         progressoMetaPct: isNaN(progressoMetaPct) ? 0 : progressoMetaPct, 
         margemBrutaPct: isNaN(margemBrutaPct) ? 0 : margemBrutaPct, 
         margemLiquidaPct: isNaN(margemLiquidaPct) ? 0 : margemLiquidaPct, 
+        projecaoFaturamento: isNaN(projecaoFaturamento) ? 0 : projecaoFaturamento,
+        valorFaltante,
+        mediaDiariaNecessaria,
         logoUrl 
       };
     });
@@ -316,6 +332,7 @@ export default function DashboardPage() {
 
       </div>
 
+      {/* CARDS DOS CANAIS COM PROJEÇÃO E MÉDIA DIÁRIA */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => (
           <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
@@ -348,8 +365,26 @@ export default function DashboardPage() {
                  <strong className="text-sm font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                </div>
              </div>
+
+             {/* PROJEÇÃO E MÉDIA DIÁRIA NECESSÁRIA */}
+             <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
+               <div className="flex justify-between items-center">
+                 <span className="text-[10px] text-slate-400 font-bold uppercase">Projeção Fechamento:</span>
+                 <strong className="text-xs font-black text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+               </div>
+               <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                 {item.valorFaltante === 0 ? (
+                   <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
+                 ) : (
+                   <>
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">Meta Diária Restante:</span>
+                     <strong className="text-xs font-black text-amber-400">R$ {item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / dia</strong>
+                   </>
+                 )}
+               </div>
+             </div>
              
-             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
+             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
                 <div>
                   <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
                   <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
