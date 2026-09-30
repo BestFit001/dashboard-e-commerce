@@ -159,6 +159,9 @@ export default function DashboardPage() {
     const progressoFisicoPct = metaFisicaTotal > 0 ? (fatBrutoFisico / metaFisicaTotal) * 100 : 0;
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
 
+    const diffFisico = progressoFisicoPct - 100;
+    const diffDigital = progressoDigitalPct - 100;
+
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
@@ -183,7 +186,9 @@ export default function DashboardPage() {
       lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
       totalPedidos: enrichedSales.length,
       progressoFisicoPct,
-      progressoDigitalPct
+      progressoDigitalPct,
+      diffFisico,
+      diffDigital
     };
   }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth]);
 
@@ -338,7 +343,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E CORES DINÂMICAS VERMELHO/VERDE */}
+      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E % ABAIXO/ACIMA DA META */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
@@ -353,14 +358,14 @@ export default function DashboardPage() {
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className={`text-[10px] font-black block mt-1 ${kpis.progressoFisicoPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpis.progressoFisicoPct >= 100 ? '▲' : '▼'} {kpis.progressoFisicoPct.toFixed(1)}% atingido
+                {kpis.progressoFisicoPct >= 100 ? `▲ ${kpis.diffFisico.toFixed(1)}% acima` : `▼ ${Math.abs(kpis.diffFisico).toFixed(1)}% abaixo`}
               </span>
             </div>
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpis.progressoDigitalPct >= 100 ? '▲' : '▼'} {kpis.progressoDigitalPct.toFixed(1)}% atingido
+                {kpis.progressoDigitalPct >= 100 ? `▲ ${kpis.diffDigital.toFixed(1)}% acima` : `▼ ${Math.abs(kpis.diffDigital).toFixed(1)}% abaixo`}
               </span>
             </div>
           </div>
