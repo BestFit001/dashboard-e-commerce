@@ -230,6 +230,34 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
+  // Função para envio de relatório por e-mail (Opção 1)
+  const handleEnviarEmailAlerta = () => {
+    const assunto = encodeURIComponent("📊 Relatório Executivo de Vendas & Margem - Dashboard Best Fit");
+    
+    let corpoTexto = `Olá,\n\nSegue o resumo executivo atualizado do Dashboard Best Fit:\n\n`;
+    corpoTexto += `----------------------------------------\n`;
+    corpoTexto += `📈 KPIs GLOBAIS DO PERÍODO:\n`;
+    corpoTexto += `• Faturamento Bruto: R$ ${kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    corpoTexto += `• Repasse Total: R$ ${kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    corpoTexto += `• CMV Total: R$ ${kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    corpoTexto += `• Lucro Líquido Real: R$ ${kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    corpoTexto += `----------------------------------------\n\n`;
+    corpoTexto += `🛍️ DESEMPENHO POR CANAL:\n`;
+
+    channelAnalytics.forEach(item => {
+      corpoTexto += `\n[${item.canal}] - Resp: ${item.responsavel}\n`;
+      corpoTexto += `  • Fat. Bruto: R$ ${item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      corpoTexto += `  • Lucro Líquido: R$ ${item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      corpoTexto += `  • Progresso da Meta: ${item.progressoMetaPct.toFixed(1)}% da meta atingida\n`;
+    });
+
+    corpoTexto += `\n\nRelatório gerado automaticamente pelo Dashboard Omnichannel Best Fit.`;
+
+    const corpoEncoded = encodeURIComponent(corpoTexto);
+    window.location.href = `mailto:?subject=${assunto}&body=${corpoEncoded}`;
+    addLog('Cliente de e-mail aberto com o relatório executivo formatado.', 'success');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
@@ -239,6 +267,15 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          {/* BOTÃO DISPARAR E-MAIL */}
+          <button 
+            onClick={handleEnviarEmailAlerta} 
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
+            title="Enviar Resumo Executivo por E-mail"
+          >
+            <i className="fa-solid fa-envelope"></i> Enviar Relatório por E-mail
+          </button>
+
           {/* Filtro Período */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
