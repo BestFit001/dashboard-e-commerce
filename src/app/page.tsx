@@ -4,7 +4,7 @@ import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, addLog } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -230,12 +230,15 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
-  // Função adaptada com o modelo de mensagem solicitado
+  // Consulta automática dos e-mails cadastrados na aba de Usuários
   const handleEnviarEmailAlerta = () => {
+    const emailsCadastrados = users && users.length > 0 
+      ? users.map((u: any) => u.username).filter(Boolean).join(',') 
+      : "gisele@usebestfit.com.br";
+    
     const dataHoje = new Date().toLocaleDateString('pt-BR');
     const assunto = encodeURIComponent(`📊 Resumo de Vendas - Lojas Físicas e Online (${dataHoje})`);
 
-    // Busca valores específicos para Hebraica, Paineiras e E-commerce (soma do restante digital)
     const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoBruto: 0, progressoMetaPct: 0 };
     const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoBruto: 0, progressoMetaPct: 0 };
     
@@ -249,15 +252,15 @@ export default function DashboardPage() {
     
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
 
-    let corpoTexto = `Olá, tudo bem?\n\nSegue resumo das vendas das lojas físicas e online do dia ${dataHoje}.\n\n`;
-    corpoTexto += `• Hebraica: R$ ${hebraicaObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
-    corpoTexto += `• Paineiras: R$ ${paineirasObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
-    corpoTexto += `• E-commerce: R$ ${fatDigitalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${progressoDigitalPct.toFixed(1)}% da meta)\n\n`;
-    corpoTexto += `Caso queiram visualizá-lo, acessem o link a seguir: https://dashboard-e-commerce-nine.vercel.app/\n`;
+    let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas fisica e onlines do dia ${dataHoje}.\n\n`;
+    corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `E-commerce: R$ ${fatDigitalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${progressoDigitalPct.toFixed(1)}% da meta)\n\n`;
+    corpoTexto += `Caso queiram visualiza-lo, acessem o link a seguir: https://dashboard-e-commerce-nine.vercel.app/\n`;
 
     const corpoEncoded = encodeURIComponent(corpoTexto);
-    window.location.href = `mailto:?subject=${assunto}&body=${corpoEncoded}`;
-    addLog('E-mail com o resumo executivo formatado.', 'success');
+    window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${corpoEncoded}`;
+    addLog('E-mail aberto com os destinatários consultados na base de utilizadores.', 'success');
   };
 
   return (
@@ -269,7 +272,7 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* BOTÃO E-MAIL ADAPTADO */}
+          {/* BOTÃO E-MAIL COM DESTINATÁRIOS AUTOMÁTICOS DA ABA USUÁRIOS */}
           <button 
             onClick={handleEnviarEmailAlerta} 
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
