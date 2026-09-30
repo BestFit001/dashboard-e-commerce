@@ -49,7 +49,6 @@ export default function AdminPage() {
     
     let strVal = String(val).trim();
 
-    // Impede que anos ou formatos de data virem dinheiro acidentalmente
     if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) {
       return 0;
     }
@@ -172,7 +171,8 @@ export default function AdminPage() {
           const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
           let pedidoId = null;
-          const matchId = rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
+          // ORDEM DE EXTRAÇÃO INTELIGENTE (Adicionado padrão Magalu LU-123456)
+          const matchId = rawObs.match(/\b[A-Z]+-\d+\b/) || rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
           if (matchId) {
             pedidoId = matchId[0].trim();
           }
@@ -236,7 +236,6 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // DETEÇÃO DE CLUBE/LOJA FÍSICA
     const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
 
     if (!isClube && (!faturados || faturados.length === 0)) {
@@ -297,13 +296,9 @@ export default function AdminPage() {
           let quantidade = 1;
 
           if (isClube) {
-            // ==========================================
-            // MODO LOJA FÍSICA: LEITURA PURA E DIRETA
-            // ==========================================
             const colAStr = row[0] !== undefined ? String(row[0]).trim().toLowerCase() : '';
             const colFStr = row[5] !== undefined ? String(row[5]).trim().toLowerCase() : '';
             
-            // Pula cabeçalhos e linhas sem valores úteis (como 'Empresa :', 'Filial :')
             if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') {
               i++; continue;
             }
@@ -311,7 +306,6 @@ export default function AdminPage() {
             rawId = `clube-${Date.now()}-${i}`;
             dataFaturamento = parseExcelDate(row[0]);
             
-            // Puxa o Bruto e Líquido estritamente pelas letras configuradas no Painel (F e I)
             precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
             
             const apuracaoStr = (rule.formulaExcel || 'I').trim();
@@ -327,13 +321,9 @@ export default function AdminPage() {
             const colQtdIdx = colToIdx(rule.colQuantidade || 'ZZZ');
             quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
             
-            // Se a linha leu zerado, ignora
             if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
 
           } else {
-            // ==========================================
-            // MODO E-COMMERCE: LÓGICA DE CRUZAMENTO
-            // ==========================================
             const colIdIdx = colToIdx(rule.colIdPedido || 'A');
             rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
             
@@ -403,7 +393,7 @@ export default function AdminPage() {
         
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        const clubeMsg = isClube ? ' (Modo Loja Física: Leitura Direta s/ Cruzamentos)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
+        const clubeMsg = isClube ? ' (Modo Loja Física)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
         addLog(`Importação canal [${selectedChannel}]: ${novasVendas.length} itens salvos.`, 'success');
         alert(`Sucesso! ${novasVendas.length} vendas importadas para ${selectedChannel}${clubeMsg}.`);
       } catch (err: any) {
