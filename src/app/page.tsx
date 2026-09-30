@@ -107,7 +107,7 @@ export default function DashboardPage() {
     return new Date().toISOString().slice(0, 7);
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
-  // Cálculo Fracionado de Metas e Faturamento para o Card de Faturamento Bruto
+  // Cálculo Fracionado de Metas e Faturamento por Modalidade
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     
@@ -338,7 +338,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E PERCENTAGENS FRACIONADAS */}
+      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E CORES DINÂMICAS VERMELHO/VERDE */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
@@ -352,15 +352,15 @@ export default function DashboardPage() {
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoFisicoPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {kpis.progressoFisicoPct >= 100 ? '▲' : '▼'} {kpis.progressoFisicoPct.toFixed(1)}% da meta
+              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoFisicoPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpis.progressoFisicoPct >= 100 ? '▲' : '▼'} {kpis.progressoFisicoPct.toFixed(1)}% atingido
               </span>
             </div>
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {kpis.progressoDigitalPct >= 100 ? '▲' : '▼'} {kpis.progressoDigitalPct.toFixed(1)}% da meta
+              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpis.progressoDigitalPct >= 100 ? '▲' : '▼'} {kpis.progressoDigitalPct.toFixed(1)}% atingido
               </span>
             </div>
           </div>
