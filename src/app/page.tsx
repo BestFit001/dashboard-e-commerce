@@ -67,7 +67,7 @@ export default function DashboardPage() {
         const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
-        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: repasseLiquido };
+        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido };
       });
   }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault]);
 
@@ -98,18 +98,18 @@ export default function DashboardPage() {
       const valRepasse = Number(s.repasse_liquido) || 0;
       const valCmv = Number(s.custoCMV) || 0;
 
-      faturamentoBrutoVendas += valBruto;
-      faturamentoLiquidoRepasse += valRepasse;
-      custoTotalCMV += valCmv;
+      faturamentoBrutoVendas += isNaN(valBruto) ? 0 : valBruto;
+      faturamentoLiquidoRepasse += isNaN(valRepasse) ? 0 : valRepasse;
+      custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
       if (isFisico) {
-        fatBrutoFisico += valBruto;
-        repasseFisico += valRepasse;
-        cmvFisico += valCmv;
+        fatBrutoFisico += isNaN(valBruto) ? 0 : valBruto;
+        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvFisico += isNaN(valCmv) ? 0 : valCmv;
       } else {
-        fatBrutoDigital += valBruto;
-        repasseDigital += valRepasse;
-        cmvDigital += valCmv;
+        fatBrutoDigital += isNaN(valBruto) ? 0 : valBruto;
+        repasseDigital += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvDigital += isNaN(valCmv) ? 0 : valCmv;
       }
     });
 
@@ -123,10 +123,18 @@ export default function DashboardPage() {
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
-      faturamentoBrutoVendas, fatBrutoFisico, fatBrutoDigital, 
-      faturamentoLiquidoRepasse, repasseFisico, repasseDigital,
-      custoTotalCMV, cmvFisico, cmvDigital,
-      lucroLiquidoReal, lucroFisico, lucroDigital,
+      faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
+      fatBrutoFisico: isNaN(fatBrutoFisico) ? 0 : fatBrutoFisico, 
+      fatBrutoDigital: isNaN(fatBrutoDigital) ? 0 : fatBrutoDigital, 
+      faturamentoLiquidoRepasse: isNaN(faturamentoLiquidoRepasse) ? 0 : faturamentoLiquidoRepasse, 
+      repasseFisico: isNaN(repasseFisico) ? 0 : repasseFisico, 
+      repasseDigital: isNaN(repasseDigital) ? 0 : repasseDigital,
+      custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
+      cmvFisico: isNaN(cmvFisico) ? 0 : cmvFisico, 
+      cmvDigital: isNaN(cmvDigital) ? 0 : cmvDigital,
+      lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
+      lucroFisico: isNaN(lucroFisico) ? 0 : lucroFisico, 
+      lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
       totalPedidos: enrichedSales.length 
     };
   }, [enrichedSales, adsData, appliedChannelFilter]);
@@ -162,11 +170,11 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        faturadoBruto, 
-        lucroLiquidoFinal, 
-        progressoMetaPct, 
-        margemBrutaPct, 
-        margemLiquidaPct, 
+        faturadoBruto: isNaN(faturadoBruto) ? 0 : faturadoBruto, 
+        lucroLiquidoFinal: isNaN(lucroLiquidoFinal) ? 0 : lucroLiquidoFinal, 
+        progressoMetaPct: isNaN(progressoMetaPct) ? 0 : progressoMetaPct, 
+        margemBrutaPct: isNaN(margemBrutaPct) ? 0 : margemBrutaPct, 
+        margemLiquidaPct: isNaN(margemLiquidaPct) ? 0 : margemLiquidaPct, 
         logoUrl 
       };
     });
@@ -251,7 +259,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL (Com aviso para Lojas Físicas) */}
+        {/* 3. CMV TOTAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
