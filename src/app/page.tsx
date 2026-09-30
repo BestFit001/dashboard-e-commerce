@@ -9,7 +9,6 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  // Novo filtro de modalidade: 'TODAS', 'FISICO', 'DIGITAL'
   const [modalidadeFilter, setModalidadeFilter] = useState('TODAS');
   const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
 
@@ -244,11 +243,11 @@ export default function DashboardPage() {
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
-              <option value="MES_ATUAL">Mês Atual (Padrão Metas)</option>
-              <option value="HOJE">Hoje</option>
-              <option value="SEMANA">Últimos 7 dias</option>
-              <option value="QUINZENA">Últimos 15 dias</option>
-              <option value="PERSONALIZADO">Personalizado</option>
+              <option value="MES_ATUAL" className="bg-slate-900 text-white">Mês Atual (Padrão Metas)</option>
+              <option value="HOJE" className="bg-slate-900 text-white">Hoje</option>
+              <option value="SEMANA" className="bg-slate-900 text-white">Últimos 7 dias</option>
+              <option value="QUINZENA" className="bg-slate-900 text-white">Últimos 15 dias</option>
+              <option value="PERSONALIZADO" className="bg-slate-900 text-white">Personalizado</option>
             </select>
           </div>
           {dateFilter === 'PERSONALIZADO' && (
@@ -259,13 +258,13 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* NOVO FILTRO DE MODALIDADE (Físico vs E-commerce) */}
+          {/* Filtro Modalidade */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-layer-group text-emerald-400 pl-2 text-xs"></i>
             <select value={modalidadeFilter} onChange={(e) => setModalidadeFilter(e.target.value)} className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
-              <option value="TODAS">Todas as Modalidades</option>
-              <option value="FISICO">Lojas Físicas</option>
-              <option value="DIGITAL">E-commerce / Marketplaces</option>
+              <option value="TODAS" className="bg-slate-900 text-white">Todas as Modalidades</option>
+              <option value="FISICO" className="bg-slate-900 text-white">Lojas Físicas</option>
+              <option value="DIGITAL" className="bg-slate-900 text-white">E-commerce / Marketplaces</option>
             </select>
           </div>
 
@@ -273,8 +272,8 @@ export default function DashboardPage() {
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
-              <option value="TODOS">Todos os Canais</option>
-              {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
+              <option value="TODOS" className="bg-slate-900 text-white">Todos os Canais</option>
+              {canais.map((ch: string) => <option key={ch} value={ch} className="bg-slate-900 text-white">{ch}</option>)}
             </select>
           </div>
 
