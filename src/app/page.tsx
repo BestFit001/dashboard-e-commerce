@@ -1,6 +1,7 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '@/context/AppContext';
+import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
   const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, addLog } = useAppContext();
@@ -18,6 +19,16 @@ export default function DashboardPage() {
   const [appliedEndDate, setAppliedEndDate] = useState(new Date().toISOString().slice(0, 10));
   
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [tarifasSiteMap, setTarifasSiteMap] = useState<Record<string, number>>({});
+
+  // Carrega as tarifas do site gravadas na nuvem pelo Admin
+  useEffect(() => {
+    supabase.from('tb_estado_global').select('dados').eq('chave', 'tarifas_site').single().then(({ data }) => {
+      if (data && data.dados) {
+        setTarifasSiteMap(data.dados);
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleRecalculate = () => {
     setIsRecalculating(true);
@@ -63,16 +74,21 @@ export default function DashboardPage() {
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        // Blindagem robusta do repasse líquido para nunca zerar
-        const rawRepasse = Number(s.repasse_liquido);
-        const repasseLiquido = (!isNaN(rawRepasse) && rawRepasse !== 0) ? rawRepasse : (Number(s.repasse) || 0);
+        let repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
         
+        // Se for venda do Site e houver tarifa Vindi mapeada para este ID de pedido, abate do repasse líquido
+        const nomeCanal = String(s.canal || '').toLowerCase();
+        if ((nomeCanal.includes('site') || nomeCanal.includes('loja virtual')) && tarifasSiteMap[String(s.id_pedido)]) {
+           const taxaVindi = Number(tarifasSiteMap[String(s.id_pedido)]) || 0;
+           repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
+        }
+
         const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
         return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido };
       });
-  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault]);
+  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, tarifasSiteMap]);
 
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
