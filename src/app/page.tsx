@@ -107,41 +107,36 @@ export default function DashboardPage() {
     return new Date().toISOString().slice(0, 7);
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
-  // Cálculo da Meta Total Global para o KPI do Topo
-  const metaTotalGlobal = useMemo(() => {
-    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
-    let filteredChannels = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
-
-    if (appliedModalidadeFilter === 'FISICO') {
-      filteredChannels = filteredChannels.filter(c => isChannelFisico(c));
-    } else if (appliedModalidadeFilter === 'DIGITAL') {
-      filteredChannels = filteredChannels.filter(c => !isChannelFisico(c));
-    }
-
-    return filteredChannels.reduce((sum, channelName) => {
-      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
-                   || goals.find((g: any) => g.canal === channelName) 
-                   || { meta_valor: 0 };
-      return sum + (Number(goalObj.meta_valor) || 0);
-    }, 0);
-  }, [canais, channelRules, appliedChannelFilter, appliedModalidadeFilter, goals, currentRefMonth]);
-
+  // Cálculo Fracionado de Metas e Faturamento para o Card de Faturamento Bruto
   const kpis = useMemo(() => {
-    let faturamentoBrutoVendas = 0;
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
+    
     let fatBrutoFisico = 0;
+    let metaFisicaTotal = 0;
     let fatBrutoDigital = 0;
+    let metaDigitalTotal = 0;
 
+    let faturamentoBrutoVendas = 0;
     let faturamentoLiquidoRepasse = 0;
     let repasseFisico = 0;
     let repasseDigital = 0;
-
     let custoTotalCMV = 0;
     let cmvFisico = 0;
     let cmvDigital = 0;
 
+    activeChannels.forEach(channelName => {
+      const fisico = isChannelFisico(channelName);
+      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+                   || goals.find((g: any) => g.canal === channelName) 
+                   || { meta_valor: 0 };
+      const metaCanal = Number(goalObj.meta_valor) || 0;
+
+      if (fisico) metaFisicaTotal += metaCanal;
+      else metaDigitalTotal += metaCanal;
+    });
+
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
-      
       const valBruto = Number(s.preco_venda) || 0;
       const valRepasse = Number(s.repasse_liquido) || 0;
       const valCmv = Number(s.custoCMV) || 0;
@@ -161,6 +156,9 @@ export default function DashboardPage() {
       }
     });
 
+    const progressoFisicoPct = metaFisicaTotal > 0 ? (fatBrutoFisico / metaFisicaTotal) * 100 : 0;
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
+
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
@@ -169,8 +167,6 @@ export default function DashboardPage() {
     
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
-
-    const progressoMetaGlobalPct = metaTotalGlobal > 0 ? (faturamentoBrutoVendas / metaTotalGlobal) * 100 : 0;
 
     return { 
       faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
@@ -186,9 +182,10 @@ export default function DashboardPage() {
       lucroFisico: isNaN(lucroFisico) ? 0 : lucroFisico, 
       lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
       totalPedidos: enrichedSales.length,
-      progressoMetaGlobalPct
+      progressoFisicoPct,
+      progressoDigitalPct
     };
-  }, [enrichedSales, adsData, appliedChannelFilter, metaTotalGlobal]);
+  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -341,7 +338,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E % DA META */}
+      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E PERCENTAGENS FRACIONADAS */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
@@ -349,24 +346,22 @@ export default function DashboardPage() {
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            
-            {/* Porcentagem da Meta Global Atingida */}
-            <div className="mt-1">
-              <span className={`text-xs font-black ${kpis.progressoMetaGlobalPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {kpis.progressoMetaGlobalPct >= 100 ? '▲' : '▼'} {kpis.progressoMetaGlobalPct.toFixed(1)}% da meta atingida
-              </span>
-            </div>
-
             <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoFisicoPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {kpis.progressoFisicoPct >= 100 ? '▲' : '▼'} {kpis.progressoFisicoPct.toFixed(1)}% da meta
+              </span>
             </div>
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {kpis.progressoDigitalPct >= 100 ? '▲' : '▼'} {kpis.progressoDigitalPct.toFixed(1)}% da meta
+              </span>
             </div>
           </div>
         </div>
