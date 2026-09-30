@@ -20,6 +20,10 @@ export default function AdminPage() {
   const [colFaturadosData, setColFaturadosData] = useState('D');
   const [colCancelados, setColCancelados] = useState('A');
 
+  // Configurações para Consulta Tarifas Site
+  const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
+  const [colTarifasValor, setColTarifasValor] = useState('E');
+
   const fileVendasRef = useRef<HTMLInputElement>(null);
 
   const auth = (e: React.FormEvent) => {
@@ -171,7 +175,6 @@ export default function AdminPage() {
           const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
           let pedidoId = null;
-          // ORDEM DE EXTRAÇÃO INTELIGENTE (Adicionado padrão Magalu LU-123456)
           const matchId = rawObs.match(/\b[A-Z]+-\d+\b/) || rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
           if (matchId) {
             pedidoId = matchId[0].trim();
@@ -229,6 +232,51 @@ export default function AdminPage() {
       }
     };
     reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  // IMPORTAÇÃO DE TARIFAS DO SITE
+  const handleUploadTarifasSite = (e: any) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        let rows: any[] = [];
+        const fileName = file.name.toLowerCase();
+        if (fileName.endsWith('.csv')) {
+          const text = evt.target?.result as string;
+          rows = text.split(/\r?\n/).map(line => line.split(line.includes(';') ? ';' : ',').map(c => c.replace(/^["']|["']$/g, '').trim()));
+        } else {
+          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        }
+
+        const idxId = colToIdx(colTarifasIdPedido);
+        const idxVal = colToIdx(colTarifasValor);
+        const novasTarifas: Record<string, number> = {};
+
+        rows.slice(1).forEach((row) => {
+          if (!row || !row.length) return;
+          const idPed = row[idxId] !== undefined ? String(row[idxId]).trim() : '';
+          const valTarifa = parseSmartFloat(row[idxVal], 'TARIFAS');
+          if (idPed) {
+            novasTarifas[idPed] = valTarifa;
+          }
+        });
+
+        await saveToCloudAndState('tarifas_site', novasTarifas, () => {});
+        addLog(`Consulta de Tarifas do Site: ${Object.keys(novasTarifas).length} registos salvos.`, 'success');
+        alert(`Sucesso! ${Object.keys(novasTarifas).length} tarifas do site importadas.`);
+      } catch (err: any) {
+        alert(`Erro ao ler tarifas: ${err.message}`);
+      }
+    };
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(file, 'ISO-8859-1');
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
     e.target.value = '';
   };
 
@@ -568,6 +616,28 @@ export default function AdminPage() {
            <label className="cursor-pointer block py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
              <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', adsData, (r:any) => ({val: parseSmartFloat(r[1], 'ADS'), obj: {canal: String(r[0]||'').trim(), custo_ads: parseSmartFloat(r[1], 'ADS')}}))} />
              Importar ADS
+           </label>
+         </div>
+
+         {/* NOVO BLOCO: Consulta Tarifas Site */}
+         <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30 flex flex-col justify-between space-y-3">
+           <div>
+             <h3 className="font-bold text-white text-sm mb-1">Consulta Tarifas Site</h3>
+             <p className="text-[10px] text-slate-400 mb-2">Cruza ID do Pedido com a tarifa para descontar do líquido final.</p>
+             <div className="grid grid-cols-2 gap-2">
+               <div>
+                 <span className="block text-[9px] text-slate-400 font-bold mb-1">Col ID Pedido</span>
+                 <input type="text" value={colTarifasIdPedido} onChange={e => setColTarifasIdPedido(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-indigo-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+               </div>
+               <div>
+                 <span className="block text-[9px] text-slate-400 font-bold mb-1">Col Valor Tarifa</span>
+                 <input type="text" value={colTarifasValor} onChange={e => setColTarifasValor(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-indigo-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+               </div>
+             </div>
+           </div>
+           <label className="cursor-pointer block py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
+             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadTarifasSite}/>
+             Subir Tarifas do Site
            </label>
          </div>
        </div>
