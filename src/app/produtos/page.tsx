@@ -35,6 +35,11 @@ export default function ProdutosPage() {
     today.setHours(0, 0, 0, 0);
 
     return sales.filter((s: any) => {
+      // EXCLUSÃO DE LOJAS FÍSICAS: Curva ABC e Marcas focam apenas no E-commerce/Marketplaces
+      const nomeCanal = String(s.canal || '').toLowerCase();
+      const isFisico = nomeCanal.includes('clube') || nomeCanal.includes('loja') || nomeCanal.includes('paineiras') || nomeCanal.includes('hebraica');
+      if (isFisico) return false;
+
       if (dateFilter !== 'TUDO' && s.data_faturamento) {
          const d = new Date(s.data_faturamento + 'T00:00:00');
          d.setHours(0, 0, 0, 0);
@@ -131,7 +136,6 @@ export default function ProdutosPage() {
     return Object.values(brands).sort((a: any, b: any) => b.revenue - a.revenue);
   }, [abcCurve]);
 
-  // Agrupamento Inteligente de Carrinhos para a Fragmentação
   const enrichedOrders = useMemo(() => {
     const orderMap: Record<string, any> = {};
 
@@ -198,7 +202,7 @@ export default function ProdutosPage() {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Inteligência de Produtos</h2>
+          <h2 className="text-xl font-bold text-white tracking-tight">Inteligência de Produtos (E-commerce)</h2>
           <p className="text-xs text-slate-400 mt-1">Análise de Curva ABC, Desempenho por Marca e Impacto de Cancelamentos</p>
         </div>
         
@@ -240,7 +244,7 @@ export default function ProdutosPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (Filtro Atual)</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (E-commerce)</span>
           <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p className="text-[10px] text-emerald-400 font-bold mt-1">Lucro: R$ {kpis.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
