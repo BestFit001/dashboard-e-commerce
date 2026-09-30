@@ -121,6 +121,7 @@ export default function DashboardPage() {
     let fatBrutoDigital = 0;
     let metaDigitalTotal = 0;
     let repasseDigital = 0;
+    let repasseFisico = 0;
     let custoTotalCMV = 0;
     let cmvDigital = 0;
 
@@ -160,6 +161,7 @@ export default function DashboardPage() {
     let fatDigitalSum = 0;
     let repasseDigitalSum = 0;
     let cmvDigitalSum = 0;
+    let repasseFisicoSum = 0;
 
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
@@ -175,6 +177,8 @@ export default function DashboardPage() {
         fatDigitalSum += isNaN(valBruto) ? 0 : valBruto;
         repasseDigitalSum += isNaN(valRepasse) ? 0 : valRepasse;
         cmvDigitalSum += isNaN(valCmv) ? 0 : valCmv;
+      } else {
+        repasseFisicoSum += isNaN(valRepasse) ? 0 : valRepasse;
       }
     });
 
@@ -187,16 +191,19 @@ export default function DashboardPage() {
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroDigital = repasseDigitalSum - cmvDigitalSum - totalFlexCost - totalAdsCost;
+    const lucroFisico = repasseFisicoSum;
 
     return { 
       faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
       fatBrutoDigital: fatDigitalSum, 
       faturamentoLiquidoRepasse: isNaN(faturamentoLiquidoRepasse) ? 0 : faturamentoLiquidoRepasse, 
       repasseDigital: repasseDigitalSum,
+      repasseFisico: repasseFisicoSum,
       custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
       cmvDigital: cmvDigitalSum,
       lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
       lucroDigital,
+      lucroFisico,
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
       progressoDigitalPct,
@@ -214,7 +221,6 @@ export default function DashboardPage() {
       channelsToAnalyze = channelsToAnalyze.filter(c => !isChannelFisico(c));
     }
 
-    // Ordenar para que as lojas físicas apareçam primeiro e depois o e-commerce
     channelsToAnalyze.sort((a, b) => {
       const aFisico = isChannelFisico(a);
       const bFisico = isChannelFisico(b);
@@ -364,10 +370,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO: LOJAS FÍSICAS EM CIMA (LADO A LADO) E E-COMMERCE EMBAIXO, CENTRALIZADO */}
+      {/* 4 PAINÉIS DO TOPO */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
-        {/* 1. FATURAMENTO BRUTO */}
+        {/* 1. FATURAMENTO BRUTO (Com divisão por lojas físicas e e-commerce) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
@@ -376,7 +382,6 @@ export default function DashboardPage() {
           </div>
           
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
-            {/* Lojas Físicas em cima (duas na mesma linha) */}
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
               <div className="grid grid-cols-2 gap-2">
@@ -392,7 +397,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* E-commerce embaixo */}
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -403,7 +407,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. REPASSE TOTAL */}
+        {/* 2. REPASSE TOTAL (Consolidado padrão) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
@@ -428,7 +432,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL */}
+        {/* 3. CMV TOTAL (Consolidado padrão) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -453,7 +457,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. LUCRO LÍQUIDO REAL */}
+        {/* 4. LUCRO LÍQUIDO REAL (Consolidado padrão) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
@@ -480,7 +484,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* CARDS DOS CANAIS (Lojas Físicas primeiro, depois E-commerce) */}
+      {/* CARDS DOS CANAIS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => {
           const metaBatida = item.progressoMetaPct >= 100;
