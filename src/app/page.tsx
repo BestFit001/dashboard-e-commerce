@@ -8,12 +8,16 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  const [dateFilter, setDateFilter] = useState('TUDO');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  const [appliedDateFilter, setAppliedDateFilter] = useState('TUDO');
-  const [appliedStartDate, setAppliedStartDate] = useState('');
-  const [appliedEndDate, setAppliedEndDate] = useState('');
+  // TRAVA DE DATA: Inicia sempre no mês atual (ex: '2026-09') para alinhar com as metas mensais
+  const currentMonthDefault = new Date().toISOString().slice(0, 7);
+  const [dateFilter, setDateFilter] = useState('MES_ATUAL');
+  const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
+  const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().slice(0, 10));
+  
+  const [appliedDateFilter, setAppliedDateFilter] = useState('MES_ATUAL');
+  const [appliedStartDate, setAppliedStartDate] = useState(currentMonthDefault + '-01');
+  const [appliedEndDate, setAppliedEndDate] = useState(new Date().toISOString().slice(0, 10));
+  
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   const handleRecalculate = () => {
@@ -35,14 +39,17 @@ export default function DashboardPage() {
     return sales.filter((s: any) => {
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
-        if (appliedDateFilter !== 'TUDO' && s.data_faturamento) {
+        if (s.data_faturamento) {
            const d = new Date(s.data_faturamento + 'T00:00:00');
            d.setHours(0, 0, 0, 0);
            
            if (appliedDateFilter === 'HOJE' && d.getTime() !== today.getTime()) return false;
            if (appliedDateFilter === 'SEMANA' && (d < new Date(today.getTime() - 7*24*60*60*1000) || d > today)) return false;
            if (appliedDateFilter === 'QUINZENA' && (d < new Date(today.getTime() - 15*24*60*60*1000) || d > today)) return false;
-           if (appliedDateFilter === 'MES' && (d < new Date(today.getTime() - 30*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'MES_ATUAL') {
+              const [ano, mes] = currentMonthDefault.split('-');
+              if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
+           }
            if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate && appliedEndDate) {
               const start = new Date(appliedStartDate + 'T00:00:00');
               const end = new Date(appliedEndDate + 'T23:59:59');
@@ -63,48 +70,66 @@ export default function DashboardPage() {
         
         return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: repasseLiquido };
       });
-  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData]);
+  }, [sales, appliedChannelFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault]);
 
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
+    if (appliedDateFilter === 'MES_ATUAL') return currentMonthDefault;
     return new Date().toISOString().slice(0, 7);
-  }, [appliedDateFilter, appliedStartDate]);
+  }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
   const kpis = useMemo(() => {
     let faturamentoBrutoVendas = 0;
     let fatBrutoFisico = 0;
     let fatBrutoDigital = 0;
 
-    enrichedSales.forEach((s: any) => {
-      const val = Number(s.preco_venda) || 0;
-      faturamentoBrutoVendas += val;
+    let faturamentoLiquidoRepasse = 0;
+    let repasseFisico = 0;
+    let repasseDigital = 0;
 
+    let custoTotalCMV = 0;
+    let cmvFisico = 0;
+    let cmvDigital = 0;
+
+    enrichedSales.forEach((s: any) => {
       const nomeCanal = String(s.canal || '').toLowerCase();
       const isFisico = nomeCanal.includes('clube') || nomeCanal.includes('loja') || nomeCanal.includes('paineiras') || nomeCanal.includes('hebraica');
       
+      const valBruto = Number(s.preco_venda) || 0;
+      const valRepasse = Number(s.repasse_liquido) || 0;
+      const valCmv = Number(s.custoCMV) || 0;
+
+      faturamentoBrutoVendas += valBruto;
+      faturamentoLiquidoRepasse += valRepasse;
+      custoTotalCMV += valCmv;
+
       if (isFisico) {
-        fatBrutoFisico += val;
+        fatBrutoFisico += valBruto;
+        repasseFisico += valRepasse;
+        cmvFisico += valCmv;
       } else {
-        fatBrutoDigital += val;
+        fatBrutoDigital += valBruto;
+        repasseDigital += valRepasse;
+        cmvDigital += valCmv;
       }
     });
 
-    const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
-    const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
-    
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
+    // Distribuindo custos fixos (flex e ads) proporcionalmente ou mantendo o líquido real total
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
+    
+    // Lucro por modalidade (Repasse - CMV - Custos proporcionais)
+    const lucroFisico = repasseFisico - cmvFisico;
+    const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
-      faturamentoBrutoVendas, 
-      fatBrutoFisico, 
-      fatBrutoDigital, 
-      faturamentoLiquidoRepasse, 
-      custoTotalCMV, 
-      lucroLiquidoReal, 
+      faturamentoBrutoVendas, fatBrutoFisico, fatBrutoDigital, 
+      faturamentoLiquidoRepasse, repasseFisico, repasseDigital,
+      custoTotalCMV, cmvFisico, cmvDigital,
+      lucroLiquidoReal, lucroFisico, lucroDigital,
       totalPedidos: enrichedSales.length 
     };
   }, [enrichedSales, adsData, appliedChannelFilter]);
@@ -162,11 +187,10 @@ export default function DashboardPage() {
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
-              <option value="TUDO">Todo o Período</option>
+              <option value="MES_ATUAL">Mês Atual (Padrão Metas)</option>
               <option value="HOJE">Hoje</option>
               <option value="SEMANA">Últimos 7 dias</option>
               <option value="QUINZENA">Últimos 15 dias</option>
-              <option value="MES">Últimos 30 dias</option>
               <option value="PERSONALIZADO">Personalizado</option>
             </select>
           </div>
@@ -190,51 +214,82 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        {/* CARD FATURAMENTO BRUTO COM DIVISÃO FÍSICO VS DIGITAL */}
+        
+        {/* 1. FATURAMENTO BRUTO */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
-
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200">
-                R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="border-l border-slate-800 pl-2.5">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
-              <span className="text-xs font-bold text-slate-200">
-                R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
 
+        {/* 2. REPASSE TOTAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
             <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
+          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.repasseFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="border-l border-slate-800 pl-2.5">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.repasseDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
         </div>
         
+        {/* 3. CMV TOTAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
             <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
+          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.cmvFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="border-l border-slate-800 pl-2.5">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.cmvDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
         </div>
 
+        {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
+          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.lucroFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="border-l border-slate-800 pl-2.5">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200">R$ {kpis.lucroDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
         </div>
+
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
