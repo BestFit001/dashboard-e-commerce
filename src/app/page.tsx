@@ -230,32 +230,34 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
-  // Função para envio de relatório por e-mail (Opção 1)
+  // Função adaptada com o modelo de mensagem solicitado
   const handleEnviarEmailAlerta = () => {
-    const assunto = encodeURIComponent("📊 Relatório Executivo de Vendas & Margem - Dashboard Best Fit");
+    const dataHoje = new Date().toLocaleDateString('pt-BR');
+    const assunto = encodeURIComponent(`📊 Resumo de Vendas - Lojas Físicas e Online (${dataHoje})`);
+
+    // Busca valores específicos para Hebraica, Paineiras e E-commerce (soma do restante digital)
+    const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoBruto: 0, progressoMetaPct: 0 };
+    const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoBruto: 0, progressoMetaPct: 0 };
     
-    let corpoTexto = `Olá,\n\nSegue o resumo executivo atualizado do Dashboard Best Fit:\n\n`;
-    corpoTexto += `----------------------------------------\n`;
-    corpoTexto += `📈 KPIs GLOBAIS DO PERÍODO:\n`;
-    corpoTexto += `• Faturamento Bruto: R$ ${kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-    corpoTexto += `• Repasse Total: R$ ${kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-    corpoTexto += `• CMV Total: R$ ${kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-    corpoTexto += `• Lucro Líquido Real: R$ ${kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-    corpoTexto += `----------------------------------------\n\n`;
-    corpoTexto += `🛍️ DESEMPENHO POR CANAL:\n`;
+    const fatDigitalTotal = channelAnalytics
+      .filter(c => !isChannelFisico(c.canal))
+      .reduce((acc, c) => acc + c.faturadoBruto, 0);
+    
+    const metaDigitalTotal = channelAnalytics
+      .filter(c => !isChannelFisico(c.canal))
+      .reduce((acc, c) => acc + c.metaValor, 0);
+    
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
 
-    channelAnalytics.forEach(item => {
-      corpoTexto += `\n[${item.canal}] - Resp: ${item.responsavel}\n`;
-      corpoTexto += `  • Fat. Bruto: R$ ${item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      corpoTexto += `  • Lucro Líquido: R$ ${item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      corpoTexto += `  • Progresso da Meta: ${item.progressoMetaPct.toFixed(1)}% da meta atingida\n`;
-    });
-
-    corpoTexto += `\n\nRelatório gerado automaticamente pelo Dashboard Omnichannel Best Fit.`;
+    let corpoTexto = `Olá, tudo bem?\n\nSegue resumo das vendas das lojas físicas e online do dia ${dataHoje}.\n\n`;
+    corpoTexto += `• Hebraica: R$ ${hebraicaObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `• Paineiras: R$ ${paineirasObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `• E-commerce: R$ ${fatDigitalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${progressoDigitalPct.toFixed(1)}% da meta)\n\n`;
+    corpoTexto += `Caso queiram visualizá-lo, acessem o link a seguir: https://dashboard-e-commerce-nine.vercel.app/\n`;
 
     const corpoEncoded = encodeURIComponent(corpoTexto);
     window.location.href = `mailto:?subject=${assunto}&body=${corpoEncoded}`;
-    addLog('Cliente de e-mail aberto com o relatório executivo formatado.', 'success');
+    addLog('E-mail com o resumo executivo formatado.', 'success');
   };
 
   return (
@@ -267,11 +269,10 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* BOTÃO DISPARAR E-MAIL */}
+          {/* BOTÃO E-MAIL ADAPTADO */}
           <button 
             onClick={handleEnviarEmailAlerta} 
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
-            title="Enviar Resumo Executivo por E-mail"
           >
             <i className="fa-solid fa-envelope"></i> Enviar Relatório por E-mail
           </button>
