@@ -230,10 +230,10 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
-  // Consulta automática dos e-mails cadastrados na aba de Usuários
+  // Consulta automática dos e-mails da aba de Utilizadores separados por ponto e vírgula (;) para o Outlook
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
-      ? users.map((u: any) => u.username).filter(Boolean).join(',') 
+      ? users.map((u: any) => u.username).filter(Boolean).join(';') 
       : "gisele@usebestfit.com.br";
     
     const dataHoje = new Date().toLocaleDateString('pt-BR');
@@ -260,7 +260,7 @@ export default function DashboardPage() {
 
     const corpoEncoded = encodeURIComponent(corpoTexto);
     window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${corpoEncoded}`;
-    addLog('E-mail aberto com os destinatários consultados na base de utilizadores.', 'success');
+    addLog('E-mail aberto com os destinatários separados por ponto e vírgula (Outlook ready).', 'success');
   };
 
   return (
@@ -272,7 +272,7 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* BOTÃO E-MAIL COM DESTINATÁRIOS AUTOMÁTICOS DA ABA USUÁRIOS */}
+          {/* BOTÃO E-MAIL COM DESTINATÁRIOS SEPARADOS POR ; */}
           <button 
             onClick={handleEnviarEmailAlerta} 
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
