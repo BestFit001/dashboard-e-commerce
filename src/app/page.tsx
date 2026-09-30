@@ -107,6 +107,25 @@ export default function DashboardPage() {
     return new Date().toISOString().slice(0, 7);
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
+  // Cálculo da Meta Total Global para o KPI do Topo
+  const metaTotalGlobal = useMemo(() => {
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
+    let filteredChannels = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
+
+    if (appliedModalidadeFilter === 'FISICO') {
+      filteredChannels = filteredChannels.filter(c => isChannelFisico(c));
+    } else if (appliedModalidadeFilter === 'DIGITAL') {
+      filteredChannels = filteredChannels.filter(c => !isChannelFisico(c));
+    }
+
+    return filteredChannels.reduce((sum, channelName) => {
+      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+                   || goals.find((g: any) => g.canal === channelName) 
+                   || { meta_valor: 0 };
+      return sum + (Number(goalObj.meta_valor) || 0);
+    }, 0);
+  }, [canais, channelRules, appliedChannelFilter, appliedModalidadeFilter, goals, currentRefMonth]);
+
   const kpis = useMemo(() => {
     let faturamentoBrutoVendas = 0;
     let fatBrutoFisico = 0;
@@ -151,6 +170,8 @@ export default function DashboardPage() {
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
+    const progressoMetaGlobalPct = metaTotalGlobal > 0 ? (faturamentoBrutoVendas / metaTotalGlobal) * 100 : 0;
+
     return { 
       faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
       fatBrutoFisico: isNaN(fatBrutoFisico) ? 0 : fatBrutoFisico, 
@@ -164,9 +185,10 @@ export default function DashboardPage() {
       lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
       lucroFisico: isNaN(lucroFisico) ? 0 : lucroFisico, 
       lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
-      totalPedidos: enrichedSales.length 
+      totalPedidos: enrichedSales.length,
+      progressoMetaGlobalPct
     };
-  }, [enrichedSales, adsData, appliedChannelFilter]);
+  }, [enrichedSales, adsData, appliedChannelFilter, metaTotalGlobal]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -230,7 +252,6 @@ export default function DashboardPage() {
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
-  // Consulta automática dos e-mails da aba de Utilizadores separados por ponto e vírgula (;) para o Outlook
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
       ? users.map((u: any) => u.username).filter(Boolean).join(';') 
@@ -260,7 +281,7 @@ export default function DashboardPage() {
 
     const corpoEncoded = encodeURIComponent(corpoTexto);
     window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${corpoEncoded}`;
-    addLog('E-mail aberto com os destinatários separados por ponto e vírgula (Outlook ready).', 'success');
+    addLog('E-mail aberto com os destinatários separados por ponto e vírgula.', 'success');
   };
 
   return (
@@ -272,7 +293,6 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          {/* BOTÃO E-MAIL COM DESTINATÁRIOS SEPARADOS POR ; */}
           <button 
             onClick={handleEnviarEmailAlerta} 
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
@@ -280,7 +300,6 @@ export default function DashboardPage() {
             <i className="fa-solid fa-envelope"></i> Enviar Relatório por E-mail
           </button>
 
-          {/* Filtro Período */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -299,7 +318,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Filtro Modalidade */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-layer-group text-emerald-400 pl-2 text-xs"></i>
             <select value={modalidadeFilter} onChange={(e) => setModalidadeFilter(e.target.value)} className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -309,7 +327,6 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          {/* Filtro Canal */}
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
             <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
@@ -324,7 +341,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL */}
+      {/* 4 PAINÉIS DO TOPO COM DIVISÃO FÍSICO VS DIGITAL E % DA META */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
@@ -332,6 +349,14 @@ export default function DashboardPage() {
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+            
+            {/* Porcentagem da Meta Global Atingida */}
+            <div className="mt-1">
+              <span className={`text-xs font-black ${kpis.progressoMetaGlobalPct >= 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {kpis.progressoMetaGlobalPct >= 100 ? '▲' : '▼'} {kpis.progressoMetaGlobalPct.toFixed(1)}% da meta atingida
+              </span>
+            </div>
+
             <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
