@@ -118,11 +118,13 @@ export default function DashboardPage() {
     
     let faturamentoBrutoVendas = 0;
     let faturamentoLiquidoRepasse = 0;
-    let fatBrutoDigital = 0;
     let metaDigitalTotal = 0;
-    let repasseDigital = 0;
+    let fatBrutoFisico = 0;
+    let fatBrutoDigital = 0;
     let repasseFisico = 0;
+    let repasseDigital = 0;
     let custoTotalCMV = 0;
+    let cmvFisico = 0;
     let cmvDigital = 0;
 
     const lojasFisicasDetalhes: any[] = [];
@@ -136,7 +138,6 @@ export default function DashboardPage() {
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
-      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
 
       if (fisico) {
         const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
@@ -148,7 +149,6 @@ export default function DashboardPage() {
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
           faturado: faturadoCanal,
-          repasse: repasseCanal,
           progresso,
           diff,
           abaixo: progresso < 100
@@ -157,11 +157,6 @@ export default function DashboardPage() {
         metaDigitalTotal += metaCanal;
       }
     });
-
-    let fatDigitalSum = 0;
-    let repasseDigitalSum = 0;
-    let cmvDigitalSum = 0;
-    let repasseFisicoSum = 0;
 
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
@@ -173,16 +168,18 @@ export default function DashboardPage() {
       faturamentoLiquidoRepasse += isNaN(valRepasse) ? 0 : valRepasse;
       custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
-      if (!fisico) {
-        fatDigitalSum += isNaN(valBruto) ? 0 : valBruto;
-        repasseDigitalSum += isNaN(valRepasse) ? 0 : valRepasse;
-        cmvDigitalSum += isNaN(valCmv) ? 0 : valCmv;
+      if (fisico) {
+        fatBrutoFisico += isNaN(valBruto) ? 0 : valBruto;
+        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvFisico += isNaN(valCmv) ? 0 : valCmv;
       } else {
-        repasseFisicoSum += isNaN(valRepasse) ? 0 : valRepasse;
+        fatBrutoDigital += isNaN(valBruto) ? 0 : valBruto;
+        repasseDigital += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvDigital += isNaN(valCmv) ? 0 : valCmv;
       }
     });
 
-    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalSum / metaDigitalTotal) * 100 : 0;
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
@@ -190,20 +187,22 @@ export default function DashboardPage() {
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
-    const lucroDigital = repasseDigitalSum - cmvDigitalSum - totalFlexCost - totalAdsCost;
-    const lucroFisico = repasseFisicoSum;
+    const lucroFisico = repasseFisico - cmvFisico;
+    const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
       faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
-      fatBrutoDigital: fatDigitalSum, 
+      fatBrutoFisico,
+      fatBrutoDigital, 
       faturamentoLiquidoRepasse: isNaN(faturamentoLiquidoRepasse) ? 0 : faturamentoLiquidoRepasse, 
-      repasseDigital: repasseDigitalSum,
-      repasseFisico: repasseFisicoSum,
+      repasseFisico,
+      repasseDigital,
       custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
-      cmvDigital: cmvDigitalSum,
+      cmvFisico,
+      cmvDigital,
       lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
-      lucroDigital,
       lucroFisico,
+      lucroDigital,
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
       progressoDigitalPct,
@@ -373,7 +372,7 @@ export default function DashboardPage() {
       {/* 4 PAINÉIS DO TOPO */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
-        {/* 1. FATURAMENTO BRUTO (Com divisão por lojas físicas e e-commerce) */}
+        {/* 1. FATURAMENTO BRUTO (Com divisão individualizada para as duas lojas físicas) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
@@ -407,7 +406,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. REPASSE TOTAL (Consolidado padrão) */}
+        {/* 2. REPASSE TOTAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
@@ -415,15 +414,8 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
-              <div className="grid grid-cols-2 gap-2">
-                {kpis.lojasFisicasDetalhes.map((loja: any) => (
-                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
-                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
-                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.repasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-              </div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.repasseFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
@@ -432,7 +424,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL (Consolidado padrão) */}
+        {/* 3. CMV TOTAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -440,15 +432,8 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
-              <div className="grid grid-cols-2 gap-2">
-                {kpis.lojasFisicasDetalhes.map((loja: any) => (
-                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
-                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
-                    <span className="text-[10px] font-bold text-slate-400 italic block mt-0.5">Sem custos</span>
-                  </div>
-                ))}
-              </div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-[10px] font-bold text-slate-400 italic block">Sem custos detalhados</span>
             </div>
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
@@ -457,7 +442,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. LUCRO LÍQUIDO REAL (Consolidado padrão) */}
+        {/* 4. LUCRO LÍQUIDO REAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
@@ -465,15 +450,8 @@ export default function DashboardPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
-              <div className="grid grid-cols-2 gap-2">
-                {kpis.lojasFisicasDetalhes.map((loja: any) => (
-                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
-                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
-                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.repasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-              </div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.lucroFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
