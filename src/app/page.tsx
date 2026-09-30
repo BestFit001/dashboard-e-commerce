@@ -118,10 +118,8 @@ export default function DashboardPage() {
     
     let faturamentoBrutoVendas = 0;
     let faturamentoLiquidoRepasse = 0;
-    let fatBrutoFisico = 0;
     let fatBrutoDigital = 0;
     let metaDigitalTotal = 0;
-    let repasseFisico = 0;
     let repasseDigital = 0;
     let custoTotalCMV = 0;
     let cmvDigital = 0;
@@ -137,9 +135,9 @@ export default function DashboardPage() {
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
 
       if (fisico) {
-        fatBrutoFisico += faturadoCanal;
         const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
@@ -149,6 +147,7 @@ export default function DashboardPage() {
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
           faturado: faturadoCanal,
+          repasse: repasseCanal,
           progresso,
           diff,
           abaixo: progresso < 100
@@ -157,6 +156,10 @@ export default function DashboardPage() {
         metaDigitalTotal += metaCanal;
       }
     });
+
+    let fatDigitalSum = 0;
+    let repasseDigitalSum = 0;
+    let cmvDigitalSum = 0;
 
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
@@ -169,15 +172,13 @@ export default function DashboardPage() {
       custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
       if (!fisico) {
-        fatBrutoDigital += isNaN(valBruto) ? 0 : valBruto;
-        repasseDigital += isNaN(valRepasse) ? 0 : valRepasse;
-        cmvDigital += isNaN(valCmv) ? 0 : valCmv;
-      } else {
-        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
+        fatDigitalSum += isNaN(valBruto) ? 0 : valBruto;
+        repasseDigitalSum += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvDigitalSum += isNaN(valCmv) ? 0 : valCmv;
       }
     });
 
-    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalSum / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
@@ -185,22 +186,17 @@ export default function DashboardPage() {
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
-    const lucroFisico = repasseFisico;
-    const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
+    const lucroDigital = repasseDigitalSum - cmvDigitalSum - totalFlexCost - totalAdsCost;
 
     return { 
       faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
-      fatBrutoFisico: isNaN(fatBrutoFisico) ? 0 : fatBrutoFisico, 
-      fatBrutoDigital: isNaN(fatBrutoDigital) ? 0 : fatBrutoDigital, 
+      fatBrutoDigital: fatDigitalSum, 
       faturamentoLiquidoRepasse: isNaN(faturamentoLiquidoRepasse) ? 0 : faturamentoLiquidoRepasse, 
-      repasseFisico: isNaN(repasseFisico) ? 0 : repasseFisico, 
-      repasseDigital: isNaN(repasseDigital) ? 0 : repasseDigital,
+      repasseDigital: repasseDigitalSum,
       custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
-      cmvFisico: 0, 
-      cmvDigital: isNaN(cmvDigital) ? 0 : cmvDigital,
+      cmvDigital: cmvDigitalSum,
       lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
-      lucroFisico: isNaN(lucroFisico) ? 0 : lucroFisico, 
-      lucroDigital: isNaN(lucroDigital) ? 0 : lucroDigital,
+      lucroDigital,
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
       progressoDigitalPct,
@@ -217,6 +213,15 @@ export default function DashboardPage() {
     } else if (appliedModalidadeFilter === 'DIGITAL') {
       channelsToAnalyze = channelsToAnalyze.filter(c => !isChannelFisico(c));
     }
+
+    // Ordenar para que as lojas físicas apareçam primeiro e depois o e-commerce
+    channelsToAnalyze.sort((a, b) => {
+      const aFisico = isChannelFisico(a);
+      const bFisico = isChannelFisico(b);
+      if (aFisico && !bFisico) return -1;
+      if (!aFisico && bFisico) return 1;
+      return a.localeCompare(b);
+    });
 
     const now = new Date();
     const ano = now.getFullYear();
@@ -359,25 +364,27 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO COM LOJAS FÍSICAS DESMEMBRADAS */}
+      {/* 4 PAINÉIS DO TOPO: LOJAS FÍSICAS EM CIMA (LADO A LADO) E E-COMMERCE EMBAIXO, CENTRALIZADO */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
         {/* 1. FATURAMENTO BRUTO */}
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
-          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
-            {/* Lojas Físicas Desmembradas Individualmente */}
+          
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+            {/* Lojas Físicas em cima (duas na mesma linha) */}
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
-              <div className="space-y-1.5">
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
+              <div className="grid grid-cols-2 gap-2">
                 {kpis.lojasFisicasDetalhes.map((loja: any) => (
-                  <div key={loja.nome} className="text-xs">
-                    <span className="font-bold text-slate-200 block">{loja.nome}: R$ {loja.faturado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <span className={`text-[10px] font-black block ${loja.abaixo ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
+                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
+                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.faturado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className={`text-[9px] font-black block mt-0.5 ${loja.abaixo ? 'text-rose-400' : 'text-emerald-400'}`}>
                       {loja.abaixo ? `▼ ${loja.diff.toFixed(1)}% abaixo` : `▲ ${loja.diff.toFixed(1)}% acima`}
                     </span>
                   </div>
@@ -385,11 +392,11 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* E-commerce Consolidado */}
-            <div className="border-l border-slate-800 pl-2.5">
+            {/* E-commerce embaixo */}
+            <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
               <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className={`text-[10px] font-black block mt-1 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span className={`text-[10px] font-black block mt-0.5 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {kpis.progressoDigitalPct >= 100 ? `▲ ${kpis.diffDigital.toFixed(1)}% acima` : `▼ ${kpis.diffDigital.toFixed(1)}% abaixo`}
               </span>
             </div>
@@ -397,62 +404,83 @@ export default function DashboardPage() {
         </div>
 
         {/* 2. REPASSE TOTAL */}
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
             <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.repasseFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
+              <div className="grid grid-cols-2 gap-2">
+                {kpis.lojasFisicasDetalhes.map((loja: any) => (
+                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
+                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
+                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.repasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="border-l border-slate-800 pl-2.5">
+            <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.repasseDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.repasseDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
         
         {/* 3. CMV TOTAL */}
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
             <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-[10px] font-bold text-slate-400 italic">Sem custos detalhados</span>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
+              <div className="grid grid-cols-2 gap-2">
+                {kpis.lojasFisicasDetalhes.map((loja: any) => (
+                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
+                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
+                    <span className="text-[10px] font-bold text-slate-400 italic block mt-0.5">Sem custos</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="border-l border-slate-800 pl-2.5">
+            <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.cmvDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.cmvDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
 
         {/* 4. LUCRO LÍQUIDO REAL */}
-        <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between">
+        <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
-              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.lucroFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
+              <div className="grid grid-cols-2 gap-2">
+                {kpis.lojasFisicasDetalhes.map((loja: any) => (
+                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
+                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
+                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.repasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="border-l border-slate-800 pl-2.5">
+            <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
-              <span className="text-xs font-bold text-slate-200">R$ {kpis.lucroDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.lucroDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           </div>
         </div>
 
       </div>
 
-      {/* CARDS DOS CANAIS */}
+      {/* CARDS DOS CANAIS (Lojas Físicas primeiro, depois E-commerce) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {channelAnalytics.map((item: any) => {
           const metaBatida = item.progressoMetaPct >= 100;
