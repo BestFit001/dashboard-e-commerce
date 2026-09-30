@@ -57,7 +57,6 @@ export default function DashboardPage() {
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        // CORREÇÃO: Garante a leitura robusta do repasse líquido calculado pelas regras
         const repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
         const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
@@ -72,7 +71,24 @@ export default function DashboardPage() {
   }, [appliedDateFilter, appliedStartDate]);
 
   const kpis = useMemo(() => {
-    const faturamentoBrutoVendas = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+    let faturamentoBrutoVendas = 0;
+    let fatBrutoFisico = 0;
+    let fatBrutoDigital = 0;
+
+    enrichedSales.forEach((s: any) => {
+      const val = Number(s.preco_venda) || 0;
+      faturamentoBrutoVendas += val;
+
+      const nomeCanal = String(s.canal || '').toLowerCase();
+      const isFisico = nomeCanal.includes('clube') || nomeCanal.includes('loja') || nomeCanal.includes('paineiras') || nomeCanal.includes('hebraica');
+      
+      if (isFisico) {
+        fatBrutoFisico += val;
+      } else {
+        fatBrutoDigital += val;
+      }
+    });
+
     const faturamentoLiquidoRepasse = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
     const custoTotalCMV = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
@@ -82,7 +98,15 @@ export default function DashboardPage() {
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
 
-    return { faturamentoBrutoVendas, faturamentoLiquidoRepasse, custoTotalCMV, lucroLiquidoReal, totalPedidos: enrichedSales.length };
+    return { 
+      faturamentoBrutoVendas, 
+      fatBrutoFisico, 
+      fatBrutoDigital, 
+      faturamentoLiquidoRepasse, 
+      custoTotalCMV, 
+      lucroLiquidoReal, 
+      totalPedidos: enrichedSales.length 
+    };
   }, [enrichedSales, adsData, appliedChannelFilter]);
 
   const channelAnalytics = useMemo(() => {
@@ -167,22 +191,49 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
-          <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-          <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
+        {/* CARD FATURAMENTO BRUTO COM DIVISÃO FÍSICO VS DIGITAL */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
+            <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-0.5">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200">
+                R$ {kpis.fatBrutoFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="border-l border-slate-800 pl-2.5">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200">
+                R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
-          <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
+            <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
         </div>
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
-          <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+        
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
+            <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
         </div>
-        <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20">
-          <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
-          <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+
+        <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+            <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
         </div>
       </div>
 
