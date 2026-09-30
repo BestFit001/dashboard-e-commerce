@@ -35,7 +35,7 @@ export default function AdminPage() {
   const colToIdx = (colStr: string) => {
     if (!colStr) return 0;
     const clean = String(colStr).replace(/[^a-zA-Z]/g, '').toUpperCase();
-    if (!clean) return -1; // Retorna -1 se não houver letra válida para não cair na coluna 0 por engano
+    if (!clean) return -1;
     let base = 0;
     for (let i = 0; i < clean.length; i++) {
       base = base * 26 + (clean.charCodeAt(i) - 64);
@@ -116,16 +116,11 @@ export default function AdminPage() {
     } catch { return 0; }
   };
 
-  // Função dedicada para avaliar PDV (Evita cair na Coluna A por acidente)
   const getPdvValue = (pdvConfig: string, row: any, channelName: string) => {
     if (!pdvConfig) return 0;
-    
-    // Se for uma fórmula complexa (ex: contém +, -, *, /)
     if (/[+\-*/()]/.test(pdvConfig)) {
       return evaluateFormula(pdvConfig, row, 0, channelName);
     }
-    
-    // Se for apenas a letra da coluna (ex: 'J' ou 'BA')
     const idx = colToIdx(pdvConfig);
     if (idx < 0) return 0; 
     return parseSmartFloat(row[idx], channelName);
@@ -171,7 +166,8 @@ export default function AdminPage() {
           const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
           
           let pedidoId = null;
-          const matchId = rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
+          // INSTRUÇÃO VITAL: Suporta o padrão da Amazon "114-1234567-1234567" primeiro!
+          const matchId = rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
           if (matchId) {
             pedidoId = matchId[0].trim();
           }
@@ -288,7 +284,7 @@ export default function AdminPage() {
           const colIdIdx = colToIdx(rule.colIdPedido || 'A');
           let rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
           
-          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('id')) {
+          if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) {
             i++; continue;
           }
 
@@ -320,7 +316,6 @@ export default function AdminPage() {
             continue;
           }
 
-          // Preço Venda Blindado - Aceita fórmulas como "(P - Q) * O" sem bugar para a coluna A!
           const precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
 
           const colRebateIdx = colToIdx(rule.colRebate || 'C');
