@@ -13,8 +13,6 @@ export default function DashboardPage() {
   const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
-  
-  // Cálculo do Mês Anterior (ex: 2026-09 se hoje for 2026-10)
   const previousMonthDefault = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
@@ -39,9 +37,7 @@ export default function DashboardPage() {
         if (data && data.dados) {
           setTarifasSiteMap(data.dados);
         }
-      } catch (err) {
-        // Ignora caso não exista
-      }
+      } catch (err) {}
     }
     fetchTarifas();
   }, []);
@@ -113,11 +109,16 @@ export default function DashboardPage() {
       })
       .map((s: any) => {
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
-        const custoCMV = ((parseCurrency(prod.preco_custo)) + (parseCurrency(prod.custo_embalagem))) * (parseCurrency(s.quantidade) || 1);
+        const qtd = parseCurrency(s.quantidade) || 1;
+        const custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? parseCurrency(flexOrder.valor_frete) : 0;
         
-        let repasseLiquido = parseCurrency(s.repasse_liquido) || parseCurrency(s.repasse) || parseCurrency(s.preco_venda); 
+        const precoVenda = parseCurrency(s.preco_venda);
+        let repasseLiquido = parseCurrency(s.repasse_liquido);
+        if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) {
+          repasseLiquido = precoVenda; // fallback seguro para evitar estouro
+        }
         
         const nomeCanal = String(s.canal || '').toLowerCase();
         if ((nomeCanal.includes('site') || nomeCanal.includes('loja virtual')) && tarifasSiteMap[String(s.id_pedido)]) {
@@ -130,11 +131,11 @@ export default function DashboardPage() {
         
         return { 
           ...s, 
-          preco_venda: parseCurrency(s.preco_venda),
+          preco_venda: precoVenda,
           custoCMV, 
           custoFlex, 
           ganhoLiquido, 
-          repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido 
+          repasse_liquido: repasseLiquido 
         };
       });
   }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
@@ -169,7 +170,7 @@ export default function DashboardPage() {
       const metaCanal = parseCurrency(goalObj.meta_valor);
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
-      const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
+      const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
 
       if (fisico) {
         const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
@@ -192,9 +193,9 @@ export default function DashboardPage() {
 
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
-      const valBruto = parseCurrency(s.preco_venda);
-      const valRepasse = parseCurrency(s.repasse_liquido);
-      const valCmv = parseCurrency(s.custoCMV);
+      const valBruto = s.preco_venda;
+      const valRepasse = s.repasse_liquido;
+      const valCmv = s.custoCMV;
 
       faturamentoBrutoVendas += valBruto;
       faturamentoLiquidoRepasse += valRepasse;
@@ -214,7 +215,7 @@ export default function DashboardPage() {
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
-    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + parseCurrency(s.custoFlex), 0);
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
@@ -275,12 +276,12 @@ export default function DashboardPage() {
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + parseCurrency(s.repasse_liquido), 0);
+      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       
       const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
-      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + parseCurrency(s.custoCMV), 0);
-      const flexCanal = chSales.reduce((sum: number, s: any) => sum + parseCurrency(s.custoFlex), 0);
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
+      const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
@@ -478,7 +479,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -539,7 +540,7 @@ export default function DashboardPage() {
                  <div className="flex justify-between items-center pt-1 border-t border-slate-900">
                    {item.valorFaltante === 0 ? (
                      <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
-                   ) : (
+                    ) : (
                      <>
                        <span className="text-[10px] text-slate-400 font-bold uppercase">Meta Diária Restante:</span>
                        <strong className="text-xs font-black text-amber-400">R$ {item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / dia</strong>
