@@ -13,6 +13,14 @@ export default function DashboardPage() {
   const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
+  
+  // Cálculo do Mês Anterior (ex: 2026-09 se hoje for 2026-10)
+  const previousMonthDefault = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 7);
+  }, []);
+
   const [dateFilter, setDateFilter] = useState('MES_ATUAL');
   const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
   const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -56,7 +64,6 @@ export default function DashboardPage() {
     return nome.includes('clube') || nome.includes('loja') || nome.includes('paineiras') || nome.includes('hebraica');
   };
 
-  // Função segura para converter valores monetários (remove pontos de milhar e trata vírgulas)
   const parseCurrency = (val: any) => {
     if (typeof val === 'number') return isNaN(val) ? 0 : val;
     if (!val) return 0;
@@ -90,6 +97,10 @@ export default function DashboardPage() {
            if (appliedDateFilter === 'QUINZENA' && (d < new Date(today.getTime() - 15*24*60*60*1000) || d > today)) return false;
            if (appliedDateFilter === 'MES_ATUAL') {
               const [ano, mes] = currentMonthDefault.split('-');
+              if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
+           }
+           if (appliedDateFilter === 'MES_ANTERIOR') {
+              const [ano, mes] = previousMonthDefault.split('-');
               if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
            }
            if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate && appliedEndDate) {
@@ -126,13 +137,13 @@ export default function DashboardPage() {
           repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido 
         };
       });
-  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, tarifasSiteMap]);
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
 
   const currentRefMonth = useMemo(() => {
     if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
-    if (appliedDateFilter === 'MES_ATUAL') return currentMonthDefault;
-    return new Date().toISOString().slice(0, 7);
-  }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
+    if (appliedDateFilter === 'MES_ANTERIOR') return previousMonthDefault;
+    return currentMonthDefault;
+  }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -353,6 +364,7 @@ export default function DashboardPage() {
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
               <option value="MES_ATUAL" className="bg-slate-900 text-white">Mês Atual (Padrão Metas)</option>
+              <option value="MES_ANTERIOR" className="bg-slate-900 text-white">Mês Anterior</option>
               <option value="HOJE" className="bg-slate-900 text-white">Hoje</option>
               <option value="SEMANA" className="bg-slate-900 text-white">Últimos 7 dias</option>
               <option value="QUINZENA" className="bg-slate-900 text-white">Últimos 15 dias</option>
@@ -466,7 +478,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
