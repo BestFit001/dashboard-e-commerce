@@ -505,10 +505,33 @@ export default function AdminPage() {
            <p className="text-xs text-slate-400 mt-1">Gestão de bases, faturados e redutores</p>
          </div>
          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block bg-slate-950 px-4 py-2 rounded-xl border border-slate-800">
-              <span className="text-[9px] font-bold text-slate-500 uppercase block tracking-wider mb-0.5">Uso de Dados DB</span>
-              <span className="text-sm font-black text-emerald-400">{getDbUsageMB()} MB</span>
-            </div>
+            
+            {/* NOVO BLOCO DE PROGRESSÃO DE USO DO BANCO DE DADOS */}
+            {(() => {
+              const usageStr = getDbUsageMB();
+              const usageNum = parseFloat(usageStr);
+              const limitMB = 500;
+              const pct = Math.min((usageNum / limitMB) * 100, 100);
+              const colorText = pct > 90 ? 'text-rose-400' : pct > 75 ? 'text-amber-400' : 'text-emerald-400';
+              const colorBg = pct > 90 ? 'bg-rose-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
+
+              return (
+                <div className="hidden sm:flex flex-col justify-center bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 min-w-[170px]">
+                  <div className="flex justify-between items-end mb-1">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Uso DB (Supa)</span>
+                    <span className={`text-[10px] font-black ${colorText}`}>{pct.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1.5">
+                    <span className={`text-sm font-black ${colorText}`}>{usageStr}</span>
+                    <span className="text-[10px] font-bold text-slate-500">/ {limitMB} MB</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div className={`h-full ${colorBg} transition-all duration-500`} style={{ width: `${pct}%` }}></div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <button onClick={() => setIsAdminUnlocked(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition">
               Bloquear Admin
             </button>
