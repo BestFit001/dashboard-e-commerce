@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
 export default function ProdutosPage() {
-  const { sales, products, cancelados, flexData } = useAppContext();
+  const { sales, products, cancelados, flexData, canais } = useAppContext();
   
   const [dateFilter, setDateFilter] = useState('MES');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -11,6 +11,9 @@ export default function ProdutosPage() {
   
   const [searchSku, setSearchSku] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('TODAS');
+  
+  // NOVO: Filtro de Canal para a Inteligência de Produtos
+  const [selectedChannel, setSelectedChannel] = useState('TODOS');
 
   const [searchOrderId, setSearchOrderId] = useState('');
   const [sortOrder, setSortOrder] = useState('DEFAULT');
@@ -20,7 +23,16 @@ export default function ProdutosPage() {
 
   useEffect(() => {
     setCurrentPageOrders(1);
-  }, [searchOrderId, sortOrder, cmvFilter, dateFilter, customStartDate, customEndDate]);
+  }, [searchOrderId, sortOrder, cmvFilter, dateFilter, customStartDate, customEndDate, selectedChannel]);
+
+  // Lista de canais digitais (exclui os físicos automaticamente)
+  const canaisDigitais = useMemo(() => {
+    if (!canais) return [];
+    return canais.filter((c: string) => {
+      const nome = String(c || '').toLowerCase();
+      return !(nome.includes('clube') || nome.includes('loja') || nome.includes('paineiras') || nome.includes('hebraica'));
+    });
+  }, [canais]);
 
   const availableBrands = useMemo(() => {
     const brands = new Set(products.map((p: any) => {
@@ -30,58 +42,87 @@ export default function ProdutosPage() {
     return ['TODAS', ...Array.from(brands).sort((a: any, b: any) => a.localeCompare(b))];
   }, [products]);
 
-  const filteredSales = useMemo(() => {
+  // Lógica principal: Separa as vendas do período atual e do período anterior
+  const { currentSales, abcCurve, kpis } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
 
-    return sales.filter((s: any) => {
-      // EXCLUSÃO DE LOJAS FÍSICAS: Curva ABC e Marcas focam apenas no E-commerce/Marketplaces
+    let currStartMs = 0, currEndMs = endOfDay.getTime();
+    let prevStartMs = 0, prevEndMs = 0;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    // MOTOR TEMPORAL (Calcula o período atual e o exato período anterior equivalente)
+    if (dateFilter === 'HOJE') {
+      currStartMs = today.getTime();
+      prevStartMs = currStartMs - DAY_MS;
+      prevEndMs = currEndMs - DAY_MS;
+    } else if (dateFilter === 'SEMANA') { 
+      currStartMs = today.getTime() - 6 * DAY_MS;
+      prevEndMs = currStartMs - 1;
+      prevStartMs = prevEndMs - 6 * DAY_MS;
+    } else if (dateFilter === 'QUINZENA') { 
+      currStartMs = today.getTime() - 14 * DAY_MS;
+      prevEndMs = currStartMs - 1;
+      prevStartMs = prevEndMs - 14 * DAY_MS;
+    } else if (dateFilter === 'MES') { 
+      currStartMs = today.getTime() - 29 * DAY_MS;
+      prevEndMs = currStartMs - 1;
+      prevStartMs = prevEndMs - 29 * DAY_MS;
+    } else if (dateFilter === 'PERSONALIZADO' && customStartDate && customEndDate) {
+      const start = new Date(customStartDate + 'T00:00:00').getTime();
+      const end = new Date(customEndDate + 'T23:59:59').getTime();
+      currStartMs = start;
+      currEndMs = end;
+      const duration = currEndMs - currStartMs + 1;
+      prevEndMs = currStartMs - 1;
+      prevStartMs = currStartMs - duration;
+    }
+
+    const currSales: any[] = [];
+    const prevSales: any[] = [];
+
+    // Distribui as vendas nos seus respetivos períodos
+    (sales || []).forEach((s: any) => {
       const nomeCanal = String(s.canal || '').toLowerCase();
       const isFisico = nomeCanal.includes('clube') || nomeCanal.includes('loja') || nomeCanal.includes('paineiras') || nomeCanal.includes('hebraica');
-      if (isFisico) return false;
+      
+      // Exclui Lojas Físicas e filtra pelo Canal selecionado
+      if (isFisico) return;
+      if (selectedChannel !== 'TODOS' && s.canal !== selectedChannel) return;
 
-      if (dateFilter !== 'TUDO' && s.data_faturamento) {
+      if (s.data_faturamento) {
          const d = new Date(s.data_faturamento + 'T00:00:00');
-         d.setHours(0, 0, 0, 0);
-         if (dateFilter === 'HOJE' && d.getTime() !== today.getTime()) return false;
-         if (dateFilter === 'SEMANA' && (d < new Date(today.getTime() - 7*24*60*60*1000) || d > today)) return false;
-         if (dateFilter === 'QUINZENA' && (d < new Date(today.getTime() - 15*24*60*60*1000) || d > today)) return false;
-         if (dateFilter === 'MES' && (d < new Date(today.getTime() - 30*24*60*60*1000) || d > today)) return false;
-         if (dateFilter === 'PERSONALIZADO' && customStartDate && customEndDate) {
-            const start = new Date(customStartDate + 'T00:00:00');
-            const end = new Date(customEndDate + 'T23:59:59');
-            if (d < start || d > end) return false;
+         const t = d.getTime();
+
+         if (dateFilter !== 'TUDO') {
+           if (t >= currStartMs && t <= currEndMs) currSales.push(s);
+           else if (t >= prevStartMs && t <= prevEndMs) prevSales.push(s);
+         } else {
+           currSales.push(s); // Sem filtro, tudo é "atual"
          }
       }
-      return true;
     });
-  }, [sales, dateFilter, customStartDate, customEndDate]);
 
-  const { abcCurve, kpis } = useMemo(() => {
+    // 1. Agrega as vendas do PERÍODO ATUAL
     const skuStats: Record<string, any> = {};
-
-    filteredSales.forEach((s: any) => {
+    currSales.forEach((s: any) => {
       if (!skuStats[s.sku]) skuStats[s.sku] = { sku: s.sku, qtd: 0, revenue: 0, repasse: 0 };
       skuStats[s.sku].qtd += (Number(s.quantidade) || 1);
-      
-      const preco = Number(s.preco_venda) || 0;
-      skuStats[s.sku].revenue += preco;
+      skuStats[s.sku].revenue += (Number(s.preco_venda) || 0);
       skuStats[s.sku].repasse += (Number(s.repasse_liquido) || 0);
     });
 
     let faturamentoTotalPeriodo = 0;
-
     let allSkus = Object.values(skuStats).map(s => {
       const p = products.find((prod: any) => prod.sku === s.sku) || {};
       const custoUn = (Number(p.preco_custo) || 0) + (Number(p.custo_embalagem) || 0);
       const cmvTotal = custoUn * s.qtd;
       const lucroTotal = s.repasse - cmvTotal; 
-      
-      const marcaRaw = p.marca?.trim();
-      const marcaNormalizada = marcaRaw ? marcaRaw.toUpperCase() : 'SEM MARCA';
+      const marcaNormalizada = (p.marca?.trim() || 'SEM MARCA').toUpperCase();
       
       faturamentoTotalPeriodo += s.revenue; 
-
       return { ...s, titulo: p.titulo || 'Produto não cadastrado', marca: marcaNormalizada, cmvTotal, lucroTotal };
     });
 
@@ -93,36 +134,76 @@ export default function ProdutosPage() {
       const pct = (cumulative / (faturamentoTotalPeriodo || 1)) * 100;
       s.pctRepresentatividade = (s.revenue / (faturamentoTotalPeriodo || 1)) * 100;
 
-      if (pct <= 80) { s.curva = 'A'; }
-      else if (pct <= 95) { s.curva = 'B'; }
-      else { s.curva = 'C'; }
+      if (pct <= 80) s.curva = 'A';
+      else if (pct <= 95) s.curva = 'B';
+      else s.curva = 'C';
     });
 
+    // Aplica filtros de pesquisa (SKU e MARCA) na visualização atual
     let displaySkus = allSkus;
-    
     if (searchSku.trim()) displaySkus = displaySkus.filter(s => s.sku.toLowerCase().includes(searchSku.toLowerCase()));
     if (selectedBrand !== 'TODAS') displaySkus = displaySkus.filter(s => s.marca === selectedBrand);
 
-    let faturamentoTotalFiltrado = 0;
-    let lucroTotalFiltrado = 0;
-    let countAFiltrado = 0, countBFiltrado = 0, countCFiltrado = 0;
+    let fatFiltrado = 0, lucFiltrado = 0;
+    let cA = 0, cB = 0, cC = 0;
 
     displaySkus.forEach(s => {
-      faturamentoTotalFiltrado += s.revenue;
-      lucroTotalFiltrado += s.lucroTotal;
-      if (s.curva === 'A') countAFiltrado++;
-      if (s.curva === 'B') countBFiltrado++;
-      if (s.curva === 'C') countCFiltrado++;
+      fatFiltrado += s.revenue;
+      lucFiltrado += s.lucroTotal;
+      if (s.curva === 'A') cA++;
+      if (s.curva === 'B') cB++;
+      if (s.curva === 'C') cC++;
     });
 
-    const ticketMedio = filteredSales.length > 0 ? faturamentoTotalPeriodo / filteredSales.length : 0;
+    // 2. Agrega as vendas do PERÍODO ANTERIOR (aplicando exatamente os mesmos filtros SKU/Marca)
+    const prevSkuMap: Record<string, any> = {};
+    prevSales.forEach((s: any) => {
+      if (!prevSkuMap[s.sku]) prevSkuMap[s.sku] = { sku: s.sku, qtd: 0, revenue: 0, repasse: 0 };
+      prevSkuMap[s.sku].qtd += (Number(s.quantidade) || 1);
+      prevSkuMap[s.sku].revenue += (Number(s.preco_venda) || 0);
+      prevSkuMap[s.sku].repasse += (Number(s.repasse_liquido) || 0);
+    });
+
+    let prevFatFiltrado = 0, prevLucFiltrado = 0;
+    Object.values(prevSkuMap).forEach(s => {
+      const p = products.find((prod: any) => prod.sku === s.sku) || {};
+      const marcaNormalizada = (p.marca?.trim() || 'SEM MARCA').toUpperCase();
+      
+      // Se não passar no filtro do utilizador, não conta para a comparação
+      if (searchSku.trim() && !s.sku.toLowerCase().includes(searchSku.toLowerCase())) return;
+      if (selectedBrand !== 'TODAS' && marcaNormalizada !== selectedBrand) return;
+
+      const custoUn = (Number(p.preco_custo) || 0) + (Number(p.custo_embalagem) || 0);
+      const cmvTotal = custoUn * s.qtd;
+      const lucroTotal = s.repasse - cmvTotal;
+
+      prevFatFiltrado += s.revenue;
+      prevLucFiltrado += lucroTotal;
+    });
+
+    // 3. Cálculos de Crescimento (%)
+    const diffFat = prevFatFiltrado > 0 ? ((fatFiltrado - prevFatFiltrado) / prevFatFiltrado) * 100 : 0;
+    const diffLuc = prevLucFiltrado !== 0 ? ((lucFiltrado - prevLucFiltrado) / Math.abs(prevLucFiltrado)) * 100 : 0;
+
+    const ticketMedio = currSales.length > 0 ? faturamentoTotalPeriodo / currSales.length : 0;
     const valorEstimadoCancelado = cancelados.length * ticketMedio;
 
     return { 
+      currentSales: currSales,
       abcCurve: displaySkus, 
-      kpis: { faturamentoTotal: faturamentoTotalFiltrado, lucroTotal: lucroTotalFiltrado, countA: countAFiltrado, countB: countBFiltrado, countC: countCFiltrado, ticketMedio, totalCancelados: cancelados.length, valorEstimadoCancelado }
+      kpis: { 
+        faturamentoTotal: fatFiltrado, 
+        lucroTotal: lucFiltrado, 
+        hasPrev: dateFilter !== 'TUDO' && prevSales.length > 0,
+        diffFat,
+        diffLuc,
+        countA: cA, countB: cB, countC: cC, 
+        ticketMedio, 
+        totalCancelados: cancelados.length, 
+        valorEstimadoCancelado 
+      }
     };
-  }, [filteredSales, products, cancelados, searchSku, selectedBrand]);
+  }, [sales, dateFilter, customStartDate, customEndDate, products, cancelados, searchSku, selectedBrand, selectedChannel]);
 
   const brandStats = useMemo(() => {
     const brands: Record<string, any> = {};
@@ -139,7 +220,7 @@ export default function ProdutosPage() {
   const enrichedOrders = useMemo(() => {
     const orderMap: Record<string, any> = {};
 
-    filteredSales.forEach((s: any) => {
+    currentSales.forEach((s: any) => {
       const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
       const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
       
@@ -171,7 +252,7 @@ export default function ProdutosPage() {
         ganhoLiquido 
       };
     });
-  }, [filteredSales, products, flexData]);
+  }, [currentSales, products, flexData]);
 
   const displayOrders = useMemo(() => {
     let result = enrichedOrders;
@@ -213,6 +294,16 @@ export default function ProdutosPage() {
           </div>
 
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
+            <i className="fa-solid fa-store text-sky-400 pl-2 text-xs"></i>
+            <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="bg-transparent text-sky-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32">
+              <option value="TODOS" className="bg-slate-900 text-slate-200">Todos os Canais</option>
+              {canaisDigitais.map((c: string) => (
+                <option key={c} value={c} className="bg-slate-900 text-slate-200">{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
             <i className="fa-solid fa-tag text-purple-400 pl-2 text-xs"></i>
             <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer w-full sm:w-32">
               {availableBrands.map(brand => (
@@ -243,11 +334,29 @@ export default function ProdutosPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (E-commerce)</span>
-          <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-          <p className="text-[10px] text-emerald-400 font-bold mt-1">Lucro: R$ {kpis.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        {/* FATURAMENTO COM INDICADOR DE CRESCIMENTO */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-center">
+          <div className="flex justify-between items-start mb-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento (E-commerce)</span>
+            {kpis.hasPrev && (
+              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 ${kpis.diffFat >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`} title="Comparação vs Período Anterior">
+                {kpis.diffFat >= 0 ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>} 
+                {Math.abs(kpis.diffFat).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <h3 className="text-2xl font-black text-white">R$ {kpis.faturamentoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          
+          <div className="flex justify-between items-center mt-1.5 pt-1.5 border-t border-slate-800/80">
+            <p className="text-[10px] text-emerald-400 font-bold">Lucro: R$ {kpis.lucroTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            {kpis.hasPrev && (
+              <span className={`text-[9px] font-black ${kpis.diffLuc >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpis.diffLuc >= 0 ? '▲' : '▼'} {Math.abs(kpis.diffLuc).toFixed(1)}%
+              </span>
+            )}
+          </div>
         </div>
+
         <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30">
           <span className="text-[10px] font-bold text-indigo-400 uppercase">Curva A (Top 80% Receita)</span>
           <h3 className="text-2xl font-black text-indigo-400 mt-1">{kpis.countA} SKUs</h3>
