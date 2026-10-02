@@ -20,7 +20,7 @@ export default function AdminPage() {
   const [colFaturadosData, setColFaturadosData] = useState('D');
   
   const [mesCancelado, setMesCancelado] = useState(new Date().toISOString().slice(0, 7));
-  const [mesAds, setMesAds] = useState(new Date().toISOString().slice(0, 7)); // Novo Estado para o Mês de ADS
+  const [mesAds, setMesAds] = useState(new Date().toISOString().slice(0, 7)); 
 
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
   const [colTarifasValor, setColTarifasValor] = useState('E');
@@ -36,6 +36,17 @@ export default function AdminPage() {
       addLog('Área administrativa desbloqueada.', 'success'); 
     } else {
       alert('Senha incorreta.');
+    }
+  };
+
+  // CÁLCULO DE MEMÓRIA OTIMIZADO: Não trava o navegador!
+  const getDbUsageMB = () => {
+    try {
+      const estimate = (arr: any[]) => arr && arr.length > 0 ? JSON.stringify(arr[0]).length * arr.length : 0;
+      const totalBytes = estimate(sales) + estimate(faturados) + estimate(cancelados) + estimate(flexData) + estimate(adsData) + estimate(channelRules);
+      return (totalBytes / (1024 * 1024)).toFixed(2);
+    } catch (e) {
+      return "0.00";
     }
   };
 
@@ -215,9 +226,6 @@ export default function AdminPage() {
     if (fileCanceladosRef.current) fileCanceladosRef.current.value = '';
   };
 
-  // ----------------------------------------------------------------------
-  // NOVA LÓGICA DE IMPORTAÇÃO DE ADS COM MÊS
-  // ----------------------------------------------------------------------
   const handleUploadAds = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -490,7 +498,47 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases e Filtros ERP</h2>
+       
+       {/* PAINEL ADMINISTRATIVO COM MEMÓRIA BLINDADA */}
+       <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+         <div>
+           <h2 className="text-xl font-bold text-white tracking-tight">Painel Administrativo</h2>
+           <p className="text-xs text-slate-400 mt-1">Gestão de bases, faturados e redutores</p>
+         </div>
+         
+         <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+            {(() => {
+              const usageStr = getDbUsageMB();
+              const usageNum = parseFloat(usageStr);
+              const limitMB = 500;
+              const pct = Math.min((usageNum / limitMB) * 100, 100);
+              const colorText = pct > 90 ? 'text-rose-400' : pct > 75 ? 'text-amber-400' : 'text-emerald-400';
+              const colorBg = pct > 90 ? 'bg-rose-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
+
+              return (
+                <div className="flex flex-col justify-center bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 min-w-[170px]">
+                  <div className="flex justify-between items-end mb-1">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Uso DB (Supa)</span>
+                    <span className={`text-[10px] font-black ${colorText}`}>{pct.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1.5">
+                    <span className={`text-sm font-black ${colorText}`}>{usageStr}</span>
+                    <span className="text-[10px] font-bold text-slate-500">/ {limitMB} MB</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                    <div className={`h-full ${colorBg} transition-all duration-500`} style={{ width: `${pct}%` }}></div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <button onClick={() => setIsAdminUnlocked(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition whitespace-nowrap">
+              Bloquear Admin
+            </button>
+         </div>
+       </div>
+
+       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 1: Bases e Filtros ERP</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 space-y-3">
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
@@ -555,7 +603,6 @@ export default function AdminPage() {
            </label>
          </div>
 
-         {/* BLOCO DE ADS ATUALIZADO COM O MÊS */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30 flex flex-col justify-between">
            <div>
              <h3 className="font-bold text-white text-sm mb-1">Investimento ADS</h3>
@@ -577,7 +624,6 @@ export default function AdminPage() {
            <p className="text-[10px] text-slate-400 text-center mt-2">Registos p/ {mesAds}: <span className="text-amber-400 font-bold">{adsMesAtual.length}</span></p>
          </div>
 
-         {/* Consulta Tarifas Site */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30 flex flex-col justify-between space-y-3">
            <div>
              <h3 className="font-bold text-white text-sm mb-1">Consulta Tarifas Site</h3>
