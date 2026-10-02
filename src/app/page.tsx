@@ -90,7 +90,6 @@ export default function DashboardPage() {
     return currentMonthDefault;
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
-  // Cancelamentos aplicados ao mês de referência que estamos a ver
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => {
@@ -100,7 +99,6 @@ export default function DashboardPage() {
     });
   }, [cancelados, currentRefMonth, appliedChannelFilter]);
 
-  // Primeiro criamos a base de vendas sem retirar ainda os cancelados, para sabermos o que pertence ao mês
   const enrichedSalesBase = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -185,10 +183,8 @@ export default function DashboardPage() {
     const baseSaleIds = new Set((enrichedSalesBase || []).map((s: any) => String(s.id_pedido)));
     const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
 
-    // Vendas validadas que não constam nos cancelamentos
     const validSales = enrichedSalesBase.filter((s: any) => !cancelledOrderIds.has(String(s.id_pedido)));
     
-    // Redutores puros são aqueles cancelamentos do mês escolhido que NÃO estavam na lista base de vendas deste mês
     const redutoresPuros = activeCancelados.filter((c: any) => !baseSaleIds.has(String(c.id_pedido)));
     const totalRedutorValor = redutoresPuros.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
@@ -256,11 +252,9 @@ export default function DashboardPage() {
       }
     });
 
-    // Abate GLOBAL do redutor puro
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
     faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
 
-    // O progresso digital precisa abater os redutores digitais para a conta não dar erro
     const redutoresDigitais = redutoresPuros
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
@@ -272,7 +266,12 @@ export default function DashboardPage() {
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = validSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
-    const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
+    
+    // NOVO FILTRO DE ADS: Apenas considera ADS do mês atual selecionado
+    const filteredAds = adsData.filter((a: any) => 
+      a.mes_referencia === currentRefMonth && 
+      (appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter)
+    );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
@@ -348,7 +347,11 @@ export default function DashboardPage() {
       const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - valorRedutorCanal);
       const repasseTotal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - valorRedutorCanal);
       
-      const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+      // FILTRO ADS ESPECÍFICO DO CANAL (Considera apenas os ADS enviados para este mês)
+      const canalAds = adsData
+        .filter((a: any) => a.canal === channelName && a.mes_referencia === currentRefMonth)
+        .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 

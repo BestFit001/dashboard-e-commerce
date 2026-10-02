@@ -114,8 +114,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     const formatted = rows.map((r: any) => {
       let rawVal = r['Valor'] !== undefined ? r['Valor'] : (r['valor'] !== undefined ? r['valor'] : 0);
       let finalVal = 0;
-      
-      // Proteção rigorosa contra a perda da pontuação decimal
       if (typeof rawVal === 'number') {
          finalVal = rawVal;
       } else {
@@ -127,7 +125,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
          }
          finalVal = Number(s) || 0;
       }
-
       return {
         id_pedido: String(r['ID Pedido'] || r['id_pedido'] || r['Id Pedido'] || ''),
         produto: String(r['Produto'] || r['produto'] || ''),
@@ -136,11 +133,18 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         mes_referencia: mesReferencia
       };
     });
-
     const updatedCancelados = [...cancelados.filter((c: any) => c.mes_referencia !== mesReferencia), ...formatted];
     setCancelados(updatedCancelados);
     await updateCloudState('cancelados', updatedCancelados);
     addLog(`Cancelamentos importados para o mês ${mesReferencia} com sucesso!`, 'success');
+  };
+
+  const importAdsComMes = async (parsedData: any[], mesReferencia: string) => {
+    const formatted = parsedData.map(d => ({ ...d, mes_referencia: mesReferencia }));
+    const updatedAds = [...adsData.filter((a: any) => a.mes_referencia !== mesReferencia), ...formatted];
+    setAdsData(updatedAds);
+    await updateCloudState('ads', updatedAds);
+    addLog(`ADS importados para o mês ${mesReferencia} com sucesso!`, 'success');
   };
 
   return (
@@ -175,6 +179,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         await updateCloudState('cancelados', updated);
       },
       importCanceladosComMes,
+      importAdsComMes,
       channelLogos, setChannelLogos,
       channelRules, setChannelRules: async (newRules: any) => {
         const updated = typeof newRules === 'function' ? newRules(channelRules) : newRules;

@@ -8,7 +8,7 @@ export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
     sales, setSales, flexData, setFlexData, adsData, setAdsData, 
-    faturados, setFaturados, cancelados, setCancelados, importCanceladosComMes, addLog, logs 
+    faturados, setFaturados, cancelados, setCancelados, importCanceladosComMes, importAdsComMes, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
@@ -19,15 +19,15 @@ export default function AdminPage() {
   const [colFaturadosObs, setColFaturadosObs] = useState('AI');
   const [colFaturadosData, setColFaturadosData] = useState('D');
   
-  // Novo estado de Mês Alvo para Cancelados (Redutores)
   const [mesCancelado, setMesCancelado] = useState(new Date().toISOString().slice(0, 7));
+  const [mesAds, setMesAds] = useState(new Date().toISOString().slice(0, 7)); // Novo Estado para o Mês de ADS
 
-  // Configurações para Consulta Tarifas Site
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
   const [colTarifasValor, setColTarifasValor] = useState('E');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
   const fileCanceladosRef = useRef<HTMLInputElement>(null);
+  const fileAdsRef = useRef<HTMLInputElement>(null);
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,19 +53,12 @@ export default function AdminPage() {
   const parseSmartFloat = (val: any, channelName: string) => {
     if (val === undefined || val === null || val === '') return 0;
     if (typeof val === 'number') return val;
-    
     let strVal = String(val).trim();
-
-    if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) {
-      return 0;
-    }
-
+    if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) return 0;
     strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
-
     if (strVal.includes(',') && strVal.includes('.')) {
       const lastComma = strVal.lastIndexOf(',');
       const lastDot = strVal.lastIndexOf('.');
-      
       if (lastComma > lastDot) {
         strVal = strVal.replace(/\./g, '').replace(',', '.');
       } else {
@@ -74,7 +67,6 @@ export default function AdminPage() {
     } else if (strVal.includes(',')) {
       strVal = strVal.replace(/\./g, '').replace(',', '.');
     }
-    
     return parseFloat(strVal) || 0;
   };
 
@@ -85,9 +77,7 @@ export default function AdminPage() {
       return date.toISOString().slice(0, 10);
     }
     const cleanStr = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
-      return cleanStr.substring(0, 10);
-    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) return cleanStr.substring(0, 10);
     if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanStr)) {
       const parts = cleanStr.substring(0, 10).split('/');
       return `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -99,16 +89,11 @@ export default function AdminPage() {
     for (let cell of row) {
       if (cell === undefined || cell === null) continue;
       const str = String(cell).trim();
-      if (/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/.test(str)) {
-        return str.replace(/\D/g, '');
-      }
+      if (/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/.test(str)) return str.replace(/\D/g, '');
       if (/^\d{9,14}$/.test(str)) {
         const numStr = str.replace(/\D/g, '');
-        if (numStr.length >= 9 && numStr.length <= 11) {
-          return numStr.padStart(11, '0');
-        } else if (numStr.length > 11 && numStr.length <= 14) {
-          return numStr.padStart(14, '0');
-        }
+        if (numStr.length >= 9 && numStr.length <= 11) return numStr.padStart(11, '0');
+        else if (numStr.length > 11 && numStr.length <= 14) return numStr.padStart(14, '0');
       }
     }
     return null;
@@ -130,9 +115,7 @@ export default function AdminPage() {
 
   const getPdvValue = (pdvConfig: string, row: any, channelName: string) => {
     if (!pdvConfig) return 0;
-    if (/[+\-*/()]/.test(pdvConfig)) {
-      return evaluateFormula(pdvConfig, row, 0, channelName);
-    }
+    if (/[+\-*/()]/.test(pdvConfig)) return evaluateFormula(pdvConfig, row, 0, channelName);
     const idx = colToIdx(pdvConfig);
     if (idx < 0) return 0; 
     return parseSmartFloat(row[idx], channelName);
@@ -151,19 +134,14 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    
     reader.onload = async (evt) => {
       try {
         let rows: any[] = [];
         const fileName = file.name.toLowerCase();
-
         if (fileName.endsWith('.csv')) {
           const text = evt.target?.result as string;
           const lines = text.split(/\r?\n/);
-          rows = lines.map(line => {
-            const sep = line.includes(';') ? ';' : ',';
-            return line.split(sep).map(cell => cell.replace(/^["']|["']$/g, '').trim());
-          });
+          rows = lines.map(line => line.split(line.includes(';') ? ';' : ',').map(cell => cell.replace(/^["']|["']$/g, '').trim()));
         } else {
           const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
           rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
@@ -176,13 +154,9 @@ export default function AdminPage() {
         rows.slice(1).forEach((row) => {
           if (!row || !row.length) return;
           const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
-          
           let pedidoId = null;
           const matchId = rawObs.match(/\b[A-Z]+-\d+\b/) || rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
-          if (matchId) {
-            pedidoId = matchId[0].trim();
-          }
-
+          if (matchId) pedidoId = matchId[0].trim();
           const cpfMatch = extractCPF(row);
           
           if (pedidoId || cpfMatch) {
@@ -193,50 +167,83 @@ export default function AdminPage() {
 
         const updatedFaturados = [...novosFaturados, ...faturados];
         await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
-        
         addLog(`${novosFaturados.length} Registos Faturados extraídos e salvos.`, 'success');
         alert(`Sucesso! ${novosFaturados.length} faturados lidos e mapeados na base.`);
-      } catch (err: any) {
-        alert(`Erro ao ler faturados: ${err.message}`);
-      }
+      } catch (err: any) { alert(`Erro ao ler faturados: ${err.message}`); }
     };
-
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'ISO-8859-1');
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
+    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
+    else reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
   const handleUploadCancelados = (e: any) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const data: any[] = [];
+        
+        rows.forEach((row) => {
+          if (!row || row.length === 0) return;
+          const firstCell = String(row[0] || '').toLowerCase();
+          if (firstCell.includes('id') || firstCell.includes('pedido')) return;
+
+          const rawId = row[0];
+          if (rawId) {
+             let rawValor = row[3] || 0;
+             if (typeof rawValor === 'number') {
+                rawValor = rawValor.toFixed(2).replace('.', ',');
+             }
+             data.push({
+               'ID Pedido': String(rawId).trim(),
+               'Produto': String(row[1] || '').trim(),
+               'Canal': String(row[2] || '').trim(),
+               'Valor': rawValor
+             });
+          }
+        });
+
+        if (data.length === 0) throw new Error("A planilha está vazia ou não tem o formato correto.");
+        await importCanceladosComMes(data, mesCancelado);
+        alert(`${data.length} registos de cancelados importados para o mês ${mesCancelado}!`);
+      } catch (err: any) { alert(`Erro ao ler cancelados: ${err.message}`); }
+    };
+    reader.readAsArrayBuffer(file);
+    if (fileCanceladosRef.current) fileCanceladosRef.current.value = '';
+  };
+
+  // ----------------------------------------------------------------------
+  // NOVA LÓGICA DE IMPORTAÇÃO DE ADS COM MÊS
+  // ----------------------------------------------------------------------
+  const handleUploadAds = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const data = XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
+        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
+        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const parsedData = rows.slice(1).map((r: any[]) => ({
+          canal: String(r[0] || '').trim(),
+          custo_ads: parseSmartFloat(r[1], 'ADS')
+        })).filter(item => item.canal && item.custo_ads > 0);
 
-        if (data.length === 0) {
-          addLog('A planilha de cancelamentos está vazia.', 'error');
-          return;
-        }
-
-        await importCanceladosComMes(data, mesCancelado);
-        if (fileCanceladosRef.current) fileCanceladosRef.current.value = '';
-        alert(`Planilha de cancelamentos de ${mesCancelado} importada com sucesso!`);
+        if (parsedData.length === 0) throw new Error("A planilha está vazia ou sem dados válidos.");
+        
+        await importAdsComMes(parsedData, mesAds);
+        alert(`${parsedData.length} registos de ADS salvos para o mês ${mesAds}!`);
       } catch (err: any) {
-        addLog(`Erro ao importar cancelados: ${err.message}`, 'error');
+        addLog(`Erro ao importar ADS: ${err.message}`, 'error');
         alert(`Erro: ${err.message}`);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
+    if (fileAdsRef.current) fileAdsRef.current.value = '';
   };
 
-  // IMPORTAÇÃO DE TARIFAS DO SITE
   const handleUploadTarifasSite = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -252,7 +259,6 @@ export default function AdminPage() {
           const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
           rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
         }
-
         const idxId = colToIdx(colTarifasIdPedido);
         const idxVal = colToIdx(colTarifasValor);
         const novasTarifas: Record<string, number> = {};
@@ -261,59 +267,39 @@ export default function AdminPage() {
           if (!row || !row.length) return;
           const idPed = row[idxId] !== undefined ? String(row[idxId]).trim() : '';
           const valTarifa = parseSmartFloat(row[idxVal], 'TARIFAS');
-          if (idPed) {
-            novasTarifas[idPed] = valTarifa;
-          }
+          if (idPed) novasTarifas[idPed] = valTarifa;
         });
-
         await saveToCloudAndState('tarifas_site', novasTarifas, () => {});
         addLog(`Consulta de Tarifas do Site: ${Object.keys(novasTarifas).length} registos salvos.`, 'success');
         alert(`Sucesso! ${Object.keys(novasTarifas).length} tarifas do site importadas.`);
-      } catch (err: any) {
-        alert(`Erro ao ler tarifas: ${err.message}`);
-      }
+      } catch (err: any) { alert(`Erro ao ler tarifas: ${err.message}`); }
     };
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'ISO-8859-1');
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
+    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
+    else reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
   const handleUploadVendasCanal = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
-
     if (!isClube && (!faturados || faturados.length === 0)) {
       alert('ATENÇÃO: A base de Faturados (NFes Saída) está vazia! Por favor, suba a planilha de Faturados no Passo 1 antes de importar as vendas do e-commerce.');
       if (fileVendasRef.current) fileVendasRef.current.value = '';
       return;
     }
-
     setIsProcessing(true);
     const isShopee = selectedChannel.toLowerCase().includes('shopee');
-
-    const rule = channelRules.find((r: any) => r.canal === selectedChannel) || {
-      colIdPedido: 'A', colSku: isShopee ? 'S' : 'AS', colRebate: 'C', colPdv: isShopee ? 'BA' : 'J', colQuantidade: isShopee ? 'X' : 'I', formulaExcel: 'J - (J * 9%) - K'
-    };
-
+    const rule = channelRules.find((r: any) => r.canal === selectedChannel) || { colIdPedido: 'A', colSku: isShopee ? 'S' : 'AS', colRebate: 'C', colPdv: isShopee ? 'BA' : 'J', colQuantidade: isShopee ? 'X' : 'I', formulaExcel: 'J - (J * 9%) - K' };
     const reader = new FileReader();
-    
     reader.onload = async (evt) => {
       try {
         let rows: any[] = [];
         const fileName = file.name.toLowerCase();
-
         if (fileName.endsWith('.csv')) {
           const text = evt.target?.result as string;
           const lines = text.split(/\r?\n/);
-          rows = lines.map(line => {
-            const sep = line.includes(';') ? ';' : ',';
-            return line.split(sep).map(cell => cell.replace(/^["']|["']$/g, '').trim());
-          });
+          rows = lines.map(line => line.split(line.includes(';') ? ';' : ',').map(cell => cell.replace(/^["']|["']$/g, '').trim()));
         } else {
           const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
           rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
@@ -326,20 +312,14 @@ export default function AdminPage() {
           if (item.cpf) fatCpfMap.set(String(item.cpf).trim(), item.data);
         });
 
-        // Retiramos a verificação cancSet daqui, pois o cancelamento será agora abatido
-        // dinamicamente pela página do dashboard através do Mês.
-        // const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
-        
         const novasVendas: any[] = [];
         const loteId = `lote_${selectedChannel}_${Date.now()}`;
-
         let i = 0;
         let ignoradosPorNaoFaturados = 0;
 
         while (i < rows.length) {
           const row = rows[i];
           if (!row || !row.length) { i++; continue; }
-
           let rawId = '';
           let dataFaturamento = new Date().toISOString().slice(0, 10);
           let precoVendaUnitario = 0;
@@ -350,39 +330,23 @@ export default function AdminPage() {
           if (isClube) {
             const colAStr = row[0] !== undefined ? String(row[0]).trim().toLowerCase() : '';
             const colFStr = row[5] !== undefined ? String(row[5]).trim().toLowerCase() : '';
-            
-            if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') {
-              i++; continue;
-            }
-
+            if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') { i++; continue; }
             rawId = `clube-${Date.now()}-${i}`;
             dataFaturamento = parseExcelDate(row[0]);
-            
             precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
-            
             const apuracaoStr = (rule.formulaExcel || 'I').trim();
             if (!/[+\-*/()]/.test(apuracaoStr)) {
                 const apIdx = colToIdx(apuracaoStr);
                 repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
-            } else {
-                repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel);
-            }
-
+            } else { repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel); }
             skuVal = 'SKU-CLUBE-ISENTO'; 
-            
             const colQtdIdx = colToIdx(rule.colQuantidade || 'ZZZ');
             quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
-            
             if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
-
           } else {
             const colIdIdx = colToIdx(rule.colIdPedido || 'A');
             rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
-            
-            if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) {
-              i++; continue;
-            }
-
+            if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) { i++; continue; }
             rawId = rawId.replace(/\.0$/, '');
             if (rawId.toUpperCase().includes('E+')) {
               try {
@@ -390,10 +354,8 @@ export default function AdminPage() {
                 if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
               } catch {}
             }
-
             const rowCpf = extractCPF(row);
             let isFaturado = false;
-
             if (fatIdMap.has(rawId)) {
               isFaturado = true;
               dataFaturamento = fatIdMap.get(rawId);
@@ -401,46 +363,29 @@ export default function AdminPage() {
               isFaturado = true;
               dataFaturamento = fatCpfMap.get(rowCpf);
             }
-
             if (!isFaturado && (fatIdMap.size > 0 || fatCpfMap.size > 0)) {
               ignoradosPorNaoFaturados++;
               i++; 
               continue;
             }
-
             precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
-
             const colRebateIdx = colToIdx(rule.colRebate || 'C');
             const rebateRowValue = colRebateIdx >= 0 ? parseSmartFloat(row[colRebateIdx], selectedChannel) : 0;
             repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, rebateRowValue, selectedChannel);
-
             const colSkuIdx = colToIdx(rule.colSku || 'AS');
             skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
-            
             const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
             quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
-            
             if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
           }
 
-          novasVendas.push({
-            id_pedido: rawId,
-            data_faturamento: dataFaturamento,
-            canal: selectedChannel,
-            sku: skuVal,
-            quantidade: quantidade,
-            preco_venda: precoVendaUnitario,
-            repasse_liquido: repasseCalculado,
-            lote_id: loteId
-          });
+          novasVendas.push({ id_pedido: rawId, data_faturamento: dataFaturamento, canal: selectedChannel, sku: skuVal, quantidade: quantidade, preco_venda: precoVendaUnitario, repasse_liquido: repasseCalculado, lote_id: loteId });
           i++;
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        
         const filteredOldSales = sales.filter((s: any) => s.canal !== selectedChannel);
         const updatedSales = [...salesWithKeys, ...filteredOldSales];
-        
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
         const clubeMsg = isClube ? ' (Modo Loja Física)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
@@ -449,16 +394,10 @@ export default function AdminPage() {
       } catch (err: any) {
         addLog(`Erro ao processar vendas: ${err.message}`, 'error');
         alert(`Erro ao processar ficheiro: ${err.message}`);
-      } finally {
-        setIsProcessing(false);
-      }
+      } finally { setIsProcessing(false); }
     };
-
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'ISO-8859-1');
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
+    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
+    else reader.readAsArrayBuffer(file);
     if (fileVendasRef.current) fileVendasRef.current.value = '';
   };
 
@@ -484,13 +423,11 @@ export default function AdminPage() {
       alert('Por favor, selecione um canal específico acima para excluir o último lote enviado.');
       return;
     }
-
     const canalSales = sales.filter((s: any) => s.canal === targetChannelDelete);
     if (canalSales.length === 0) {
       alert(`Não existem vendas registadas para o canal ${targetChannelDelete}.`);
       return;
     }
-
     const lotes = Array.from(new Set(canalSales.map((s: any) => s.lote_id).filter(Boolean)));
     if (lotes.length === 0) {
       if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes. Deseja remover todas as vendas deste canal?`)) {
@@ -500,7 +437,6 @@ export default function AdminPage() {
       }
       return;
     }
-
     const ultimoLote = lotes[lotes.length - 1];
     if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}]?`)) {
       const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
@@ -550,6 +486,7 @@ export default function AdminPage() {
   }
 
   const canceladosMesAtual = (cancelados || []).filter((c: any) => c.mes_referencia === mesCancelado);
+  const adsMesAtual = (adsData || []).filter((a: any) => a.mes_referencia === mesAds);
 
   return (
     <div className="space-y-6">
@@ -573,7 +510,6 @@ export default function AdminPage() {
            <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {faturados.length}</p>
          </div>
 
-         {/* BLOCO DE CANCELADOS ATUALIZADO */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 space-y-3">
            <h3 className="font-bold text-rose-400 text-sm">Cancelados / Redutores</h3>
            <div>
@@ -584,11 +520,8 @@ export default function AdminPage() {
                 onChange={e => setMesCancelado(e.target.value)} 
                 className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-rose-500" 
               />
-              <p className="text-[9px] text-slate-400 mt-2">
-                * A planilha deve conter as colunas: <strong className="text-white">ID Pedido, Produto, Canal, Valor</strong>.
-              </p>
            </div>
-           <label className="cursor-pointer block text-center px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition mt-2">
+           <label className="cursor-pointer block text-center px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition mt-4">
              <input type="file" ref={fileCanceladosRef} className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>
              Subir Cancelados
            </label>
@@ -622,15 +555,26 @@ export default function AdminPage() {
            </label>
          </div>
 
+         {/* BLOCO DE ADS ATUALIZADO COM O MÊS */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30 flex flex-col justify-between">
            <div>
              <h3 className="font-bold text-white text-sm mb-1">Investimento ADS</h3>
              <p className="text-[10px] text-slate-400 mb-3">Coluna A: Nome do Canal | Coluna B: Valor Gasto</p>
+             <div className="mb-3">
+               <label className="text-[10px] text-slate-400 block mb-1">Mês de Referência para ADS</label>
+               <input 
+                 type="month" 
+                 value={mesAds} 
+                 onChange={e => setMesAds(e.target.value)} 
+                 className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-amber-500" 
+               />
+             </div>
            </div>
            <label className="cursor-pointer block py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={e => readGeneric(e, setAdsData, 'ADS', 'ads', adsData, (r:any) => ({val: parseSmartFloat(r[1], 'ADS'), obj: {canal: String(r[0]||'').trim(), custo_ads: parseSmartFloat(r[1], 'ADS')}}))} />
+             <input type="file" ref={fileAdsRef} className="hidden" accept=".xlsx, .csv" onChange={handleUploadAds} />
              Importar ADS
            </label>
+           <p className="text-[10px] text-slate-400 text-center mt-2">Registos p/ {mesAds}: <span className="text-amber-400 font-bold">{adsMesAtual.length}</span></p>
          </div>
 
          {/* Consulta Tarifas Site */}
