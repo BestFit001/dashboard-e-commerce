@@ -344,7 +344,7 @@ export default function DashboardPage() {
       // Faturamento Puro (NÃO DEDUZ PARA EXIBIÇÃO EM TELA)
       const faturadoBrutoPuro = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
       
-      // Faturamento Efetivo (DEDUZ CANCELAMENTOS PARA CÁLCULO DE META)
+      // Faturamento Efetivo (DEDUZ CANCELAMENTOS PARA CÁLCULO DE META E NOVA COLUNA)
       const faturadoComRedutor = Math.max(0, faturadoBrutoPuro - cancelamentosMes);
       
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
@@ -377,7 +377,8 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        faturadoBruto: faturadoBrutoPuro, // Devolve o valor PURO para exibição na interface!
+        faturadoBruto: faturadoBrutoPuro, // Devolve o valor PURO para a primeira coluna
+        faturadoComRedutor, // NOVO: Devolve o valor C/ REDUTOR para a segunda coluna
         lucroLiquidoFinal, 
         progressoMetaPct, 
         margemBrutaPct, 
@@ -602,14 +603,19 @@ export default function DashboardPage() {
                  </div>
                </div>
                
-               <div className="grid grid-cols-2 gap-3 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
+               {/* 3 COLUNAS: FAT BRUTO | C/ REDUTOR | LUCRO LIQ */}
+               <div className="grid grid-cols-3 gap-2 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
                  <div>
-                   <span className="text-[10px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
-                   <strong className="text-sm font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   <span className="text-[9px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
+                   <strong className="text-xs font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                  </div>
                  <div>
-                   <span className="text-[10px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
-                   <strong className="text-sm font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   <span className="text-[9px] text-sky-200 block font-bold tracking-wider mb-0.5">C/ REDUTOR</span>
+                   <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                 </div>
+                 <div>
+                   <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
+                   <strong className="text-xs font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                  </div>
                </div>
 
