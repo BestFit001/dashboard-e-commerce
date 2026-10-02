@@ -110,6 +110,21 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const importCanceladosComMes = async (rows: any[], mesReferencia: string) => {
+    const formatted = rows.map((r: any) => ({
+      id_pedido: String(r['ID Pedido'] || r.id_pedido || ''),
+      produto: String(r['Produto'] || r.produto || ''),
+      canal: String(r['Canal'] || r.canal || ''),
+      valor: Number(String(r['Valor'] || r.valor || 0).replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0,
+      mes_referencia: mesReferencia
+    }));
+
+    const updatedCancelados = [...cancelados.filter((c: any) => c.mes_referencia !== mesReferencia), ...formatted];
+    setCancelados(updatedCancelados);
+    await updateCloudState('cancelados', updatedCancelados);
+    addLog(`Cancelamentos importados para o mês ${mesReferencia} com sucesso!`, 'success');
+  };
+
   return (
     <AppContext.Provider value={{
       users, setUsers, currentUser, setCurrentUser, isAuthLoaded,
@@ -140,7 +155,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         const updated = typeof newCanc === 'function' ? newCanc(cancelados) : newCanc;
         setCancelados(updated);
         await updateCloudState('cancelados', updated);
-      }, 
+      },
+      importCanceladosComMes,
       channelLogos, setChannelLogos,
       channelRules, setChannelRules: async (newRules: any) => {
         const updated = typeof newRules === 'function' ? newRules(channelRules) : newRules;
