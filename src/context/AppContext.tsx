@@ -112,10 +112,10 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const importCanceladosComMes = async (rows: any[], mesReferencia: string) => {
     const formatted = rows.map((r: any) => ({
-      id_pedido: String(r['ID Pedido'] || r.id_pedido || ''),
-      produto: String(r['Produto'] || r.produto || ''),
-      canal: String(r['Canal'] || r.canal || ''),
-      valor: Number(String(r['Valor'] || r.valor || 0).replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0,
+      id_pedido: String(r['ID Pedido'] || r['id_pedido'] || r['Id Pedido'] || ''),
+      produto: String(r['Produto'] || r['produto'] || ''),
+      canal: String(r['Canal'] || r['canal'] || ''),
+      valor: Number(String(r['Valor'] || r['valor'] || 0).replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0,
       mes_referencia: mesReferencia
     }));
 

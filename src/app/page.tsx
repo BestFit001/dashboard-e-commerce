@@ -4,7 +4,18 @@ import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, cancelados, addLog } = useAppContext();
+  const context = useAppContext();
+  const canais = context?.canais || [];
+  const sales = context?.sales || [];
+  const adsData = context?.adsData || [];
+  const flexData = context?.flexData || [];
+  const products = context?.products || [];
+  const goals = context?.goals || [];
+  const channelRules = context?.channelRules || [];
+  const channelLogos = context?.channelLogos || {};
+  const users = context?.users || [];
+  const cancelados = context?.cancelados || [];
+  const addLog = context?.addLog || (() => {});
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -79,7 +90,6 @@ export default function DashboardPage() {
     return currentMonthDefault;
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
-  // Cancelamentos aplicados estritamente ao mês de referência selecionado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => {
@@ -96,7 +106,6 @@ export default function DashboardPage() {
     const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
 
     return (sales || []).filter((s: any) => {
-        // Se o pedido está na lista de cancelados do mês, retira da contagem de faturados
         if (cancelledOrderIds.has(String(s.id_pedido))) return false;
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
@@ -174,12 +183,12 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // Pedidos de cancelamentos que não estavam nos faturados do sistema atuam como redutores puros da meta/faturamento do mês
     const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
     const redutoresSemFaturamento = (activeCancelados || []).filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
     const totalRedutorValor = redutoresSemFaturamento.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
+    const lojasFisicasRepasse: any[] = [];
 
     activeChannels.forEach(channelName => {
       const fisico = isChannelFisico(channelName);
@@ -190,13 +199,14 @@ export default function DashboardPage() {
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
+
+      let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
+      if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
         const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
-
-        let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
-        if (!nomeLimpo) nomeLimpo = channelName;
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
@@ -204,6 +214,11 @@ export default function DashboardPage() {
           progresso,
           diff,
           abaixo: progresso < 100
+        });
+
+        lojasFisicasRepasse.push({
+          nome: nomeLimpo,
+          repasse: repasseCanal
         });
       } else {
         metaDigitalTotal += metaCanal;
@@ -231,7 +246,6 @@ export default function DashboardPage() {
       }
     });
 
-    // Abate o redutor puro no faturamento e repasse
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
     faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
 
@@ -261,6 +275,7 @@ export default function DashboardPage() {
       lucroDigital,
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
+      lojasFisicasRepasse,
       progressoDigitalPct,
       diffDigital,
       totalRedutorValor
@@ -300,8 +315,13 @@ export default function DashboardPage() {
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
-      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
+      // Se este for o canal cujos cancelamentos são redutores puros (sem estorno), aplicamos na métrica do canal
+      const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
+      const redutoresCanal = (activeCancelados || []).filter((c: any) => c.canal === channelName && !systemSaleIds.has(String(c.id_pedido)));
+      const valorRedutorCanal = redutoresCanal.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+
+      const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - valorRedutorCanal);
+      const repasseTotal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - valorRedutorCanal);
       
       const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
@@ -335,7 +355,7 @@ export default function DashboardPage() {
         logoUrl 
       };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados, sales]);
 
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
