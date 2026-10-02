@@ -90,6 +90,7 @@ export default function DashboardPage() {
     return currentMonthDefault;
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
+  // Filtra os cancelamentos para atuar apenas no Mês de Referência visualizado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => {
@@ -99,7 +100,7 @@ export default function DashboardPage() {
     });
   }, [cancelados, currentRefMonth, appliedChannelFilter]);
 
-  const enrichedSalesBase = useMemo(() => {
+  const enrichedSales = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -180,13 +181,8 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    const baseSaleIds = new Set((enrichedSalesBase || []).map((s: any) => String(s.id_pedido)));
-    const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
-
-    const validSales = enrichedSalesBase.filter((s: any) => !cancelledOrderIds.has(String(s.id_pedido)));
-    
-    const redutoresPuros = activeCancelados.filter((c: any) => !baseSaleIds.has(String(c.id_pedido)));
-    const totalRedutorValor = redutoresPuros.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto
+    const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
     const lojasFisicasRepasse: any[] = [];
@@ -198,14 +194,16 @@ export default function DashboardPage() {
                    || { meta_valor: 0 };
       const metaCanal = parseCurrency(goalObj.meta_valor);
 
-      const chSales = validSales.filter((s: any) => s.canal === channelName);
+      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
-      const redutoresCanal = redutoresPuros
+      // Cancelamentos específicos deste canal
+      const cancelamentosCanal = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      const faturadoCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - redutoresCanal);
-      const repasseCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - redutoresCanal);
+      // O Bruto sofre o abatimento dos cancelamentos. O Repasse NÃO SOFRE abatimento.
+      const faturadoCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - cancelamentosCanal);
+      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
       let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
       if (!nomeLimpo) nomeLimpo = channelName;
@@ -231,7 +229,7 @@ export default function DashboardPage() {
       }
     });
 
-    validSales.forEach((s: any) => {
+    enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
       const valBruto = s.preco_venda;
       const valRepasse = s.repasse_liquido;
@@ -252,28 +250,28 @@ export default function DashboardPage() {
       }
     });
 
-    faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
-    faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
+    // Abate GLOBAL do Faturamento Bruto apenas (mantém Repasse Liquido intacto)
+    faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
-    const redutoresDigitais = redutoresPuros
+    // O progresso digital subtrai os cancelamentos digitais do faturamento bruto
+    const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
-    fatBrutoDigital = Math.max(0, fatBrutoDigital - redutoresDigitais);
-    repasseDigital = Math.max(0, repasseDigital - redutoresDigitais);
+    fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
-    const totalFlexCost = validSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
     
-    // NOVO FILTRO DE ADS: Apenas considera ADS do mês atual selecionado
     const filteredAds = adsData.filter((a: any) => 
       a.mes_referencia === currentRefMonth && 
       (appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter)
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
+    // Lucro Líquido não sofre qualquer dedução de cancelamentos
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
@@ -291,14 +289,14 @@ export default function DashboardPage() {
       lucroLiquidoReal, 
       lucroFisico,
       lucroDigital,
-      totalPedidos: validSales.length,
+      totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
       lojasFisicasRepasse,
       progressoDigitalPct,
       diffDigital,
-      totalRedutorValor
+      totalCancelamentosValor
     };
-  }, [enrichedSalesBase, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
+  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -327,27 +325,22 @@ export default function DashboardPage() {
     const diasFaltantes = Math.max(1, totalDiasMes - diaAtual);
 
     return channelsToAnalyze.map(channelName => {
-      const baseSaleIds = new Set((enrichedSalesBase || []).map((s: any) => String(s.id_pedido)));
-      const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
-      
-      const validSales = enrichedSalesBase.filter((s: any) => !cancelledOrderIds.has(String(s.id_pedido)));
-      const chSales = validSales.filter((s: any) => s.canal === channelName);
+      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const redutoresCanal = activeCancelados.filter((c: any) => 
-        String(c.canal).toLowerCase() === String(channelName).toLowerCase() && 
-        !baseSaleIds.has(String(c.id_pedido))
-      );
-      const valorRedutorCanal = redutoresCanal.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+      // Identifica os Cancelamentos deste Canal
+      const cancelamentosMes = activeCancelados
+        .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
+        .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - valorRedutorCanal);
-      const repasseTotal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - valorRedutorCanal);
+      // Faturamento Bruto deduz os Cancelamentos. O Repasse Liquido permanece intacto!
+      const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - cancelamentosMes);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       
-      // FILTRO ADS ESPECÍFICO DO CANAL (Considera apenas os ADS enviados para este mês)
       const canalAds = adsData
         .filter((a: any) => a.canal === channelName && a.mes_referencia === currentRefMonth)
         .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
@@ -358,7 +351,10 @@ export default function DashboardPage() {
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = parseCurrency(goalObj.meta_valor);
+      
+      // O Progresso da meta usa automaticamente o faturadoBruto que JÁ tem o abatimento dos cancelamentos!
       const progressoMetaPct = metaBase > 0 ? (faturadoBruto / metaBase) * 100 : 0;
+      
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
 
@@ -380,10 +376,11 @@ export default function DashboardPage() {
         projecaoFaturamento,
         valorFaltante,
         mediaDiariaNecessaria,
+        cancelamentosMes,
         logoUrl 
       };
     });
-  }, [enrichedSalesBase, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
 
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
@@ -484,7 +481,8 @@ export default function DashboardPage() {
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             <p className="text-[10px] text-slate-500 mt-1">
-              {kpis.totalPedidos} itens validados {kpis.totalRedutorValor > 0 ? `(Redutor: R$ ${kpis.totalRedutorValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}
+              {kpis.totalPedidos} itens validados
+              {kpis.totalCancelamentosValor > 0 && <span className="text-rose-400 block mt-0.5">Cancelamentos: - R$ {kpis.totalCancelamentosValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>}
             </p>
           </div>
           
@@ -621,6 +619,14 @@ export default function DashboardPage() {
                      </>
                    )}
                  </div>
+                 
+                 {/* TERCEIRA LINHA - CANCELAMENTOS DO MÊS */}
+                 {item.cancelamentosMes > 0 && (
+                   <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">Cancelamentos do Mês:</span>
+                     <strong className="text-xs font-black text-rose-400">- R$ {item.cancelamentosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                 )}
                </div>
                
                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
