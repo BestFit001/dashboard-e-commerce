@@ -181,7 +181,7 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto
+    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto Consolidado Global
     const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -196,25 +196,28 @@ export default function DashboardPage() {
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
-      // Cancelamentos específicos deste canal
       const cancelamentosCanal = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      // O Bruto sofre o abatimento dos cancelamentos. O Repasse NÃO SOFRE abatimento.
-      const faturadoCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - cancelamentosCanal);
+      // Faturamento Puro (sem abater) para exibir nas listagens detalhadas
+      const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      
+      // Faturamento Efetivo (com abate) para cálculo matemático da META
+      const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
       const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
       let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
       if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
-        const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
+        // Progresso usa o Faturamento Efetivo (já com redutor)
+        const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
-          faturado: faturadoCanal,
+          faturado: faturadoPuroCanal, // Exibe o puro visualmente
           progresso,
           diff,
           abaixo: progresso < 100
@@ -250,17 +253,18 @@ export default function DashboardPage() {
       }
     });
 
-    // Abate GLOBAL do Faturamento Bruto apenas (mantém Repasse Liquido intacto)
+    // Abate GLOBAL do Faturamento Bruto geral, mantendo Repasse Intacto
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
-    // O progresso digital subtrai os cancelamentos digitais do faturamento bruto
+    // O progresso digital subtrai os cancelamentos digitais apenas para as metas consolidadas do e-commerce
     const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
-    fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
+    // fatBrutoDigital base para a meta
+    const fatBrutoDigitalParaMeta = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
-    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigitalParaMeta / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
@@ -279,7 +283,7 @@ export default function DashboardPage() {
     return { 
       faturamentoBrutoVendas, 
       fatBrutoFisico,
-      fatBrutoDigital, 
+      fatBrutoDigital, // Mostrará o puro nas sub-listagens
       faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
@@ -337,8 +341,12 @@ export default function DashboardPage() {
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      // Faturamento Bruto deduz os Cancelamentos. O Repasse Liquido permanece intacto!
-      const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - cancelamentosMes);
+      // Faturamento Puro (NÃO DEDUZ PARA EXIBIÇÃO EM TELA)
+      const faturadoBrutoPuro = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      
+      // Faturamento Efetivo (DEDUZ CANCELAMENTOS PARA CÁLCULO DE META)
+      const faturadoComRedutor = Math.max(0, faturadoBrutoPuro - cancelamentosMes);
+      
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       
       const canalAds = adsData
@@ -352,14 +360,15 @@ export default function DashboardPage() {
       
       const metaBase = parseCurrency(goalObj.meta_valor);
       
-      // O Progresso da meta usa automaticamente o faturadoBruto que JÁ tem o abatimento dos cancelamentos!
-      const progressoMetaPct = metaBase > 0 ? (faturadoBruto / metaBase) * 100 : 0;
+      // O Progresso da meta usa automaticamente o Faturamento Efetivo (já com redutor!)
+      const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
-      const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
-      const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
+      const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
+      const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
-      const projecaoFaturamento = (faturadoBruto / diasPassados) * totalDiasMes;
-      const valorFaltante = Math.max(0, metaBase - faturadoBruto);
+      // Projeção e valor faltante baseados no esforço líquido/efetivo (com redutor)
+      const projecaoFaturamento = (faturadoComRedutor / diasPassados) * totalDiasMes;
+      const valorFaltante = Math.max(0, metaBase - faturadoComRedutor);
       const mediaDiariaNecessaria = valorFaltante > 0 ? valorFaltante / diasFaltantes : 0;
 
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
@@ -368,7 +377,7 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        faturadoBruto, 
+        faturadoBruto: faturadoBrutoPuro, // Devolve o valor PURO para exibição na interface!
         lucroLiquidoFinal, 
         progressoMetaPct, 
         margemBrutaPct, 
@@ -482,7 +491,7 @@ export default function DashboardPage() {
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
             <p className="text-[10px] text-slate-500 mt-1">
               {kpis.totalPedidos} itens validados
-              {kpis.totalCancelamentosValor > 0 && <span className="text-rose-400 block mt-0.5">Cancelamentos: - R$ {kpis.totalCancelamentosValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>}
+              {kpis.totalCancelamentosValor > 0 && <span className="text-rose-400 block mt-0.5">Redutor Consolidado: - R$ {kpis.totalCancelamentosValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>}
             </p>
           </div>
           
