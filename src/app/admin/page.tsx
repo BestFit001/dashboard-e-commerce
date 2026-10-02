@@ -8,7 +8,7 @@ export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
     sales, setSales, flexData, setFlexData, adsData, setAdsData, 
-    faturados, setFaturados, cancelados, setCancelados, addLog, logs 
+    faturados, setFaturados, cancelados, setCancelados, importCanceladosComMes, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
@@ -18,13 +18,16 @@ export default function AdminPage() {
   
   const [colFaturadosObs, setColFaturadosObs] = useState('AI');
   const [colFaturadosData, setColFaturadosData] = useState('D');
-  const [colCancelados, setColCancelados] = useState('A');
+  
+  // Novo estado de Mês Alvo para Cancelados (Redutores)
+  const [mesCancelado, setMesCancelado] = useState(new Date().toISOString().slice(0, 7));
 
   // Configurações para Consulta Tarifas Site
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
   const [colTarifasValor, setColTarifasValor] = useState('E');
 
   const fileVendasRef = useRef<HTMLInputElement>(null);
+  const fileCanceladosRef = useRef<HTMLInputElement>(null);
 
   const auth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,32 +210,30 @@ export default function AdminPage() {
   };
 
   const handleUploadCancelados = (e: any) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        const novosCancelados: any[] = [];
-        const idxId = colToIdx(colCancelados);
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
 
-        rows.slice(1).forEach((row) => {
-          if (!row || !row.length) return;
-          const rawId = idxId >= 0 ? row[idxId] : null;
-          if (rawId) novosCancelados.push(String(rawId).trim());
-        });
+        if (data.length === 0) {
+          addLog('A planilha de cancelamentos está vazia.', 'error');
+          return;
+        }
 
-        const updatedCancelados = [...novosCancelados, ...cancelados];
-        await saveToCloudAndState('cancelados', updatedCancelados, setCancelados);
-        addLog(`${novosCancelados.length} IDs Cancelados salvos na nuvem.`, 'warning');
-        alert(`${novosCancelados.length} cancelados salvos!`);
+        await importCanceladosComMes(data, mesCancelado);
+        if (fileCanceladosRef.current) fileCanceladosRef.current.value = '';
+        alert(`Planilha de cancelamentos de ${mesCancelado} importada com sucesso!`);
       } catch (err: any) {
-        alert(`Erro ao ler cancelados: ${err.message}`);
+        addLog(`Erro ao importar cancelados: ${err.message}`, 'error');
+        alert(`Erro: ${err.message}`);
       }
     };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
+    reader.readAsBinaryString(file);
   };
 
   // IMPORTAÇÃO DE TARIFAS DO SITE
@@ -325,7 +326,10 @@ export default function AdminPage() {
           if (item.cpf) fatCpfMap.set(String(item.cpf).trim(), item.data);
         });
 
-        const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
+        // Retiramos a verificação cancSet daqui, pois o cancelamento será agora abatido
+        // dinamicamente pela página do dashboard através do Mês.
+        // const cancSet = new Set(cancelados.map((id: string) => String(id).trim()));
+        
         const novasVendas: any[] = [];
         const loteId = `lote_${selectedChannel}_${Date.now()}`;
 
@@ -386,8 +390,6 @@ export default function AdminPage() {
                 if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
               } catch {}
             }
-
-            if (cancSet.has(rawId)) { i++; continue; }
 
             const rowCpf = extractCPF(row);
             let isFaturado = false;
@@ -547,6 +549,8 @@ export default function AdminPage() {
     );
   }
 
+  const canceladosMesAtual = (cancelados || []).filter((c: any) => c.mes_referencia === mesCancelado);
+
   return (
     <div className="space-y-6">
        <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases e Filtros ERP</h2>
@@ -569,16 +573,26 @@ export default function AdminPage() {
            <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {faturados.length}</p>
          </div>
 
+         {/* BLOCO DE CANCELADOS ATUALIZADO */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 space-y-3">
-           <h3 className="font-bold text-rose-400 text-sm">Cancelados</h3>
+           <h3 className="font-bold text-rose-400 text-sm">Cancelados / Redutores</h3>
            <div>
-              <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID</span>
-              <input type="text" value={colCancelados} onChange={e => setColCancelados(e.target.value.toUpperCase())} className="w-24 p-2 bg-slate-950 text-rose-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+              <span className="block text-[10px] text-slate-400 font-bold mb-1">Mês de Referência para Abatimento</span>
+              <input 
+                type="month" 
+                value={mesCancelado} 
+                onChange={e => setMesCancelado(e.target.value)} 
+                className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-rose-500" 
+              />
+              <p className="text-[9px] text-slate-400 mt-2">
+                * A planilha deve conter as colunas: <strong className="text-white">ID Pedido, Produto, Canal, Valor</strong>.
+              </p>
            </div>
-           <label className="cursor-pointer block text-center px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition mt-4">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>Subir Cancelados
+           <label className="cursor-pointer block text-center px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition mt-2">
+             <input type="file" ref={fileCanceladosRef} className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>
+             Subir Cancelados
            </label>
-           <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {cancelados.length}</p>
+           <p className="text-[10px] text-slate-400 text-center">Registos p/ {mesCancelado}: <span className="text-emerald-400 font-bold">{canceladosMesAtual.length}</span></p>
          </div>
        </div>
 
@@ -619,7 +633,7 @@ export default function AdminPage() {
            </label>
          </div>
 
-         {/* NOVO BLOCO: Consulta Tarifas Site */}
+         {/* Consulta Tarifas Site */}
          <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30 flex flex-col justify-between space-y-3">
            <div>
              <h3 className="font-bold text-white text-sm mb-1">Consulta Tarifas Site</h3>

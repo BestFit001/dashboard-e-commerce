@@ -4,18 +4,7 @@ import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const context = useAppContext();
-  const canais = context?.canais || [];
-  const sales = context?.sales || [];
-  const adsData = context?.adsData || [];
-  const flexData = context?.flexData || [];
-  const products = context?.products || [];
-  const goals = context?.goals || [];
-  const channelRules = context?.channelRules || [];
-  const channelLogos = context?.channelLogos || {};
-  const users = context?.users || [];
-  const cancelados = context?.cancelados || [];
-  const addLog = context?.addLog || (() => {});
+  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, addLog } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -24,12 +13,6 @@ export default function DashboardPage() {
   const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
-  const previousMonthDefault = useMemo(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 7);
-  }, []);
-
   const [dateFilter, setDateFilter] = useState('MES_ATUAL');
   const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
   const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -48,7 +31,9 @@ export default function DashboardPage() {
         if (data && data.dados) {
           setTarifasSiteMap(data.dados);
         }
-      } catch (err) {}
+      } catch (err) {
+        // Ignora caso não exista
+      }
     }
     fetchTarifas();
   }, []);
@@ -71,42 +56,11 @@ export default function DashboardPage() {
     return nome.includes('clube') || nome.includes('loja') || nome.includes('paineiras') || nome.includes('hebraica');
   };
 
-  const parseCurrency = (val: any) => {
-    if (typeof val === 'number') return isNaN(val) ? 0 : val;
-    if (!val) return 0;
-    let s = String(val).trim().replace('R$', '').replace('R', '').trim();
-    if (s.includes('.') && s.includes(',')) {
-      s = s.replace(/\./g, '').replace(',', '.');
-    } else if (s.includes(',')) {
-      s = s.replace(',', '.');
-    }
-    const num = Number(s);
-    return isNaN(num) ? 0 : num;
-  };
-
-  const currentRefMonth = useMemo(() => {
-    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
-    if (appliedDateFilter === 'MES_ANTERIOR') return previousMonthDefault;
-    return currentMonthDefault;
-  }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
-
-  const activeCancelados = useMemo(() => {
-    if (!cancelados) return [];
-    return cancelados.filter((c: any) => {
-      if (c.mes_referencia !== currentRefMonth) return false;
-      if (appliedChannelFilter !== 'TODOS' && c.canal !== appliedChannelFilter) return false;
-      return true;
-    });
-  }, [cancelados, currentRefMonth, appliedChannelFilter]);
-
   const enrichedSales = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
-
-    return (sales || []).filter((s: any) => {
-        if (cancelledOrderIds.has(String(s.id_pedido))) return false;
+    return sales.filter((s: any) => {
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
         const fisico = isChannelFisico(s.canal);
@@ -124,10 +78,6 @@ export default function DashboardPage() {
               const [ano, mes] = currentMonthDefault.split('-');
               if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
            }
-           if (appliedDateFilter === 'MES_ANTERIOR') {
-              const [ano, mes] = previousMonthDefault.split('-');
-              if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
-           }
            if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate && appliedEndDate) {
               const start = new Date(appliedStartDate + 'T00:00:00');
               const end = new Date(appliedEndDate + 'T23:59:59');
@@ -138,36 +88,30 @@ export default function DashboardPage() {
       })
       .map((s: any) => {
         const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
-        const qtd = parseCurrency(s.quantidade) || 1;
-        const custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
+        const custoCMV = ((Number(prod.preco_custo) || 0) + (Number(prod.custo_embalagem) || 0)) * (Number(s.quantidade) || 1);
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
-        const custoFlex = flexOrder ? parseCurrency(flexOrder.valor_frete) : 0;
+        const custoFlex = flexOrder ? (Number(flexOrder.valor_frete) || 0) : 0;
         
-        const precoVenda = parseCurrency(s.preco_venda);
-        let repasseLiquido = parseCurrency(s.repasse_liquido);
-        if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) {
-          repasseLiquido = precoVenda;
-        }
+        let repasseLiquido = Number(s.repasse_liquido) || Number(s.repasse) || 0; 
         
         const nomeCanal = String(s.canal || '').toLowerCase();
         if ((nomeCanal.includes('site') || nomeCanal.includes('loja virtual')) && tarifasSiteMap[String(s.id_pedido)]) {
-           const taxaVindi = parseCurrency(tarifasSiteMap[String(s.id_pedido)]);
+           const taxaVindi = Number(tarifasSiteMap[String(s.id_pedido)]) || 0;
            repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
         }
 
         const ganhoBruto = repasseLiquido - custoCMV; 
         const ganhoLiquido = ganhoBruto - custoFlex;
         
-        return { 
-          ...s, 
-          preco_venda: precoVenda,
-          custoCMV, 
-          custoFlex, 
-          ganhoLiquido, 
-          repasse_liquido: repasseLiquido 
-        };
+        return { ...s, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: isNaN(repasseLiquido) ? 0 : repasseLiquido };
       });
-  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap, activeCancelados]);
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, tarifasSiteMap]);
+
+  const currentRefMonth = useMemo(() => {
+    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
+    if (appliedDateFilter === 'MES_ATUAL') return currentMonthDefault;
+    return new Date().toISOString().slice(0, 7);
+  }, [appliedDateFilter, appliedStartDate, currentMonthDefault]);
 
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -183,30 +127,24 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
-    const redutoresSemFaturamento = (activeCancelados || []).filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
-    const totalRedutorValor = redutoresSemFaturamento.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
-
     const lojasFisicasDetalhes: any[] = [];
-    const lojasFisicasRepasse: any[] = [];
 
     activeChannels.forEach(channelName => {
       const fisico = isChannelFisico(channelName);
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0 };
-      const metaCanal = parseCurrency(goalObj.meta_valor);
+      const metaCanal = Number(goalObj.meta_valor) || 0;
 
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
-      const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
-      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
-
-      let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
-      if (!nomeLimpo) nomeLimpo = channelName;
+      const faturadoCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
 
       if (fisico) {
         const progresso = metaCanal > 0 ? (faturadoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
+
+        let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
+        if (!nomeLimpo) nomeLimpo = channelName;
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
@@ -215,11 +153,6 @@ export default function DashboardPage() {
           diff,
           abaixo: progresso < 100
         });
-
-        lojasFisicasRepasse.push({
-          nome: nomeLimpo,
-          repasse: repasseCanal
-        });
       } else {
         metaDigitalTotal += metaCanal;
       }
@@ -227,60 +160,55 @@ export default function DashboardPage() {
 
     enrichedSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
-      const valBruto = s.preco_venda;
-      const valRepasse = s.repasse_liquido;
-      const valCmv = s.custoCMV;
+      const valBruto = Number(s.preco_venda) || 0;
+      const valRepasse = Number(s.repasse_liquido) || 0;
+      const valCmv = Number(s.custoCMV) || 0;
 
-      faturamentoBrutoVendas += valBruto;
-      faturamentoLiquidoRepasse += valRepasse;
-      custoTotalCMV += valCmv;
+      faturamentoBrutoVendas += isNaN(valBruto) ? 0 : valBruto;
+      faturamentoLiquidoRepasse += isNaN(valRepasse) ? 0 : valRepasse;
+      custoTotalCMV += isNaN(valCmv) ? 0 : valCmv;
 
       if (fisico) {
-        fatBrutoFisico += valBruto;
-        repasseFisico += valRepasse;
-        cmvFisico += valCmv;
+        fatBrutoFisico += isNaN(valBruto) ? 0 : valBruto;
+        repasseFisico += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvFisico += isNaN(valCmv) ? 0 : valCmv;
       } else {
-        fatBrutoDigital += valBruto;
-        repasseDigital += valRepasse;
-        cmvDigital += valCmv;
+        fatBrutoDigital += isNaN(valBruto) ? 0 : valBruto;
+        repasseDigital += isNaN(valRepasse) ? 0 : valRepasse;
+        cmvDigital += isNaN(valCmv) ? 0 : valCmv;
       }
     });
-
-    faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
-    faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
 
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
-    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
-    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + (Number(a.custo_ads) || 0), 0);
     
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
-      faturamentoBrutoVendas, 
+      faturamentoBrutoVendas: isNaN(faturamentoBrutoVendas) ? 0 : faturamentoBrutoVendas, 
       fatBrutoFisico,
       fatBrutoDigital, 
-      faturamentoLiquidoRepasse, 
+      faturamentoLiquidoRepasse: isNaN(faturamentoLiquidoRepasse) ? 0 : faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
-      custoTotalCMV, 
+      custoTotalCMV: isNaN(custoTotalCMV) ? 0 : custoTotalCMV, 
       cmvFisico,
       cmvDigital,
-      lucroLiquidoReal, 
+      lucroLiquidoReal: isNaN(lucroLiquidoReal) ? 0 : lucroLiquidoReal, 
       lucroFisico,
       lucroDigital,
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
-      lojasFisicasRepasse,
       progressoDigitalPct,
-      diffDigital,
-      totalRedutorValor
+      diffDigital
     };
-  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados, sales]);
+  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -315,20 +243,16 @@ export default function DashboardPage() {
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
-      const redutoresCanal = (activeCancelados || []).filter((c: any) => c.canal === channelName && !systemSaleIds.has(String(c.id_pedido)));
-      const valorRedutorCanal = redutoresCanal.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
-
-      const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - valorRedutorCanal);
-      const repasseTotal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - valorRedutorCanal);
+      const faturadoBruto = chSales.reduce((sum: number, s: any) => sum + (Number(s.preco_venda) || 0), 0);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + (Number(s.repasse_liquido) || 0), 0);
       
-      const canalAds = adsData.filter((a: any) => a.canal === channelName).reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
-      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
-      const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+      const canalAds = adsData.find((a: any) => a.canal === channelName)?.custo_ads || 0;
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoCMV) || 0), 0);
+      const flexCanal = chSales.reduce((sum: number, s: any) => sum + (Number(s.custoFlex) || 0), 0);
 
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
-      const metaBase = parseCurrency(goalObj.meta_valor);
+      const metaBase = Number(goalObj.meta_valor) || 0;
       const progressoMetaPct = metaBase > 0 ? (faturadoBruto / metaBase) * 100 : 0;
       const margemBrutaPct = faturadoBruto > 0 ? (repasseTotal / faturadoBruto) * 100 : 0;
       const margemLiquidaPct = faturadoBruto > 0 ? (lucroLiquidoFinal / faturadoBruto) * 100 : 0;
@@ -343,18 +267,18 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        faturadoBruto, 
-        lucroLiquidoFinal, 
-        progressoMetaPct, 
-        margemBrutaPct, 
-        margemLiquidaPct, 
-        projecaoFaturamento,
+        faturadoBruto: isNaN(faturadoBruto) ? 0 : faturadoBruto, 
+        lucroLiquidoFinal: isNaN(lucroLiquidoFinal) ? 0 : lucroLiquidoFinal, 
+        progressoMetaPct: isNaN(progressoMetaPct) ? 0 : progressoMetaPct, 
+        margemBrutaPct: isNaN(margemBrutaPct) ? 0 : margemBrutaPct, 
+        margemLiquidaPct: isNaN(margemLiquidaPct) ? 0 : margemLiquidaPct, 
+        projecaoFaturamento: isNaN(projecaoFaturamento) ? 0 : projecaoFaturamento,
         valorFaltante,
         mediaDiariaNecessaria,
         logoUrl 
       };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados, sales]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais]);
 
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
@@ -408,7 +332,6 @@ export default function DashboardPage() {
             <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
             <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
               <option value="MES_ATUAL" className="bg-slate-900 text-white">Mês Atual (Padrão Metas)</option>
-              <option value="MES_ANTERIOR" className="bg-slate-900 text-white">Mês Anterior</option>
               <option value="HOJE" className="bg-slate-900 text-white">Hoje</option>
               <option value="SEMANA" className="bg-slate-900 text-white">Últimos 7 dias</option>
               <option value="QUINZENA" className="bg-slate-900 text-white">Últimos 15 dias</option>
@@ -449,14 +372,12 @@ export default function DashboardPage() {
       {/* 4 PAINÉIS DO TOPO */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
-        {/* 1. FATURAMENTO BRUTO */}
+        {/* 1. FATURAMENTO BRUTO (Com divisão individualizada para as duas lojas físicas) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            <p className="text-[10px] text-slate-500 mt-1">
-              {kpis.totalPedidos} itens validados {kpis.totalRedutorValor > 0 ? `(Redutor: R$ ${kpis.totalRedutorValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}
-            </p>
+            <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
           </div>
           
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -485,7 +406,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. REPASSE TOTAL */}
+        {/* 2. REPASSE TOTAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
@@ -503,7 +424,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL */}
+        {/* 3. CMV TOTAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -521,7 +442,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. LUCRO LÍQUIDO REAL */}
+        {/* 4. LUCRO LÍQUIDO REAL (Consolidado: Lojas Físicas em cima, E-commerce embaixo) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
