@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 
-export const INITIAL_ADMIN_PASS = 'admin123'; // Constante necessária para a página de Admin
+export const INITIAL_ADMIN_PASS = 'admin123';
 
 interface AppContextType {
   canais: string[];
@@ -107,7 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.from('tb_cancelamentos').upsert(formattedRows, { onConflict: 'id_pedido,mes_referencia' });
       if (error) throw error;
 
-      setCancellations(prev => [...prev.filter(c => c.mes_referencia !== mesReferencia), ...formattedRows]);
+      setCancellations(prev => [...(prev || []).filter(c => c.mes_referencia !== mesReferencia), ...formattedRows]);
       addLog(`Planilha de cancelamentos importada para o mês ${mesReferencia} com sucesso!`, 'success');
     } catch (err: any) {
       addLog(`Erro ao importar cancelamentos: ${err.message}`, 'error');
@@ -116,17 +116,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      canais,
-      sales,
-      adsData,
-      flexData,
-      products,
-      goals,
-      channelRules,
-      channelLogos,
-      users,
-      cancellations,
-      logs,
+      canais: canais || [],
+      sales: sales || [],
+      adsData: adsData || [],
+      flexData: flexData || [],
+      products: products || [],
+      goals: goals || [],
+      channelRules: channelRules || [],
+      channelLogos: channelLogos || {},
+      users: users || [],
+      cancellations: cancellations || [],
+      logs: logs || [],
       addLog,
       importCancellations,
       refreshData

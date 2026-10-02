@@ -4,7 +4,18 @@ import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, cancellations, addLog } = useAppContext();
+  const context = useAppContext();
+  const canais = context?.canais || [];
+  const sales = context?.sales || [];
+  const adsData = context?.adsData || [];
+  const flexData = context?.flexData || [];
+  const products = context?.products || [];
+  const goals = context?.goals || [];
+  const channelRules = context?.channelRules || [];
+  const channelLogos = context?.channelLogos || {};
+  const users = context?.users || [];
+  const cancellations = context?.cancellations || [];
+  const addLog = context?.addLog || (() => {});
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -92,9 +103,9 @@ export default function DashboardPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const cancelledOrderIds = new Set(activeCancellations.map((c: any) => String(c.id_pedido)));
+    const cancelledOrderIds = new Set((activeCancellations || []).map((c: any) => String(c.id_pedido)));
 
-    return sales.filter((s: any) => {
+    return (sales || []).filter((s: any) => {
         if (cancelledOrderIds.has(String(s.id_pedido))) return false;
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
@@ -172,8 +183,8 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    const systemSaleIds = new Set(sales.map((s: any) => String(s.id_pedido)));
-    const redutoresSemFaturamento = activeCancellations.filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
+    const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
+    const redutoresSemFaturamento = (activeCancellations || []).filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
     const totalRedutorValor = redutoresSemFaturamento.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
