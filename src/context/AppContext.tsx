@@ -111,13 +111,31 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const importCanceladosComMes = async (rows: any[], mesReferencia: string) => {
-    const formatted = rows.map((r: any) => ({
-      id_pedido: String(r['ID Pedido'] || r['id_pedido'] || r['Id Pedido'] || ''),
-      produto: String(r['Produto'] || r['produto'] || ''),
-      canal: String(r['Canal'] || r['canal'] || ''),
-      valor: Number(String(r['Valor'] || r['valor'] || 0).replace('R$', '').replace(/\./g, '').replace(',', '.')) || 0,
-      mes_referencia: mesReferencia
-    }));
+    const formatted = rows.map((r: any) => {
+      let rawVal = r['Valor'] !== undefined ? r['Valor'] : (r['valor'] !== undefined ? r['valor'] : 0);
+      let finalVal = 0;
+      
+      // Proteção rigorosa contra a perda da pontuação decimal
+      if (typeof rawVal === 'number') {
+         finalVal = rawVal;
+      } else {
+         let s = String(rawVal).replace('R$', '').trim();
+         if (s.includes('.') && s.includes(',')) {
+            s = s.replace(/\./g, '').replace(',', '.');
+         } else if (s.includes(',')) {
+            s = s.replace(',', '.');
+         }
+         finalVal = Number(s) || 0;
+      }
+
+      return {
+        id_pedido: String(r['ID Pedido'] || r['id_pedido'] || r['Id Pedido'] || ''),
+        produto: String(r['Produto'] || r['produto'] || ''),
+        canal: String(r['Canal'] || r['canal'] || ''),
+        valor: finalVal,
+        mes_referencia: mesReferencia
+      };
+    });
 
     const updatedCancelados = [...cancelados.filter((c: any) => c.mes_referencia !== mesReferencia), ...formatted];
     setCancelados(updatedCancelados);

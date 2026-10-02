@@ -100,16 +100,12 @@ export default function DashboardPage() {
     });
   }, [cancelados, currentRefMonth, appliedChannelFilter]);
 
-  const enrichedSales = useMemo(() => {
+  // Primeiro criamos a base de vendas sem retirar ainda os cancelados, para sabermos o que pertence ao mês
+  const enrichedSalesBase = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
-
     return (sales || []).filter((s: any) => {
-        // Se o pedido está na lista de cancelados e PERTENCE A ESTE MÊS (estorno direto da venda)
-        if (cancelledOrderIds.has(String(s.id_pedido))) return false;
-        
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
         const fisico = isChannelFisico(s.canal);
@@ -170,7 +166,7 @@ export default function DashboardPage() {
           repasse_liquido: repasseLiquido 
         };
       });
-  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap, activeCancelados]);
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
 
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -186,12 +182,14 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // LÓGICA CORRIGIDA: Se o cancelamento é para ESTE mês, mas a venda NÃO APARECEU nos enrichedSales deste mês (ex: venda do mês passado),
-    // ele deve atuar obrigatoriamente como redutor financeiro puro.
-    const currentEnrichedSaleIds = new Set(enrichedSales.map((s: any) => String(s.id_pedido)));
-    const redutoresPuros = activeCancelados.filter((c: any) => !currentEnrichedSaleIds.has(String(c.id_pedido)));
+    const baseSaleIds = new Set((enrichedSalesBase || []).map((s: any) => String(s.id_pedido)));
+    const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
+
+    // Vendas validadas que não constam nos cancelamentos
+    const validSales = enrichedSalesBase.filter((s: any) => !cancelledOrderIds.has(String(s.id_pedido)));
     
-    // Valor total a subtrair
+    // Redutores puros são aqueles cancelamentos do mês escolhido que NÃO estavam na lista base de vendas deste mês
+    const redutoresPuros = activeCancelados.filter((c: any) => !baseSaleIds.has(String(c.id_pedido)));
     const totalRedutorValor = redutoresPuros.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -204,16 +202,14 @@ export default function DashboardPage() {
                    || { meta_valor: 0 };
       const metaCanal = parseCurrency(goalObj.meta_valor);
 
-      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
+      const chSales = validSales.filter((s: any) => s.canal === channelName);
       
-      // Calculamos o redutor específico para este canal
-      const redutorDesteCanal = redutoresPuros
+      const redutoresCanal = redutoresPuros
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      // Abatemos o redutor no cálculo base do canal
-      const faturadoCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - redutorDesteCanal);
-      const repasseCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - redutorDesteCanal);
+      const faturadoCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - redutoresCanal);
+      const repasseCanal = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0) - redutoresCanal);
 
       let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
       if (!nomeLimpo) nomeLimpo = channelName;
@@ -239,7 +235,7 @@ export default function DashboardPage() {
       }
     });
 
-    enrichedSales.forEach((s: any) => {
+    validSales.forEach((s: any) => {
       const fisico = isChannelFisico(s.canal);
       const valBruto = s.preco_venda;
       const valRepasse = s.repasse_liquido;
@@ -264,7 +260,7 @@ export default function DashboardPage() {
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
     faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
 
-    // O progresso digital precisa considerar os redutores digitais
+    // O progresso digital precisa abater os redutores digitais para a conta não dar erro
     const redutoresDigitais = redutoresPuros
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
@@ -275,7 +271,7 @@ export default function DashboardPage() {
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
-    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+    const totalFlexCost = validSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
     const filteredAds = adsData.filter((a: any) => appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter);
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
@@ -296,14 +292,14 @@ export default function DashboardPage() {
       lucroLiquidoReal, 
       lucroFisico,
       lucroDigital,
-      totalPedidos: enrichedSales.length,
+      totalPedidos: validSales.length,
       lojasFisicasDetalhes,
       lojasFisicasRepasse,
       progressoDigitalPct,
       diffDigital,
       totalRedutorValor
     };
-  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
+  }, [enrichedSalesBase, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -332,18 +328,21 @@ export default function DashboardPage() {
     const diasFaltantes = Math.max(1, totalDiasMes - diaAtual);
 
     return channelsToAnalyze.map(channelName => {
-      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
+      const baseSaleIds = new Set((enrichedSalesBase || []).map((s: any) => String(s.id_pedido)));
+      const cancelledOrderIds = new Set((activeCancelados || []).map((c: any) => String(c.id_pedido)));
+      
+      const validSales = enrichedSalesBase.filter((s: any) => !cancelledOrderIds.has(String(s.id_pedido)));
+      const chSales = validSales.filter((s: any) => s.canal === channelName);
+      
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      const currentEnrichedSaleIds = new Set(enrichedSales.map((s: any) => String(s.id_pedido)));
       const redutoresCanal = activeCancelados.filter((c: any) => 
         String(c.canal).toLowerCase() === String(channelName).toLowerCase() && 
-        !currentEnrichedSaleIds.has(String(c.id_pedido))
+        !baseSaleIds.has(String(c.id_pedido))
       );
-      
       const valorRedutorCanal = redutoresCanal.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
       const faturadoBruto = Math.max(0, chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0) - valorRedutorCanal);
@@ -381,7 +380,7 @@ export default function DashboardPage() {
         logoUrl 
       };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
+  }, [enrichedSalesBase, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
 
   const handleEnviarEmailAlerta = () => {
     const emailsCadastrados = users && users.length > 0 
