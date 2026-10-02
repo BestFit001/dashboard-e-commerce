@@ -181,6 +181,7 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
+    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto Consolidado Global
     const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -200,6 +201,8 @@ export default function DashboardPage() {
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
       const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      
+      // Faturamento Efetivo (com abate) para cálculo matemático da META
       const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
       const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
@@ -207,12 +210,13 @@ export default function DashboardPage() {
       if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
+        // Progresso usa o Faturamento Efetivo (já com redutor)
         const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
-          faturado: faturadoPuroCanal,
+          faturado: faturadoEfetivoCanal, // ATUALIZADO: Agora exibe o valor efetivo para que a matemática bata no total
           progresso,
           diff,
           abaixo: progresso < 100
@@ -248,15 +252,18 @@ export default function DashboardPage() {
       }
     });
 
+    // Abate GLOBAL do Faturamento Bruto geral, mantendo Repasse Intacto
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
+    // O progresso digital subtrai os cancelamentos digitais
     const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
-    const fatBrutoDigitalParaMeta = Math.max(0, fatBrutoDigital - canceladosDigitais);
+    // ATUALIZADO: fatBrutoDigital agora consolida o valor com o redutor para exibição visual correta
+    fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
-    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigitalParaMeta / metaDigitalTotal) * 100 : 0;
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
     const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
@@ -267,6 +274,7 @@ export default function DashboardPage() {
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
+    // Lucro Líquido não sofre qualquer dedução de cancelamentos
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
@@ -274,7 +282,7 @@ export default function DashboardPage() {
     return { 
       faturamentoBrutoVendas, 
       fatBrutoFisico,
-      fatBrutoDigital,
+      fatBrutoDigital, // Agora reflete o valor descontado para bater a matemática visual!
       faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
@@ -311,10 +319,9 @@ export default function DashboardPage() {
       return a.localeCompare(b);
     });
 
-    // LÓGICA DE DATAS INTELIGENTE (Cruza com o mês selecionado no filtro)
     const [refAnoStr, refMesStr] = currentRefMonth.split('-');
     const refAno = parseInt(refAnoStr, 10);
-    const refMes = parseInt(refMesStr, 10) - 1; // Meses em JS começam no 0
+    const refMes = parseInt(refMesStr, 10) - 1;
 
     const now = new Date();
     const isCurrentMonth = (now.getFullYear() === refAno && now.getMonth() === refMes);
@@ -327,11 +334,9 @@ export default function DashboardPage() {
       diasPassados = Math.max(1, now.getDate());
       diasFaltantes = Math.max(1, totalDiasMes - now.getDate());
     } else if (new Date(refAno, refMes, 1) < now) {
-      // Mês Fechado / Passado
       diasPassados = totalDiasMes;
       diasFaltantes = 0;
     } else {
-      // Mês Futuro (Prevenção)
       diasPassados = 1;
       diasFaltantes = totalDiasMes;
     }
@@ -367,14 +372,11 @@ export default function DashboardPage() {
       const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
       const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
-      // Se o mês já passou, a projeção é igual ao faturamento efetivo real.
       const projecaoFaturamento = isCurrentMonth 
         ? (faturadoComRedutor / diasPassados) * totalDiasMes
         : faturadoComRedutor;
         
       const valorFaltante = Math.max(0, metaBase - faturadoComRedutor);
-      
-      // Se já passou, não existe "meta diária". Falhou, falhou.
       const mediaDiariaNecessaria = (isCurrentMonth && valorFaltante > 0) ? valorFaltante / diasFaltantes : 0;
 
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
@@ -393,7 +395,7 @@ export default function DashboardPage() {
         valorFaltante,
         mediaDiariaNecessaria,
         cancelamentosMes,
-        isCurrentMonth, // Passa a flag para adaptar a UI
+        isCurrentMonth,
         logoUrl 
       };
     });
