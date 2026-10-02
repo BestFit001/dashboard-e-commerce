@@ -20,8 +20,8 @@ export default function DashboardPage() {
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  const [modalidadeFilter, setModalidadeFilter] = useState('TODAS');
-  const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('TODAS');
+  const [modalidadeFilter, setModalidadeFilter] = useState('SELECIONE');
+  const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('SELECIONE');
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
   const previousMonthDefault = useMemo(() => {
@@ -181,7 +181,6 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto Consolidado Global
     const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -200,10 +199,7 @@ export default function DashboardPage() {
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      // Faturamento Puro (sem abater) para exibir nas listagens detalhadas
       const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
-      
-      // Faturamento Efetivo (com abate) para cálculo matemático da META
       const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
       const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
@@ -211,13 +207,12 @@ export default function DashboardPage() {
       if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
-        // Progresso usa o Faturamento Efetivo (já com redutor)
         const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
-          faturado: faturadoPuroCanal, // Exibe o puro visualmente
+          faturado: faturadoPuroCanal,
           progresso,
           diff,
           abaixo: progresso < 100
@@ -253,15 +248,12 @@ export default function DashboardPage() {
       }
     });
 
-    // Abate GLOBAL do Faturamento Bruto geral, mantendo Repasse Intacto
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
-    // O progresso digital subtrai os cancelamentos digitais apenas para as metas consolidadas do e-commerce
     const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
-    // fatBrutoDigital base para a meta
     const fatBrutoDigitalParaMeta = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigitalParaMeta / metaDigitalTotal) * 100 : 0;
@@ -275,7 +267,6 @@ export default function DashboardPage() {
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
-    // Lucro Líquido não sofre qualquer dedução de cancelamentos
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
@@ -283,7 +274,7 @@ export default function DashboardPage() {
     return { 
       faturamentoBrutoVendas, 
       fatBrutoFisico,
-      fatBrutoDigital, // Mostrará o puro nas sub-listagens
+      fatBrutoDigital,
       faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
@@ -320,13 +311,30 @@ export default function DashboardPage() {
       return a.localeCompare(b);
     });
 
+    // LÓGICA DE DATAS INTELIGENTE (Cruza com o mês selecionado no filtro)
+    const [refAnoStr, refMesStr] = currentRefMonth.split('-');
+    const refAno = parseInt(refAnoStr, 10);
+    const refMes = parseInt(refMesStr, 10) - 1; // Meses em JS começam no 0
+
     const now = new Date();
-    const ano = now.getFullYear();
-    const mes = now.getMonth();
-    const totalDiasMes = new Date(ano, mes + 1, 0).getDate();
-    const diaAtual = now.getDate();
-    const diasPassados = Math.max(1, diaAtual);
-    const diasFaltantes = Math.max(1, totalDiasMes - diaAtual);
+    const isCurrentMonth = (now.getFullYear() === refAno && now.getMonth() === refMes);
+    const totalDiasMes = new Date(refAno, refMes + 1, 0).getDate();
+    
+    let diasPassados = 1;
+    let diasFaltantes = 1;
+
+    if (isCurrentMonth) {
+      diasPassados = Math.max(1, now.getDate());
+      diasFaltantes = Math.max(1, totalDiasMes - now.getDate());
+    } else if (new Date(refAno, refMes, 1) < now) {
+      // Mês Fechado / Passado
+      diasPassados = totalDiasMes;
+      diasFaltantes = 0;
+    } else {
+      // Mês Futuro (Prevenção)
+      diasPassados = 1;
+      diasFaltantes = totalDiasMes;
+    }
 
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
@@ -336,17 +344,12 @@ export default function DashboardPage() {
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      // Identifica os Cancelamentos deste Canal
       const cancelamentosMes = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
-      // Faturamento Puro (NÃO DEDUZ PARA EXIBIÇÃO EM TELA)
       const faturadoBrutoPuro = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
-      
-      // Faturamento Efetivo (DEDUZ CANCELAMENTOS PARA CÁLCULO DE META E NOVA COLUNA)
       const faturadoComRedutor = Math.max(0, faturadoBrutoPuro - cancelamentosMes);
-      
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       
       const canalAds = adsData
@@ -359,17 +362,20 @@ export default function DashboardPage() {
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = parseCurrency(goalObj.meta_valor);
-      
-      // O Progresso da meta usa automaticamente o Faturamento Efetivo (já com redutor!)
       const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
       const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
       const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
-      // Projeção e valor faltante baseados no esforço líquido/efetivo (com redutor)
-      const projecaoFaturamento = (faturadoComRedutor / diasPassados) * totalDiasMes;
+      // Se o mês já passou, a projeção é igual ao faturamento efetivo real.
+      const projecaoFaturamento = isCurrentMonth 
+        ? (faturadoComRedutor / diasPassados) * totalDiasMes
+        : faturadoComRedutor;
+        
       const valorFaltante = Math.max(0, metaBase - faturadoComRedutor);
-      const mediaDiariaNecessaria = valorFaltante > 0 ? valorFaltante / diasFaltantes : 0;
+      
+      // Se já passou, não existe "meta diária". Falhou, falhou.
+      const mediaDiariaNecessaria = (isCurrentMonth && valorFaltante > 0) ? valorFaltante / diasFaltantes : 0;
 
       const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
 
@@ -377,8 +383,8 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        faturadoBruto: faturadoBrutoPuro, // Devolve o valor PURO para a primeira coluna
-        faturadoComRedutor, // NOVO: Devolve o valor C/ REDUTOR para a segunda coluna
+        faturadoBruto: faturadoBrutoPuro,
+        faturadoComRedutor, 
         lucroLiquidoFinal, 
         progressoMetaPct, 
         margemBrutaPct, 
@@ -387,6 +393,7 @@ export default function DashboardPage() {
         valorFaltante,
         mediaDiariaNecessaria,
         cancelamentosMes,
+        isCurrentMonth, // Passa a flag para adaptar a UI
         logoUrl 
       };
     });
@@ -462,6 +469,7 @@ export default function DashboardPage() {
           <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
             <i className="fa-solid fa-layer-group text-emerald-400 pl-2 text-xs"></i>
             <select value={modalidadeFilter} onChange={(e) => setModalidadeFilter(e.target.value)} className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="SELECIONE" className="bg-slate-900 text-slate-500">Selecione...</option>
               <option value="TODAS" className="bg-slate-900 text-white">Todas as Modalidades</option>
               <option value="FISICO" className="bg-slate-900 text-white">Lojas Físicas</option>
               <option value="DIGITAL" className="bg-slate-900 text-white">E-commerce / Marketplaces</option>
@@ -578,86 +586,106 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* CARDS DOS CANAIS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {channelAnalytics.map((item: any) => {
-          const metaBatida = item.progressoMetaPct >= 100;
-          return (
-            <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
-               <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
-                 <div className="flex items-center gap-3">
-                   {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
-                   <div>
-                     <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">{item.responsavel || 'Equipe'}</span>
-                     <h4 className="font-black text-white text-sm tracking-tight">{item.canal}</h4>
+      {/* RENDERIZAÇÃO CONDICIONAL DOS CARDS */}
+      {appliedModalidadeFilter === 'SELECIONE' ? (
+        <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
+          <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
+          <p className="text-slate-400 text-sm font-bold text-center leading-relaxed">
+            Selecione uma modalidade (Todas, Lojas Físicas ou E-commerce)<br/> 
+            no filtro acima e clique em "Recalcular" para ver o detalhamento por canal.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {channelAnalytics.map((item: any) => {
+            const metaBatida = item.progressoMetaPct >= 100;
+            return (
+              <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
+                 <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
+                   <div className="flex items-center gap-3">
+                     {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
+                     <div>
+                       <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">{item.responsavel || 'Equipe'}</span>
+                       <h4 className="font-black text-white text-sm tracking-tight">{item.canal}</h4>
+                     </div>
+                   </div>
+                   
+                   <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                        {item.progressoMetaPct.toFixed(1)}% da meta atingida
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400 tracking-tight">
+                        Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                    </div>
                  </div>
                  
-                 <div className="flex flex-col items-end gap-1">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
-                      {item.progressoMetaPct.toFixed(1)}% da meta atingida
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 tracking-tight">
-                      Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
+                 {/* 3 COLUNAS */}
+                 <div className="grid grid-cols-3 gap-2 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
+                   <div>
+                     <span className="text-[9px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
+                     <strong className="text-xs font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-sky-200 block font-bold tracking-wider mb-0.5">C/ REDUTOR</span>
+                     <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
+                     <strong className="text-xs font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
                  </div>
-               </div>
-               
-               {/* 3 COLUNAS: FAT BRUTO | C/ REDUTOR | LUCRO LIQ */}
-               <div className="grid grid-cols-3 gap-2 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
-                 <div>
-                   <span className="text-[9px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
-                   <strong className="text-xs font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                 </div>
-                 <div>
-                   <span className="text-[9px] text-sky-200 block font-bold tracking-wider mb-0.5">C/ REDUTOR</span>
-                   <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                 </div>
-                 <div>
-                   <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
-                   <strong className="text-xs font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                 </div>
-               </div>
 
-               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
-                 <div className="flex justify-between items-center">
-                   <span className="text-[10px] text-slate-400 font-bold uppercase">Projeção Fechamento:</span>
-                   <strong className="text-xs font-black text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                 </div>
-                 <div className="flex justify-between items-center pt-1 border-t border-slate-900">
-                   {item.valorFaltante === 0 ? (
-                     <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
-                   ) : (
-                     <>
-                       <span className="text-[10px] text-slate-400 font-bold uppercase">Meta Diária Restante:</span>
-                       <strong className="text-xs font-black text-amber-400">R$ {item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / dia</strong>
-                     </>
+                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
+                   
+                   <div className="flex justify-between items-center">
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">
+                        {item.isCurrentMonth ? 'Projeção Fechamento:' : 'Faturamento Final:'}
+                     </span>
+                     <strong className="text-xs font-black text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+
+                   <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                     {item.valorFaltante === 0 ? (
+                       <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
+                     ) : (
+                       <>
+                         <span className="text-[10px] text-slate-400 font-bold uppercase">
+                            {item.isCurrentMonth ? 'Meta Diária Restante:' : 'Faltou para a Meta:'}
+                         </span>
+                         <strong className="text-xs font-black text-amber-400">
+                            R$ {item.isCurrentMonth 
+                                ? item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / dia' 
+                                : item.valorFaltante.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                         </strong>
+                       </>
+                     )}
+                   </div>
+                   
+                   {/* TERCEIRA LINHA - CANCELAMENTOS DO MÊS */}
+                   {item.cancelamentosMes > 0 && (
+                     <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                       <span className="text-[10px] text-slate-400 font-bold uppercase">Cancelamentos do Mês:</span>
+                       <strong className="text-xs font-black text-rose-400">- R$ {item.cancelamentosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                     </div>
                    )}
                  </div>
                  
-                 {/* TERCEIRA LINHA - CANCELAMENTOS DO MÊS */}
-                 {item.cancelamentosMes > 0 && (
-                   <div className="flex justify-between items-center pt-1 border-t border-slate-900">
-                     <span className="text-[10px] text-slate-400 font-bold uppercase">Cancelamentos do Mês:</span>
-                     <strong className="text-xs font-black text-rose-400">- R$ {item.cancelamentosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                   </div>
-                 )}
-               </div>
-               
-               <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
-                  <div>
-                    <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
-                    <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Líquida</span>
-                    <strong className="text-sm font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
-                  </div>
-               </div>
-            </div>
-          );
-        })}
-      </div>
+                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
+                      <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Líquida</span>
+                      <strong className="text-sm font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
+                    </div>
+                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
