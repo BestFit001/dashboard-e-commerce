@@ -39,13 +39,12 @@ export default function AdminPage() {
     }
   };
 
-  // Calcula o peso aproximado dos dados na memória / Supabase
+  // CÁLCULO DE MEMÓRIA OTIMIZADO: Não trava o navegador!
   const getDbUsageMB = () => {
     try {
-      const dataStr = JSON.stringify({ sales, faturados, cancelados, flexData, adsData, channelRules });
-      const bytes = new TextEncoder().encode(dataStr).length;
-      const mb = (bytes / (1024 * 1024)).toFixed(2);
-      return mb;
+      const estimate = (arr: any[]) => arr && arr.length > 0 ? JSON.stringify(arr[0]).length * arr.length : 0;
+      const totalBytes = estimate(sales) + estimate(faturados) + estimate(cancelados) + estimate(flexData) + estimate(adsData) + estimate(channelRules);
+      return (totalBytes / (1024 * 1024)).toFixed(2);
     } catch (e) {
       return "0.00";
     }
@@ -499,14 +498,15 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-       <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
+       
+       {/* PAINEL ADMINISTRATIVO COM MEMÓRIA BLINDADA */}
+       <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
          <div>
            <h2 className="text-xl font-bold text-white tracking-tight">Painel Administrativo</h2>
            <p className="text-xs text-slate-400 mt-1">Gestão de bases, faturados e redutores</p>
          </div>
-         <div className="flex items-center gap-4">
-            
-            {/* NOVO BLOCO DE PROGRESSÃO DE USO DO BANCO DE DADOS */}
+         
+         <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
             {(() => {
               const usageStr = getDbUsageMB();
               const usageNum = parseFloat(usageStr);
@@ -516,7 +516,7 @@ export default function AdminPage() {
               const colorBg = pct > 90 ? 'bg-rose-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
 
               return (
-                <div className="hidden sm:flex flex-col justify-center bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 min-w-[170px]">
+                <div className="flex flex-col justify-center bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 min-w-[170px]">
                   <div className="flex justify-between items-end mb-1">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Uso DB (Supa)</span>
                     <span className={`text-[10px] font-black ${colorText}`}>{pct.toFixed(2)}%</span>
@@ -532,13 +532,13 @@ export default function AdminPage() {
               );
             })()}
 
-            <button onClick={() => setIsAdminUnlocked(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition">
+            <button onClick={() => setIsAdminUnlocked(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition whitespace-nowrap">
               Bloquear Admin
             </button>
          </div>
        </div>
 
-       <h2 className="text-xl font-bold text-white mb-4">Passo 1: Bases e Filtros ERP</h2>
+       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 1: Bases e Filtros ERP</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 space-y-3">
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
