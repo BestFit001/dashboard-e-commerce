@@ -4,7 +4,7 @@ import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
 
 export default function DashboardPage() {
-  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, addLog } = useAppContext();
+  const { canais, sales, adsData, flexData, products, goals, channelRules, channelLogos, users, cancellations, addLog } = useAppContext();
   
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
   const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
@@ -73,11 +73,32 @@ export default function DashboardPage() {
     return isNaN(num) ? 0 : num;
   };
 
+  const currentRefMonth = useMemo(() => {
+    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
+    if (appliedDateFilter === 'MES_ANTERIOR') return previousMonthDefault;
+    return currentMonthDefault;
+  }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
+
+  // Cancelamentos / Redutores aplicáveis ao mês selecionado
+  const activeCancellations = useMemo(() => {
+    if (!cancellations) return [];
+    return cancellations.filter((c: any) => {
+      if (c.mes_referencia !== currentRefMonth) return false;
+      if (appliedChannelFilter !== 'TODOS' && c.canal !== appliedChannelFilter) return false;
+      return true;
+    });
+  }, [cancellations, currentRefMonth, appliedChannelFilter]);
+
   const enrichedSales = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const cancelledOrderIds = new Set(activeCancellations.map((c: any) => String(c.id_pedido)));
+
     return sales.filter((s: any) => {
+        // Remove da listagem os pedidos que constam como faturados mas foram cancelados no mês
+        if (cancelledOrderIds.has(String(s.id_pedido))) return false;
+
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
         const fisico = isChannelFisico(s.canal);
@@ -117,7 +138,7 @@ export default function DashboardPage() {
         const precoVenda = parseCurrency(s.preco_venda);
         let repasseLiquido = parseCurrency(s.repasse_liquido);
         if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) {
-          repasseLiquido = precoVenda; // fallback seguro para evitar estouro
+          repasseLiquido = precoVenda;
         }
         
         const nomeCanal = String(s.canal || '').toLowerCase();
@@ -138,13 +159,7 @@ export default function DashboardPage() {
           repasse_liquido: repasseLiquido 
         };
       });
-  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
-
-  const currentRefMonth = useMemo(() => {
-    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
-    if (appliedDateFilter === 'MES_ANTERIOR') return previousMonthDefault;
-    return currentMonthDefault;
-  }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap, activeCancellations]);
 
   const kpis = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -159,6 +174,12 @@ export default function DashboardPage() {
     let custoTotalCMV = 0;
     let cmvFisico = 0;
     let cmvDigital = 0;
+
+    // Pedidos faturados no sistema cujos IDs estão na lista de cancelados já foram removidos de enrichedSales.
+    // Os cancelamentos que NÃO estavam nos faturados (ex: meses anteriores) entram puramente como redutor do mês atual.
+    const systemSaleIds = new Set(sales.map((s: any) => String(s.id_pedido)));
+    const redutoresSemFaturamento = activeCancellations.filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
+    const totalRedutorValor = redutoresSemFaturamento.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
 
@@ -212,6 +233,10 @@ export default function DashboardPage() {
       }
     });
 
+    // Subtrai os redutores sem faturamento prévio
+    faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
+    faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
+
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
     const diffDigital = Math.abs(progressoDigitalPct - 100);
 
@@ -239,9 +264,10 @@ export default function DashboardPage() {
       totalPedidos: enrichedSales.length,
       lojasFisicasDetalhes,
       progressoDigitalPct,
-      diffDigital
+      diffDigital,
+      totalRedutorValor
     };
-  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth]);
+  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancellations, sales]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -411,7 +437,9 @@ export default function DashboardPage() {
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
             <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            <p className="text-[10px] text-slate-500 mt-1">{kpis.totalPedidos} itens validados</p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {kpis.totalPedidos} itens validados {kpis.totalRedutorValor > 0 ? `(Redutor: R$ ${kpis.totalRedutorValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})` : ''}
+            </p>
           </div>
           
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -479,7 +507,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -540,7 +568,7 @@ export default function DashboardPage() {
                  <div className="flex justify-between items-center pt-1 border-t border-slate-900">
                    {item.valorFaltante === 0 ? (
                      <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
-                    ) : (
+                   ) : (
                      <>
                        <span className="text-[10px] text-slate-400 font-bold uppercase">Meta Diária Restante:</span>
                        <strong className="text-xs font-black text-amber-400">R$ {item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / dia</strong>
