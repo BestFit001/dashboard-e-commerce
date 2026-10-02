@@ -79,7 +79,6 @@ export default function DashboardPage() {
     return currentMonthDefault;
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
-  // Cancelamentos / Redutores aplicáveis ao mês selecionado
   const activeCancellations = useMemo(() => {
     if (!cancellations) return [];
     return cancellations.filter((c: any) => {
@@ -96,9 +95,7 @@ export default function DashboardPage() {
     const cancelledOrderIds = new Set(activeCancellations.map((c: any) => String(c.id_pedido)));
 
     return sales.filter((s: any) => {
-        // Remove da listagem os pedidos que constam como faturados mas foram cancelados no mês
         if (cancelledOrderIds.has(String(s.id_pedido))) return false;
-
         if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
 
         const fisico = isChannelFisico(s.canal);
@@ -175,8 +172,6 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // Pedidos faturados no sistema cujos IDs estão na lista de cancelados já foram removidos de enrichedSales.
-    // Os cancelamentos que NÃO estavam nos faturados (ex: meses anteriores) entram puramente como redutor do mês atual.
     const systemSaleIds = new Set(sales.map((s: any) => String(s.id_pedido)));
     const redutoresSemFaturamento = activeCancellations.filter((c: any) => !systemSaleIds.has(String(c.id_pedido)));
     const totalRedutorValor = redutoresSemFaturamento.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
@@ -233,7 +228,6 @@ export default function DashboardPage() {
       }
     });
 
-    // Subtrai os redutores sem faturamento prévio
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalRedutorValor);
     faturamentoLiquidoRepasse = Math.max(0, faturamentoLiquidoRepasse - totalRedutorValor);
 

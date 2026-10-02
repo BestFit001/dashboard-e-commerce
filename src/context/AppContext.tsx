@@ -2,6 +2,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 
+export const INITIAL_ADMIN_PASS = 'admin123'; // Constante necessária para a página de Admin
+
 interface AppContextType {
   canais: string[];
   sales: any[];
@@ -70,7 +72,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (resUsers.data) setUsers(resUsers.data);
       if (resCancel.data) setCancellations(resCancel.data);
 
-      // Extrai canais ativos únicos
       const activeChannels = Array.from(new Set([
         ...canais, 
         ...(resSales.data || []).map((s: any) => s.canal),
@@ -78,7 +79,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ])).filter(Boolean);
       setCanais(activeChannels as string[]);
 
-      // Mapeia logos se houver
       const logosMap: Record<string, string> = {};
       (resRules.data || []).forEach((r: any) => {
         if (r.canal && r.logo_url) logosMap[r.canal] = r.logo_url;
