@@ -315,7 +315,6 @@ export default function DashboardPage() {
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
-      // Se este for o canal cujos cancelamentos são redutores puros (sem estorno), aplicamos na métrica do canal
       const systemSaleIds = new Set((sales || []).map((s: any) => String(s.id_pedido)));
       const redutoresCanal = (activeCancelados || []).filter((c: any) => c.canal === channelName && !systemSaleIds.has(String(c.id_pedido)));
       const valorRedutorCanal = redutoresCanal.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
