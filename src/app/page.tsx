@@ -422,7 +422,7 @@ export default function DashboardPage() {
     
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
 
-    let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas física e onlines do dia ${dataHoje}.\n\n`;
+    let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas fisica e onlines do dia ${dataHoje}.\n\n`;
     corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
     corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
     corpoTexto += `E-commerce: R$ ${fatDigitalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${progressoDigitalPct.toFixed(1)}% da meta)\n\n`;
@@ -618,7 +618,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* RENDERIZAÇÃO ESTILO EXECUTIVO (TABELA UNIFICADA POR SEÇÕES COM TODAS AS INFORMAÇÕES ORIGINAIS E MARGEM LÍQ) */}
+      {/* RENDERIZAÇÃO ESTILO TABELA EXECUTIVA COM SETINHAS E MARGEM LÍQ */}
       {appliedModalidadeFilter === 'SELECIONE' ? (
         <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
           <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
@@ -639,8 +639,7 @@ export default function DashboardPage() {
                   <th className="py-4 px-4 text-right">Meta do Mês</th>
                   <th className="py-4 px-4 text-right">Projeção do Mês</th>
                   <th className="py-4 px-4 text-center">Meta Atingida</th>
-                  <th className="py-4 px-4 text-right text-purple-400">Lucro Líq. R$</th>
-                  <th className="py-4 px-6 text-right text-emerald-400">Margem Líq. %</th>
+                  <th className="py-4 px-6 text-right text-emerald-400">Margem Líq.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -649,7 +648,7 @@ export default function DashboardPage() {
                 {ecommerceChannels.length > 0 && (
                   <>
                     <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                      <td colSpan={8} className="py-3 px-6 text-indigo-400 flex items-center gap-2">
+                      <td colSpan={7} className="py-3 px-6 text-indigo-400 flex items-center gap-2">
                         <i className="fa-solid fa-globe"></i> E-COMMERCE
                       </td>
                     </tr>
@@ -671,11 +670,11 @@ export default function DashboardPage() {
                           <td className="py-3.5 px-4 text-right font-mono text-slate-400">R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-4 text-right font-bold text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-4 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-block ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
+                              {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
                               {item.progressoMetaPct.toFixed(1)}%
                             </span>
                           </td>
-                          <td className="py-3.5 px-4 text-right font-bold text-purple-300">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-6 text-right font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</td>
                         </tr>
                       );
@@ -690,7 +689,6 @@ export default function DashboardPage() {
                       <td className="py-3 px-4 text-center text-indigo-300">
                         {totalEcommerce.metaValor > 0 ? ((totalEcommerce.faturadoComRedutor / totalEcommerce.metaValor) * 100).toFixed(1) : '0.0'}%
                       </td>
-                      <td className="py-3 px-4 text-right text-purple-300">R$ {ecommerceChannels.reduce((acc, c) => acc + c.lucroLiquidoFinal, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="py-3 px-6 text-right text-emerald-400">-</td>
                     </tr>
                   </>
@@ -700,7 +698,7 @@ export default function DashboardPage() {
                 {physicalChannels.length > 0 && (
                   <>
                     <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                      <td colSpan={8} className="py-3 px-6 text-emerald-400 flex items-center gap-2">
+                      <td colSpan={7} className="py-3 px-6 text-emerald-400 flex items-center gap-2">
                         <i className="fa-solid fa-store"></i> LOJAS FÍSICAS
                       </td>
                     </tr>
@@ -722,11 +720,11 @@ export default function DashboardPage() {
                           <td className="py-3.5 px-4 text-right font-mono text-slate-400">R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-4 text-right font-bold text-emerald-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-4 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-block ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
+                              {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
                               {item.progressoMetaPct.toFixed(1)}%
                             </span>
                           </td>
-                          <td className="py-3.5 px-4 text-right font-bold text-purple-300">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td className="py-3.5 px-6 text-right font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</td>
                         </tr>
                       );
@@ -741,7 +739,6 @@ export default function DashboardPage() {
                       <td className="py-3 px-4 text-center text-emerald-300">
                         {totalPhysical.metaValor > 0 ? ((totalPhysical.faturadoComRedutor / totalPhysical.metaValor) * 100).toFixed(1) : '0.0'}%
                       </td>
-                      <td className="py-3 px-4 text-right text-purple-300">R$ {physicalChannels.reduce((acc, c) => acc + c.lucroLiquidoFinal, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="py-3 px-6 text-right text-emerald-400">-</td>
                     </tr>
                   </>
@@ -760,7 +757,6 @@ export default function DashboardPage() {
                   <td className="py-4 px-4 text-center text-purple-400">
                     {totalGeral.metaValor > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.metaValor) * 100).toFixed(1) : '0.0'}%
                   </td>
-                  <td className="py-4 px-4 text-right text-purple-300">R$ {channelAnalytics.reduce((acc, c) => acc + c.lucroLiquidoFinal, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="py-4 px-6 text-right text-emerald-400">-</td>
                 </tr>
               </tfoot>
