@@ -181,7 +181,6 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
-    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto Consolidado Global
     const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -202,7 +201,6 @@ export default function DashboardPage() {
 
       const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
       
-      // Faturamento Efetivo (com abate) para cálculo matemático da META
       const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
       const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
@@ -210,13 +208,12 @@ export default function DashboardPage() {
       if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
-        // Progresso usa o Faturamento Efetivo (já com redutor)
         const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
-          faturado: faturadoEfetivoCanal, // ATUALIZADO: Agora exibe o valor efetivo para que a matemática bata no total
+          faturado: faturadoEfetivoCanal,
           progresso,
           diff,
           abaixo: progresso < 100
@@ -252,15 +249,12 @@ export default function DashboardPage() {
       }
     });
 
-    // Abate GLOBAL do Faturamento Bruto geral, mantendo Repasse Intacto
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
-    // O progresso digital subtrai os cancelamentos digitais
     const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
-    // ATUALIZADO: fatBrutoDigital agora consolida o valor com o redutor para exibição visual correta
     fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
@@ -274,7 +268,6 @@ export default function DashboardPage() {
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
-    // Lucro Líquido não sofre qualquer dedução de cancelamentos
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
@@ -282,7 +275,7 @@ export default function DashboardPage() {
     return { 
       faturamentoBrutoVendas, 
       fatBrutoFisico,
-      fatBrutoDigital, // Agora reflete o valor descontado para bater a matemática visual!
+      fatBrutoDigital,
       faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
@@ -571,7 +564,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -588,7 +581,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* RENDERIZAÇÃO CONDICIONAL DOS CARDS */}
+      {/* RENDERIZAÇÃO CONDICIONAL DOS CARDS COM AS SETINHAS E MARGEM LÍQ */}
       {appliedModalidadeFilter === 'SELECIONE' ? (
         <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
           <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
@@ -613,7 +606,8 @@ export default function DashboardPage() {
                    </div>
                    
                    <div className="flex flex-col items-end gap-1">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
+                        {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
                         {item.progressoMetaPct.toFixed(1)}% da meta atingida
                       </span>
                       <span className="text-[9px] font-bold text-slate-400 tracking-tight">
