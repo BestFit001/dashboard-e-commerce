@@ -27,7 +27,6 @@ export default function AdminPage() {
   const [mesVendas, setMesVendas] = useState(new Date().toISOString().slice(0, 7));
   const [mesLimpeza, setMesLimpeza] = useState(new Date().toISOString().slice(0, 7));
 
-  // NOVO: Estado para a coluna de CMV direto da planilha do clube
   const [colCmvClube, setColCmvClube] = useState('G');
 
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
@@ -146,6 +145,41 @@ export default function AdminPage() {
       await supabase.from('tb_estado_global').upsert([{ chave: key, dados: data }], { onConflict: 'chave' });
     } catch (err) {
       console.error(`Erro ao salvar ${key} no Supabase:`, err);
+    }
+  };
+
+  // NOVA FUNÇÃO: APAGAR TUDO DO SUPABASE
+  const handleZerarBancoSupabase = async () => {
+    const confirm1 = confirm("⚠️ ATENÇÃO: Tem a certeza absoluta que deseja APAGAR COMPLETAMENTE TODAS AS INFORMAÇÕES (vendas, faturados, cancelados, flex e ads) de todos os meses do banco de dados?");
+    if (!confirm1) return;
+
+    const confirm2 = prompt("Esta ação é extremamente destrutiva e irreversível. Para confirmar, escreva ZERAR TUDO no campo abaixo:");
+    if (confirm2 !== 'ZERAR TUDO') {
+      alert('Ação cancelada.');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      // Limpa as chaves principais no tb_estado_global do Supabase
+      const chaves = ['vendas', 'faturados', 'cancelados', 'flex', 'ads', 'tarifas_site'];
+      for (const chave of chaves) {
+        await supabase.from('tb_estado_global').delete().eq('chave', chave);
+      }
+
+      // Atualiza os estados locais
+      setSales([]);
+      setFaturados([]);
+      setCancelados([]);
+      setFlexData([]);
+      setAdsData([]);
+
+      addLog('Base de dados inteira foi zerada do Supabase.', 'error');
+      alert('Todas as informações foram apagadas do Supabase com sucesso!');
+    } catch (err: any) {
+      alert(`Erro ao zerar base: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -384,7 +418,6 @@ export default function AdminPage() {
                 repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
             } else { repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel); }
             
-            // LENDO O CMV DIRETO DA PLANILHA DO CLUBE (CONSOLIDADO)
             const cmvIdx = colToIdx(colCmvClube);
             custoCmvClube = cmvIdx >= 0 ? parseSmartFloat(row[cmvIdx], selectedChannel) : 0;
 
@@ -438,7 +471,7 @@ export default function AdminPage() {
             repasse_liquido: repasseCalculado, 
             lote_id: loteId,
             mes_referencia: mesVendas,
-            cmv_clube: custoCmvClube // Armazena o CMV específico do clube
+            cmv_clube: custoCmvClube 
           });
           i++;
         }
@@ -640,7 +673,6 @@ export default function AdminPage() {
                {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
              </select>
              
-             {/* CONFIGURAÇÃO DA COLUNA DE CMV CASO SEJA CLUBE */}
              {(selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja')) && (
                <div className="mb-3 bg-slate-950 p-2.5 rounded-xl border border-amber-500/40">
                  <label className="text-[10px] text-amber-400 font-bold block mb-1">Coluna CMV (Planilha do Clube)</label>
@@ -718,7 +750,7 @@ export default function AdminPage() {
          </div>
        </div>
 
-       {/* ZONA DE LIMPEZA COM SELEÇÃO DE MÊS */}
+       {/* ZONA DE LIMPEZA COM SELEÇÃO DE MÊS + BOTÃO DE ZERAR SUPABASE */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
              <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Dados por Mês</h3>
@@ -729,7 +761,7 @@ export default function AdminPage() {
                  <input 
                    type="month" 
                    value={mesLimpeza} 
-                   onChange={e => mesLimpeza(e.target.value)} 
+                   onChange={e => setMesLimpeza(e.target.value)} 
                    className="p-1.5 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none" 
                  />
                </div>
@@ -767,6 +799,17 @@ export default function AdminPage() {
             <button onClick={() => clearDataByMonth('cancelados', 'cancelados', cancelados, setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados ({mesLimpeza})</button>
             <button onClick={() => clearDataByMonth('flex', 'flex', flexData, setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX ({mesLimpeza})</button>
             <button onClick={() => clearDataByMonth('ads', 'ads', adsData, setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS ({mesLimpeza})</button>
+          </div>
+
+          {/* BOTÃO EXTREMO PARA APAGAR TUDO DO SUPABASE */}
+          <div className="pt-4 border-t border-rose-900/60 flex justify-end">
+            <button 
+              onClick={handleZerarBancoSupabase}
+              disabled={isProcessing}
+              className="py-3 px-6 bg-rose-950 hover:bg-rose-900 border border-rose-600 text-rose-200 font-black text-xs rounded-xl transition shadow-lg flex items-center gap-2"
+            >
+              <i className="fa-solid fa-bomb text-rose-400"></i> {isProcessing ? 'A apagar...' : 'Apagar TODAS as Informações do Supabase (Zerar Banco)'}
+            </button>
           </div>
        </div>
 
