@@ -90,6 +90,7 @@ export default function DashboardPage() {
     return currentMonthDefault;
   }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
+  // Filtra os cancelamentos para atuar apenas no Mês de Referência visualizado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => {
@@ -180,6 +181,7 @@ export default function DashboardPage() {
     let cmvFisico = 0;
     let cmvDigital = 0;
 
+    // Soma total de cancelamentos para abater APENAS do Faturamento Bruto Consolidado Global
     const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
 
     const lojasFisicasDetalhes: any[] = [];
@@ -200,6 +202,7 @@ export default function DashboardPage() {
 
       const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
       
+      // Faturamento Efetivo (com abate) para cálculo matemático da META
       const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
       const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
 
@@ -207,12 +210,13 @@ export default function DashboardPage() {
       if (!nomeLimpo) nomeLimpo = channelName;
 
       if (fisico) {
+        // Progresso usa o Faturamento Efetivo (já com redutor)
         const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
         const diff = Math.abs(progresso - 100);
 
         lojasFisicasDetalhes.push({
           nome: nomeLimpo,
-          faturado: faturadoEfetivoCanal,
+          faturado: faturadoEfetivoCanal, // ATUALIZADO: Agora exibe o valor efetivo para que a matemática bata no total
           progresso,
           diff,
           abaixo: progresso < 100
@@ -248,12 +252,15 @@ export default function DashboardPage() {
       }
     });
 
+    // Abate GLOBAL do Faturamento Bruto geral, mantendo Repasse Intacto
     faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
+    // O progresso digital subtrai os cancelamentos digitais
     const canceladosDigitais = activeCancelados
         .filter((c: any) => !isChannelFisico(c.canal))
         .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
     
+    // ATUALIZADO: fatBrutoDigital agora consolida o valor com o redutor para exibição visual correta
     fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
@@ -267,6 +274,7 @@ export default function DashboardPage() {
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
     
+    // Lucro Líquido não sofre qualquer dedução de cancelamentos
     const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
     const lucroFisico = repasseFisico - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
@@ -274,7 +282,7 @@ export default function DashboardPage() {
     return { 
       faturamentoBrutoVendas, 
       fatBrutoFisico,
-      fatBrutoDigital,
+      fatBrutoDigital, // Agora reflete o valor descontado para bater a matemática visual!
       faturamentoLiquidoRepasse, 
       repasseFisico,
       repasseDigital,
@@ -333,15 +341,9 @@ export default function DashboardPage() {
       diasFaltantes = totalDiasMes;
     }
 
-    const hojeStr = new Date().toISOString().slice(0, 10);
-
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
-      const vendasDoDia = chSales
-        .filter((s: any) => s.data_faturamento === hojeStr)
-        .reduce((sum: number, s: any) => sum + s.preco_venda, 0);
-
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
@@ -383,7 +385,6 @@ export default function DashboardPage() {
         canal: channelName, 
         responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
         metaValor: metaBase,
-        vendasDoDia,
         faturadoBruto: faturadoBrutoPuro,
         faturadoComRedutor, 
         lucroLiquidoFinal, 
@@ -395,8 +396,7 @@ export default function DashboardPage() {
         mediaDiariaNecessaria,
         cancelamentosMes,
         isCurrentMonth,
-        logoUrl,
-        isFisico: isChannelFisico(channelName)
+        logoUrl 
       };
     });
   }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
@@ -413,11 +413,11 @@ export default function DashboardPage() {
     const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoBruto: 0, progressoMetaPct: 0 };
     
     const fatDigitalTotal = channelAnalytics
-      .filter(c => !c.isFisico)
+      .filter(c => !isChannelFisico(c.canal))
       .reduce((acc, c) => acc + c.faturadoBruto, 0);
     
     const metaDigitalTotal = channelAnalytics
-      .filter(c => !c.isFisico)
+      .filter(c => !isChannelFisico(c.canal))
       .reduce((acc, c) => acc + c.metaValor, 0);
     
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
@@ -432,36 +432,6 @@ export default function DashboardPage() {
     window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${corpoEncoded}`;
     addLog('E-mail aberto com os destinatários separados por ponto e vírgula.', 'success');
   };
-
-  const ecommerceChannels = channelAnalytics.filter(c => !c.isFisico);
-  const physicalChannels = channelAnalytics.filter(c => c.isFisico);
-
-  const totalEcommerce = useMemo(() => {
-    return ecommerceChannels.reduce((acc, curr) => ({
-      vendasDoDia: acc.vendasDoDia + curr.vendasDoDia,
-      faturadoComRedutor: acc.faturadoComRedutor + curr.faturadoComRedutor,
-      metaValor: acc.metaValor + curr.metaValor,
-      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento
-    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0 });
-  }, [ecommerceChannels]);
-
-  const totalPhysical = useMemo(() => {
-    return physicalChannels.reduce((acc, curr) => ({
-      vendasDoDia: acc.vendasDoDia + curr.vendasDoDia,
-      faturadoComRedutor: acc.faturadoComRedutor + curr.faturadoComRedutor,
-      metaValor: acc.metaValor + curr.metaValor,
-      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento
-    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0 });
-  }, [physicalChannels]);
-
-  const totalGeral = useMemo(() => {
-    return {
-      vendasDoDia: totalEcommerce.vendasDoDia + totalPhysical.vendasDoDia,
-      faturadoComRedutor: totalEcommerce.faturadoComRedutor + totalPhysical.faturadoComRedutor,
-      metaValor: totalEcommerce.metaValor + totalPhysical.metaValor,
-      projecaoFaturamento: totalEcommerce.projecaoFaturamento + totalPhysical.projecaoFaturamento
-    };
-  }, [totalEcommerce, totalPhysical]);
 
   return (
     <div className="space-y-6">
@@ -618,7 +588,7 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* RENDERIZAÇÃO ESTILO TABELA EXECUTIVA COM SETINHAS E MARGEM LÍQ */}
+      {/* RENDERIZAÇÃO CONDICIONAL DOS CARDS */}
       {appliedModalidadeFilter === 'SELECIONE' ? (
         <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
           <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
@@ -628,140 +598,94 @@ export default function DashboardPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-200">
-              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800 tracking-wider">
-                <tr>
-                  <th className="py-4 px-6">Canal / Responsável</th>
-                  <th className="py-4 px-4 text-right">Vendas do Dia</th>
-                  <th className="py-4 px-4 text-right">Total Vendas do Mês</th>
-                  <th className="py-4 px-4 text-right">Meta do Mês</th>
-                  <th className="py-4 px-4 text-right">Projeção do Mês</th>
-                  <th className="py-4 px-4 text-center">Meta Atingida</th>
-                  <th className="py-4 px-6 text-right text-emerald-400">Margem Líq.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-medium">
-                
-                {/* SEÇÃO E-COMMERCE */}
-                {ecommerceChannels.length > 0 && (
-                  <>
-                    <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                      <td colSpan={7} className="py-3 px-6 text-indigo-400 flex items-center gap-2">
-                        <i className="fa-solid fa-globe"></i> E-COMMERCE
-                      </td>
-                    </tr>
-                    {ecommerceChannels.map((item: any) => {
-                      const metaBatida = item.progressoMetaPct >= 100;
-                      return (
-                        <tr key={item.canal} className="hover:bg-slate-800/40 transition">
-                          <td className="py-3.5 px-6">
-                            <div className="flex items-center gap-3">
-                              {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-8 h-8 rounded-lg bg-white object-contain p-0.5 border border-slate-700" /> : <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[9px] font-bold">Logo</div>}
-                              <div>
-                                <span className="font-bold text-white text-xs block">{item.canal}</span>
-                                <span className="text-[9px] uppercase font-bold text-slate-400">{item.responsavel}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-mono text-slate-300">R$ {item.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-mono text-slate-400">R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-bold text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
-                              {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
-                              {item.progressoMetaPct.toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-6 text-right font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</td>
-                        </tr>
-                      );
-                    })}
-                    {/* SUBTOTAL E-COMMERCE */}
-                    <tr className="bg-slate-950/40 font-bold text-xs text-white border-t border-slate-800">
-                      <td className="py-3 px-6 text-indigo-300">Total E-Commerce</td>
-                      <td className="py-3 px-4 text-right font-mono text-indigo-300">R$ {totalEcommerce.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right text-indigo-300">R$ {totalEcommerce.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-400">R$ {totalEcommerce.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right text-indigo-300">R$ {totalEcommerce.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-center text-indigo-300">
-                        {totalEcommerce.metaValor > 0 ? ((totalEcommerce.faturadoComRedutor / totalEcommerce.metaValor) * 100).toFixed(1) : '0.0'}%
-                      </td>
-                      <td className="py-3 px-6 text-right text-emerald-400">-</td>
-                    </tr>
-                  </>
-                )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {channelAnalytics.map((item: any) => {
+            const metaBatida = item.progressoMetaPct >= 100;
+            return (
+              <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
+                 <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
+                   <div className="flex items-center gap-3">
+                     {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
+                     <div>
+                       <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">{item.responsavel || 'Equipe'}</span>
+                       <h4 className="font-black text-white text-sm tracking-tight">{item.canal}</h4>
+                     </div>
+                   </div>
+                   
+                   <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                        {item.progressoMetaPct.toFixed(1)}% da meta atingida
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400 tracking-tight">
+                        Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                   </div>
+                 </div>
+                 
+                 {/* 3 COLUNAS */}
+                 <div className="grid grid-cols-3 gap-2 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
+                   <div>
+                     <span className="text-[9px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
+                     <strong className="text-xs font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-sky-200 block font-bold tracking-wider mb-0.5">C/ REDUTOR</span>
+                     <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
+                     <strong className="text-xs font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                 </div>
 
-                {/* SEÇÃO LOJAS FÍSICAS */}
-                {physicalChannels.length > 0 && (
-                  <>
-                    <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                      <td colSpan={7} className="py-3 px-6 text-emerald-400 flex items-center gap-2">
-                        <i className="fa-solid fa-store"></i> LOJAS FÍSICAS
-                      </td>
-                    </tr>
-                    {physicalChannels.map((item: any) => {
-                      const metaBatida = item.progressoMetaPct >= 100;
-                      return (
-                        <tr key={item.canal} className="hover:bg-slate-800/40 transition">
-                          <td className="py-3.5 px-6">
-                            <div className="flex items-center gap-3">
-                              {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-8 h-8 rounded-lg bg-white object-contain p-0.5 border border-slate-700" /> : <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[9px] font-bold">Logo</div>}
-                              <div>
-                                <span className="font-bold text-white text-xs block">{item.canal}</span>
-                                <span className="text-[9px] uppercase font-bold text-slate-400">{item.responsavel}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-mono text-slate-300">R$ {item.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-mono text-slate-400">R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-right font-bold text-emerald-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3.5 px-4 text-center">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
-                              {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
-                              {item.progressoMetaPct.toFixed(1)}%
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-6 text-right font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</td>
-                        </tr>
-                      );
-                    })}
-                    {/* SUBTOTAL LOJAS */}
-                    <tr className="bg-slate-950/40 font-bold text-xs text-white border-t border-slate-800">
-                      <td className="py-3 px-6 text-emerald-300">Total Lojas Físicas</td>
-                      <td className="py-3 px-4 text-right font-mono text-emerald-300">R$ {totalPhysical.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right text-emerald-300">R$ {totalPhysical.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-400">R$ {totalPhysical.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-right text-emerald-300">R$ {totalPhysical.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-3 px-4 text-center text-emerald-300">
-                        {totalPhysical.metaValor > 0 ? ((totalPhysical.faturadoComRedutor / totalPhysical.metaValor) * 100).toFixed(1) : '0.0'}%
-                      </td>
-                      <td className="py-3 px-6 text-right text-emerald-400">-</td>
-                    </tr>
-                  </>
-                )}
+                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
+                   
+                   <div className="flex justify-between items-center">
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">
+                        {item.isCurrentMonth ? 'Projeção Fechamento:' : 'Faturamento Final:'}
+                     </span>
+                     <strong className="text-xs font-black text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
 
-              </tbody>
-
-              {/* TOTAL GERAL */}
-              <tfoot className="bg-slate-950 text-white font-black text-xs border-t-2 border-slate-700">
-                <tr>
-                  <td className="py-4 px-6">TOTAL GERAL</td>
-                  <td className="py-4 px-4 text-right font-mono text-emerald-400">R$ {totalGeral.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-4 px-4 text-right text-white">R$ {totalGeral.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-4 px-4 text-right font-mono text-slate-300">R$ {totalGeral.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-4 px-4 text-right text-emerald-400">R$ {totalGeral.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-4 px-4 text-center text-purple-400">
-                    {totalGeral.metaValor > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.metaValor) * 100).toFixed(1) : '0.0'}%
-                  </td>
-                  <td className="py-4 px-6 text-right text-emerald-400">-</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                   <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                     {item.valorFaltante === 0 ? (
+                       <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
+                     ) : (
+                       <>
+                         <span className="text-[10px] text-slate-400 font-bold uppercase">
+                            {item.isCurrentMonth ? 'Meta Diária Restante:' : 'Faltou para a Meta:'}
+                         </span>
+                         <strong className="text-xs font-black text-amber-400">
+                            R$ {item.isCurrentMonth 
+                                ? item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / dia' 
+                                : item.valorFaltante.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                         </strong>
+                       </>
+                     )}
+                   </div>
+                   
+                   {/* TERCEIRA LINHA - CANCELAMENTOS DO MÊS */}
+                   {item.cancelamentosMes > 0 && (
+                     <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                       <span className="text-[10px] text-slate-400 font-bold uppercase">Cancelamentos do Mês:</span>
+                       <strong className="text-xs font-black text-rose-400">- R$ {item.cancelamentosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                     </div>
+                   )}
+                 </div>
+                 
+                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
+                      <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Líquida</span>
+                      <strong className="text-sm font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
+                    </div>
+                 </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
