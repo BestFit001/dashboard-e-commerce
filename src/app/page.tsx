@@ -23,7 +23,6 @@ export default function DashboardPage() {
   const [modalidadeFilter, setModalidadeFilter] = useState('SELECIONE');
   const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('SELECIONE');
 
-  // ESTADO PARA ALTERNAR ENTRE LAYOUT DE CARDS OU LINHAS (TABELA)
   const [viewMode, setViewMode] = useState<'cards' | 'linhas'>('cards');
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
@@ -303,6 +302,19 @@ export default function DashboardPage() {
     };
   }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
 
+  // CÁLCULO AUTOMÁTICO DO DIA ANTERIOR (ex: se hoje é dia 07, calcula o dia 06)
+  const { targetDateStr, labelVendasDia } = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1); // Dia anterior
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return {
+      targetDateStr: `${yyyy}-${mm}-${dd}`,
+      labelVendasDia: `Vendas do Dia ${dd}`
+    };
+  }, []);
+
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     let channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
@@ -343,13 +355,12 @@ export default function DashboardPage() {
       diasFaltantes = totalDiasMes;
     }
 
-    const hojeStr = new Date().toISOString().slice(0, 10);
-
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
+      // Pega as vendas do dia anterior calculado (targetDateStr)
       const vendasDoDia = chSales
-        .filter((s: any) => s.data_faturamento === hojeStr)
+        .filter((s: any) => s.data_faturamento === targetDateStr)
         .reduce((sum: number, s: any) => sum + s.preco_venda, 0);
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
@@ -409,7 +420,7 @@ export default function DashboardPage() {
         isFisico: isChannelFisico(channelName)
       };
     });
-  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados, targetDateStr]);
 
   const ecommerceChannels = channelAnalytics.filter(c => !c.isFisico);
   const physicalChannels = channelAnalytics.filter(c => c.isFisico);
@@ -456,11 +467,11 @@ export default function DashboardPage() {
     const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoBruto: 0, progressoMetaPct: 0 };
     
     const fatDigitalTotal = channelAnalytics
-      .filter(c => !c.isFisico)
+      .filter(c => !isChannelFisico(c.canal))
       .reduce((acc, c) => acc + c.faturadoBruto, 0);
     
     const metaDigitalTotal = channelAnalytics
-      .filter(c => !c.isFisico)
+      .filter(c => !isChannelFisico(c.canal))
       .reduce((acc, c) => acc + c.metaValor, 0);
     
     const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
@@ -639,7 +650,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
@@ -702,7 +713,7 @@ export default function DashboardPage() {
                      <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                    </div>
                    <div>
-                     <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">MARGEM</span>
+                     <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">MARGEM LÍQ.</span>
                      <strong className="text-xs font-black text-purple-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
                    </div>
                  </div>
@@ -755,14 +766,14 @@ export default function DashboardPage() {
           })}
         </div>
       ) : (
-        // MODO LINHAS (TABELA EXECUTIVA UNIFICADA)
+        // MODO LINHAS (TABELA EXECUTIVA UNIFICADA COM O RÓTULO DINÂMICO DO DIA ANTERIOR)
         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-200">
               <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800 tracking-wider">
                 <tr>
                   <th className="py-4 px-6">Canal / Responsável</th>
-                  <th className="py-4 px-4 text-right">Vendas do Dia</th>
+                  <th className="py-4 px-4 text-right">{labelVendasDia}</th>
                   <th className="py-4 px-4 text-right">Total Vendas do Mês</th>
                   <th className="py-4 px-4 text-right">Meta do Mês</th>
                   <th className="py-4 px-4 text-right">Projeção do Mês</th>
