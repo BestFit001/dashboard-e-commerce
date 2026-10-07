@@ -110,7 +110,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const importFaturadosComMes = async (rows: any[], mesReferencia: string, novosFaturados: any[]) => {
+  const importFaturadosComMes = async (mesReferencia: string, novosFaturados: any[]) => {
     const updatedFaturados = [
       ...faturados.filter((f: any) => f.mes_referencia !== mesReferencia), 
       ...novosFaturados.map(f => ({ ...f, mes_referencia: mesReferencia }))
@@ -157,6 +157,14 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     addLog(`ADS importados para o mês ${mesReferencia} com sucesso!`, 'success');
   };
 
+  const importFlexComMes = async (parsedFlex: any[], mesReferencia: string) => {
+    const formatted = parsedFlex.map(f => ({ ...f, mes_referencia: mesReferencia }));
+    const updatedFlex = [...flexData.filter((f: any) => f.mes_referencia !== mesReferencia), ...formatted];
+    setFlexData(updatedFlex);
+    await updateCloudState('flex', updatedFlex);
+    addLog(`Frete Flex importado para o mês ${mesReferencia} com sucesso!`, 'success');
+  };
+
   return (
     <AppContext.Provider value={{
       users, setUsers, currentUser, setCurrentUser, isAuthLoaded,
@@ -191,6 +199,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       importFaturadosComMes,
       importCanceladosComMes,
       importAdsComMes,
+      importFlexComMes,
       channelLogos, setChannelLogos,
       channelRules, setChannelRules: async (newRules: any) => {
         const updated = typeof newRules === 'function' ? newRules(channelRules) : newRules;
