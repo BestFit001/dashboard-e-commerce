@@ -302,10 +302,9 @@ export default function DashboardPage() {
     };
   }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
 
-  // CÁLCULO AUTOMÁTICO DO DIA ANTERIOR (ex: se hoje é dia 07, calcula o dia 06)
   const { targetDateStr, labelVendasDia } = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 1); // Dia anterior
+    d.setDate(d.getDate() - 1);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
@@ -358,7 +357,6 @@ export default function DashboardPage() {
     return channelsToAnalyze.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
       
-      // Pega as vendas do dia anterior calculado (targetDateStr)
       const vendasDoDia = chSales
         .filter((s: any) => s.data_faturamento === targetDateStr)
         .reduce((sum: number, s: any) => sum + s.preco_venda, 0);
@@ -629,7 +627,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL */}
+        {/* 3. CMV TOTAL (COM O VALOR NUMÉRICO DAS LOJAS FÍSICAS CORRIGIDO) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -638,7 +636,7 @@ export default function DashboardPage() {
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
-              <span className="text-[10px] font-bold text-slate-400 italic block">Com CMV Consolidado</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.cmvFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
@@ -650,7 +648,7 @@ export default function DashboardPage() {
         {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
-            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
             <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
