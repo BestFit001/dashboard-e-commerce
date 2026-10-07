@@ -1,781 +1,692 @@
 'use client';
-import React, { useState, useRef } from 'react';
-import { useAppContext, INITIAL_ADMIN_PASS } from '@/context/AppContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useAppContext } from '@/context/AppContext';
 import { supabase } from '@/lib/supabase';
-import * as XLSX from 'xlsx';
 
-export default function AdminPage() {
-  const { 
-    canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
-    sales, setSales, flexData, setFlexData, adsData, setAdsData, 
-    faturados, setFaturados, cancelados, setCancelados, 
-    importFaturadosComMes, importCanceladosComMes, importAdsComMes, importFlexComMes, addLog, logs 
-  } = useAppContext();
+export default function DashboardPage() {
+  const context = useAppContext();
+  const canais = context?.canais || [];
+  const sales = context?.sales || [];
+  const adsData = context?.adsData || [];
+  const flexData = context?.flexData || [];
+  const products = context?.products || [];
+  const goals = context?.goals || [];
+  const channelRules = context?.channelRules || [];
+  const channelLogos = context?.channelLogos || {};
+  const users = context?.users || [];
+  const cancelados = context?.cancelados || [];
+  const addLog = context?.addLog || (() => {});
   
-  const [password, setPassword] = useState('');
-  const [selectedChannel, setSelectedChannel] = useState(canais[0] || 'Mercado Livre 1');
-  const [targetChannelDelete, setTargetChannelDelete] = useState('TODOS');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
+  const [appliedChannelFilter, setAppliedChannelFilter] = useState('TODOS');
   
-  const [colFaturadosObs, setColFaturadosObs] = useState('AI');
-  const [colFaturadosData, setColFaturadosData] = useState('D');
+  const [modalidadeFilter, setModalidadeFilter] = useState('SELECIONE');
+  const [appliedModalidadeFilter, setAppliedModalidadeFilter] = useState('SELECIONE');
+
+  const currentMonthDefault = new Date().toISOString().slice(0, 7);
+  const previousMonthDefault = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 7);
+  }, []);
+
+  const [dateFilter, setDateFilter] = useState('MES_ATUAL');
+  const [customStartDate, setCustomStartDate] = useState(currentMonthDefault + '-01');
+  const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().slice(0, 10));
   
-  const [mesFaturado, setMesFaturado] = useState(new Date().toISOString().slice(0, 7));
-  const [mesCancelado, setMesCancelado] = useState(new Date().toISOString().slice(0, 7));
-  const [mesAds, setMesAds] = useState(new Date().toISOString().slice(0, 7)); 
-  const [mesFlex, setMesFlex] = useState(new Date().toISOString().slice(0, 7));
-  const [mesVendas, setMesVendas] = useState(new Date().toISOString().slice(0, 7));
-  const [mesLimpeza, setMesLimpeza] = useState(new Date().toISOString().slice(0, 7));
+  const [appliedDateFilter, setAppliedDateFilter] = useState('MES_ATUAL');
+  const [appliedStartDate, setAppliedStartDate] = useState(currentMonthDefault + '-01');
+  const [appliedEndDate, setAppliedEndDate] = useState(new Date().toISOString().slice(0, 10));
+  
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [tarifasSiteMap, setTarifasSiteMap] = useState<Record<string, number>>({});
 
-  // AQUI VOCÊ DEFINE A COLUNA PADRÃO DO CMV NA PLANILHA DOS CLUBES (ex: G)
-  const [colCmvClube, setColCmvClube] = useState('G');
-
-  const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
-  const [colTarifasValor, setColTarifasValor] = useState('E');
-
-  const fileVendasRef = useRef<HTMLInputElement>(null);
-  const fileCanceladosRef = useRef<HTMLInputElement>(null);
-  const fileAdsRef = useRef<HTMLInputElement>(null);
-  const fileFlexRef = useRef<HTMLInputElement>(null);
-
-  const auth = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === INITIAL_ADMIN_PASS) { 
-      setIsAdminUnlocked(true); 
-      addLog('Área administrativa desbloqueada.', 'success'); 
-    } else {
-      alert('Senha incorreta.');
+  useEffect(() => {
+    async function fetchTarifas() {
+      try {
+        const { data } = await supabase.from('tb_estado_global').select('dados').eq('chave', 'tarifas_site').single();
+        if (data && data.dados) {
+          setTarifasSiteMap(data.dados);
+        }
+      } catch (err) {}
     }
+    fetchTarifas();
+  }, []);
+
+  const handleRecalculate = () => {
+    setIsRecalculating(true);
+    setTimeout(() => {
+      setAppliedChannelFilter(selectedChannelFilter);
+      setAppliedModalidadeFilter(modalidadeFilter);
+      setAppliedDateFilter(dateFilter);
+      setAppliedStartDate(customStartDate);
+      setAppliedEndDate(customEndDate);
+      setIsRecalculating(false);
+      addLog(`Painel recalculado. Canal: [${selectedChannelFilter}] | Modalidade: [${modalidadeFilter}] | Período: [${dateFilter}]`, 'success');
+    }, 300);
   };
 
-  const getDbUsageMB = () => {
-    try {
-      const estimate = (arr: any[]) => arr && arr.length > 0 ? JSON.stringify(arr[0]).length * arr.length : 0;
-      const totalBytes = estimate(sales) + estimate(faturados) + estimate(cancelados) + estimate(flexData) + estimate(adsData) + estimate(channelRules);
-      return (totalBytes / (1024 * 1024)).toFixed(2);
-    } catch (e) {
-      return "0.00";
-    }
+  const isChannelFisico = (canalName: string) => {
+    const nome = String(canalName || '').toLowerCase();
+    return nome.includes('clube') || nome.includes('loja') || nome.includes('paineiras') || nome.includes('hebraica');
   };
 
-  const colToIdx = (colStr: string) => {
-    if (!colStr) return 0;
-    const clean = String(colStr).replace(/[^a-zA-Z]/g, '').toUpperCase();
-    if (!clean) return -1;
-    let base = 0;
-    for (let i = 0; i < clean.length; i++) {
-      base = base * 26 + (clean.charCodeAt(i) - 64);
+  const parseCurrency = (val: any) => {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    let s = String(val).trim().replace('R$', '').replace('R', '').trim();
+    if (s.includes('.') && s.includes(',')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (s.includes(',')) {
+      s = s.replace(',', '.');
     }
-    return Math.max(0, base - 1);
+    const num = Number(s);
+    return isNaN(num) ? 0 : num;
   };
 
-  const parseSmartFloat = (val: any, channelName: string) => {
-    if (val === undefined || val === null || val === '') return 0;
-    if (typeof val === 'number') return val;
-    let strVal = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{2}\/\d{2}\/\d{4}/.test(strVal)) return 0;
-    strVal = strVal.replace(/[a-zA-Z$\s]/g, '');
-    if (strVal.includes(',') && strVal.includes('.')) {
-      const lastComma = strVal.lastIndexOf(',');
-      const lastDot = strVal.lastIndexOf('.');
-      if (lastComma > lastDot) {
-        strVal = strVal.replace(/\./g, '').replace(',', '.');
-      } else {
-        strVal = strVal.replace(/,/g, '');
-      }
-    } else if (strVal.includes(',')) {
-      strVal = strVal.replace(/\./g, '').replace(',', '.');
-    }
-    return parseFloat(strVal) || 0;
-  };
+  const currentRefMonth = useMemo(() => {
+    if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate) return appliedStartDate.slice(0, 7);
+    if (appliedDateFilter === 'MES_ANTERIOR') return previousMonthDefault;
+    return currentMonthDefault;
+  }, [appliedDateFilter, appliedStartDate, currentMonthDefault, previousMonthDefault]);
 
-  const parseExcelDate = (val: any) => {
-    if (!val) return new Date().toISOString().slice(0, 10);
-    if (typeof val === 'number') {
-      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-      return date.toISOString().slice(0, 10);
-    }
-    const cleanStr = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) return cleanStr.substring(0, 10);
-    if (/^\d{2}\/\d{2}\/\d{4}/.test(cleanStr)) {
-      const parts = cleanStr.substring(0, 10).split('/');
-      return `${parts[2]}-${parts[1]}-${parts[0]}`;
-    }
-    return cleanStr.substring(0, 10);
-  };
+  const activeCancelados = useMemo(() => {
+    if (!cancelados) return [];
+    return cancelados.filter((c: any) => {
+      if (c.mes_referencia !== currentRefMonth) return false;
+      if (appliedChannelFilter !== 'TODOS' && c.canal !== appliedChannelFilter) return false;
+      return true;
+    });
+  }, [cancelados, currentRefMonth, appliedChannelFilter]);
 
-  const extractCPF = (row: any[]) => {
-    for (let cell of row) {
-      if (cell === undefined || cell === null) continue;
-      const str = String(cell).trim();
-      if (/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/.test(str)) return str.replace(/\D/g, '');
-      if (/^\d{9,14}$/.test(str)) {
-        const numStr = str.replace(/\D/g, '');
-        if (numStr.length >= 9 && numStr.length <= 11) return numStr.padStart(11, '0');
-        else if (numStr.length > 11 && numStr.length <= 14) return numStr.padStart(14, '0');
-      }
-    }
-    return null;
-  };
+  const enrichedSales = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const evaluateFormula = (formulaStr: string, row: any, rebateVal: number, channelName: string) => {
-    if (!formulaStr) return 0;
-    try {
-      let expr = formulaStr.toUpperCase().replace(/(\d+(?:\.\d+)?)%/g, (m, p1) => (parseFloat(p1) / 100).toString());
-      expr = expr.replace(/([A-Z]+)\d*/g, (m, colLet) => {
-        const idx = colToIdx(colLet);
-        const val = idx >= 0 ? row[idx] : 0;
-        return (val !== undefined && val !== null ? parseSmartFloat(val, channelName) : 0).toString();
+    return (sales || []).filter((s: any) => {
+        if (appliedChannelFilter !== 'TODOS' && s.canal !== appliedChannelFilter) return false;
+
+        const fisico = isChannelFisico(s.canal);
+        if (appliedModalidadeFilter === 'FISICO' && !fisico) return false;
+        if (appliedModalidadeFilter === 'DIGITAL' && fisico) return false;
+
+        if (s.data_faturamento) {
+           const d = new Date(s.data_faturamento + 'T00:00:00');
+           d.setHours(0, 0, 0, 0);
+           
+           if (appliedDateFilter === 'HOJE' && d.getTime() !== today.getTime()) return false;
+           if (appliedDateFilter === 'SEMANA' && (d < new Date(today.getTime() - 7*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'QUINZENA' && (d < new Date(today.getTime() - 15*24*60*60*1000) || d > today)) return false;
+           if (appliedDateFilter === 'MES_ATUAL') {
+              const [ano, mes] = currentMonthDefault.split('-');
+              if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
+           }
+           if (appliedDateFilter === 'MES_ANTERIOR') {
+              const [ano, mes] = previousMonthDefault.split('-');
+              if (d.getFullYear() !== Number(ano) || (d.getMonth() + 1) !== Number(mes)) return false;
+           }
+           if (appliedDateFilter === 'PERSONALIZADO' && appliedStartDate && appliedEndDate) {
+              const start = new Date(appliedStartDate + 'T00:00:00');
+              const end = new Date(appliedEndDate + 'T23:59:59');
+              if (d < start || d > end) return false;
+           }
+        }
+        return true;
+      })
+      .map((s: any) => {
+        let custoCMV = 0;
+        
+        if (isChannelFisico(s.canal) && s.cmv_clube !== undefined && s.cmv_clube !== null) {
+          custoCMV = parseCurrency(s.cmv_clube);
+        } else {
+          const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
+          const qtd = parseCurrency(s.quantidade) || 1;
+          custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
+        }
+
+        const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
+        const custoFlex = flexOrder ? parseCurrency(flexOrder.valor_frete) : 0;
+        
+        const precoVenda = parseCurrency(s.preco_venda);
+        let repasseLiquido = parseCurrency(s.repasse_liquido);
+        if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) {
+          repasseLiquido = precoVenda;
+        }
+        
+        const nomeCanal = String(s.canal || '').toLowerCase();
+        if ((nomeCanal.includes('site') || nomeCanal.includes('loja virtual')) && tarifasSiteMap[String(s.id_pedido)]) {
+           const taxaVindi = parseCurrency(tarifasSiteMap[String(s.id_pedido)]);
+           repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
+        }
+
+        const ganhoBruto = repasseLiquido - custoCMV; 
+        const ganhoLiquido = ganhoBruto - custoFlex;
+        
+        return { 
+          ...s, 
+          preco_venda: precoVenda,
+          custoCMV, 
+          custoFlex, 
+          ganhoLiquido, 
+          repasse_liquido: repasseLiquido 
+        };
       });
-      const result = new Function(`return ${expr.replace(/[^0-9\.\+\-\*\/\(\)\s\?\:\<\=\>]/g, '')};`)();
-      return (isNaN(result) ? 0 : Math.max(0, result)) + rebateVal;
-    } catch { return 0; }
-  };
+  }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
 
-  const getPdvValue = (pdvConfig: string, row: any, channelName: string) => {
-    if (!pdvConfig) return 0;
-    if (/[+\-*/()]/.test(pdvConfig)) return evaluateFormula(pdvConfig, row, 0, channelName);
-    const idx = colToIdx(pdvConfig);
-    if (idx < 0) return 0; 
-    return parseSmartFloat(row[idx], channelName);
-  };
-
-  const saveToCloudAndState = async (key: string, data: any, setter: any) => {
-    setter(data);
-    try {
-      await supabase.from('tb_estado_global').upsert([{ chave: key, dados: data }], { onConflict: 'chave' });
-    } catch (err) {
-      console.error(`Erro ao salvar ${key} no Supabase:`, err);
-    }
-  };
-
-  const handleUploadFaturados = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        let rows: any[] = [];
-        const fileName = file.name.toLowerCase();
-        if (fileName.endsWith('.csv')) {
-          const text = evt.target?.result as string;
-          const lines = text.split(/\r?\n/);
-          rows = lines.map(line => line.split(line.includes(';') ? ';' : ',').map(cell => cell.replace(/^["']|["']$/g, '').trim()));
-        } else {
-          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        }
-        
-        const novosFaturados: any[] = [];
-        const idxObs = colToIdx(colFaturadosObs);
-        const idxData = colToIdx(colFaturadosData);
-
-        rows.slice(1).forEach((row) => {
-          if (!row || !row.length) return;
-          const rawObs = idxObs >= 0 && row[idxObs] !== undefined ? String(row[idxObs]).trim() : '';
-          let pedidoId = null;
-          const matchId = rawObs.match(/\b[A-Z]+-\d+\b/) || rawObs.match(/\d{3}-\d{7}-\d{7}/) || rawObs.match(/20000[0-9]+/) || rawObs.match(/\b[A-Z0-9]{6,}\b/);
-          if (matchId) pedidoId = matchId[0].trim();
-          const cpfMatch = extractCPF(row);
-          
-          if (pedidoId || cpfMatch) {
-            const dataEmissao = parseExcelDate(idxData >= 0 ? row[idxData] : (row[3] || row[2]));
-            novosFaturados.push({ id: pedidoId || `s-id-${Math.random()}`, data: dataEmissao, cpf: cpfMatch });
-          }
-        });
-
-        await importFaturadosComMes(mesFaturado, novosFaturados);
-        alert(`Sucesso! ${novosFaturados.length} faturados lidos e salvos para o mês ${mesFaturado}.`);
-      } catch (err: any) { alert(`Erro ao ler faturados: ${err.message}`); }
-    };
-    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
-    else reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  const handleUploadCancelados = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        const data: any[] = [];
-        
-        rows.forEach((row) => {
-          if (!row || row.length === 0) return;
-          const firstCell = String(row[0] || '').toLowerCase();
-          if (firstCell.includes('id') || firstCell.includes('pedido')) return;
-
-          const rawId = row[0];
-          if (rawId) {
-             let rawValor = row[3] || 0;
-             if (typeof rawValor === 'number') {
-                rawValor = rawValor.toFixed(2).replace('.', ',');
-             }
-             data.push({
-               'ID Pedido': String(rawId).trim(),
-               'Produto': String(row[1] || '').trim(),
-               'Canal': String(row[2] || '').trim(),
-               'Valor': rawValor
-             });
-          }
-        });
-
-        if (data.length === 0) throw new Error("A planilha está vazia ou não tem o formato correto.");
-        await importCanceladosComMes(data, mesCancelado);
-        alert(`${data.length} registos de cancelados importados para o mês ${mesCancelado}!`);
-      } catch (err: any) { alert(`Erro ao ler cancelados: ${err.message}`); }
-    };
-    reader.readAsArrayBuffer(file);
-    if (fileCanceladosRef.current) fileCanceladosRef.current.value = '';
-  };
-
-  const handleUploadAds = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        const parsedData = rows.slice(1).map((r: any[]) => ({
-          canal: String(r[0] || '').trim(),
-          custo_ads: parseSmartFloat(r[1], 'ADS')
-        })).filter(item => item.canal && item.custo_ads > 0);
-
-        if (parsedData.length === 0) throw new Error("A planilha está vazia ou sem dados válidos.");
-        
-        await importAdsComMes(parsedData, mesAds);
-        alert(`${parsedData.length} registos de ADS salvos para o mês ${mesAds}!`);
-      } catch (err: any) {
-        addLog(`Erro ao importar ADS: ${err.message}`, 'error');
-        alert(`Erro: ${err.message}`);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    if (fileAdsRef.current) fileAdsRef.current.value = '';
-  };
-
-  const handleUploadFlex = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        const parsedFlex = rows.slice(1).map((r: any[]) => ({
-          id_pedido: String(r[0] || '').trim(),
-          valor_frete: parseSmartFloat(r[1], 'FLEX')
-        })).filter(item => item.id_pedido && item.valor_frete > 0);
-
-        if (parsedFlex.length === 0) throw new Error("A planilha está vazia ou sem dados válidos.");
-
-        await importFlexComMes(parsedFlex, mesFlex);
-        alert(`${parsedFlex.length} registos de Frete Flex salvos para o mês ${mesFlex}!`);
-      } catch (err: any) {
-        addLog(`Erro ao importar FLEX: ${err.message}`, 'error');
-        alert(`Erro: ${err.message}`);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    if (fileFlexRef.current) fileFlexRef.current.value = '';
-  };
-
-  const handleUploadTarifasSite = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        let rows: any[] = [];
-        const fileName = file.name.toLowerCase();
-        if (fileName.endsWith('.csv')) {
-          const text = evt.target?.result as string;
-          rows = text.split(/\r?\n/).map(line => line.split(line.includes(';') ? ';' : ',').map(c => c.replace(/^["']|["']$/g, '').trim()));
-        } else {
-          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        }
-        const idxId = colToIdx(colTarifasIdPedido);
-        const idxVal = colToIdx(colTarifasValor);
-        const novasTarifas: Record<string, number> = {};
-
-        rows.slice(1).forEach((row) => {
-          if (!row || !row.length) return;
-          const idPed = row[idxId] !== undefined ? String(row[idxId]).trim() : '';
-          const valTarifa = parseSmartFloat(row[idxVal], 'TARIFAS');
-          if (idPed) novasTarifas[idPed] = valTarifa;
-        });
-        await saveToCloudAndState('tarifas_site', novasTarifas, () => {});
-        addLog(`Consulta de Tarifas do Site: ${Object.keys(novasTarifas).length} registos salvos.`, 'success');
-        alert(`Sucesso! ${Object.keys(novasTarifas).length} tarifas do site importadas.`);
-      } catch (err: any) { alert(`Erro ao ler tarifas: ${err.message}`); }
-    };
-    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
-    else reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  const handleUploadVendasCanal = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
+  const kpis = useMemo(() => {
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
     
-    const faturadosAtuais = (faturados || []).filter((f: any) => f.mes_referencia === mesVendas);
-    if (!isClube && faturadosAtuais.length === 0) {
-      alert(`ATENÇÃO: A base de Faturados para o mês ${mesVendas} está vazia! Por favor, suba a planilha de Faturados do respetivo mês no Passo 1 antes de importar as vendas.`);
-      if (fileVendasRef.current) fileVendasRef.current.value = '';
-      return;
-    }
+    let faturamentoBrutoVendas = 0;
+    let faturamentoLiquidoRepasse = 0;
+    let metaDigitalTotal = 0;
+    let fatBrutoFisico = 0;
+    let fatBrutoDigital = 0;
+    let repasseFisico = 0;
+    let repasseDigital = 0;
+    let custoTotalCMV = 0;
+    let cmvFisico = 0;
+    let cmvDigital = 0;
 
-    setIsProcessing(true);
-    const isShopee = selectedChannel.toLowerCase().includes('shopee');
-    const rule = channelRules.find((r: any) => r.canal === selectedChannel) || { colIdPedido: 'A', colSku: isShopee ? 'S' : 'AS', colRebate: 'C', colPdv: isShopee ? 'BA' : 'J', colQuantidade: isShopee ? 'X' : 'I', formulaExcel: 'J - (J * 9%) - K' };
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        let rows: any[] = [];
-        const fileName = file.name.toLowerCase();
-        if (fileName.endsWith('.csv')) {
-          const text = evt.target?.result as string;
-          const lines = text.split(/\r?\n/);
-          rows = lines.map(line => line.split(line.includes(';') ? ';' : ',').map(cell => cell.replace(/^["']|["']$/g, '').trim()));
-        } else {
-          const wb = XLSX.read(new Uint8Array(evt.target?.result as ArrayBuffer), { type: 'array' });
-          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        }
-        
-        const fatIdMap = new Map();
-        const fatCpfMap = new Map();
-        faturadosAtuais.forEach((item: any) => {
-          if (item.id && !item.id.includes('s-id-')) fatIdMap.set(String(item.id).trim(), item.data);
-          if (item.cpf) fatCpfMap.set(String(item.cpf).trim(), item.data);
+    const totalCancelamentosValor = activeCancelados.reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+
+    const lojasFisicasDetalhes: any[] = [];
+    const lojasFisicasRepasse: any[] = [];
+
+    activeChannels.forEach(channelName => {
+      const fisico = isChannelFisico(channelName);
+      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+                   || goals.find((g: any) => g.canal === channelName) 
+                   || { meta_valor: 0 };
+      const metaCanal = parseCurrency(goalObj.meta_valor);
+
+      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
+      
+      const cancelamentosCanal = activeCancelados
+        .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
+        .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+
+      const faturadoPuroCanal = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      
+      const faturadoEfetivoCanal = Math.max(0, faturadoPuroCanal - cancelamentosCanal);
+      const repasseCanal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
+
+      let nomeLimpo = channelName.replace(/clube|loja/gi, '').trim();
+      if (!nomeLimpo) nomeLimpo = channelName;
+
+      if (fisico) {
+        const progresso = metaCanal > 0 ? (faturadoEfetivoCanal / metaCanal) * 100 : 0;
+        const diff = Math.abs(progresso - 100);
+
+        lojasFisicasDetalhes.push({
+          nome: nomeLimpo,
+          faturado: faturadoEfetivoCanal,
+          progresso,
+          diff,
+          abaixo: progresso < 100
         });
 
-        const novasVendas: any[] = [];
-        const loteId = `lote_${selectedChannel}_${Date.now()}`;
-        let i = 0;
-        let ignoradosPorNaoFaturados = 0;
-
-        while (i < rows.length) {
-          const row = rows[i];
-          if (!row || !row.length) { i++; continue; }
-          let rawId = '';
-          let dataFaturamento = new Date().toISOString().slice(0, 10);
-          let precoVendaUnitario = 0;
-          let repasseCalculado = 0;
-          let skuVal = 'SKU-GERAL';
-          let quantidade = 1;
-          let custoCmvClube = 0;
-
-          if (isClube) {
-            const colAStr = row[0] !== undefined ? String(row[0]).trim().toLowerCase() : '';
-            const colFStr = row[5] !== undefined ? String(row[5]).trim().toLowerCase() : '';
-            if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') { i++; continue; }
-            rawId = `clube-${Date.now()}-${i}`;
-            dataFaturamento = parseExcelDate(row[0]);
-            precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
-            const apuracaoStr = (rule.formulaExcel || 'I').trim();
-            if (!/[+\-*/()]/.test(apuracaoStr)) {
-                const apIdx = colToIdx(apuracaoStr);
-                repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
-            } else { repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel); }
-            
-            // LENDO O CMV DIRETO DA COLUNA ESPECIFICADA DO CLUBE
-            const cmvIdx = colToIdx(colCmvClube);
-            custoCmvClube = cmvIdx >= 0 ? parseSmartFloat(row[cmvIdx], selectedChannel) : 0;
-
-            skuVal = 'SKU-CLUBE-ISENTO'; 
-            const colQtdIdx = colToIdx(rule.colQuantidade || 'ZZZ');
-            quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
-            if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
-          } else {
-            const colIdIdx = colToIdx(rule.colIdPedido || 'A');
-            rawId = colIdIdx >= 0 && row[colIdIdx] !== undefined ? String(row[colIdIdx]).trim() : '';
-            if (!rawId || rawId.toLowerCase().includes('pedido') || rawId.toLowerCase().includes('order-id')) { i++; continue; }
-            rawId = rawId.replace(/\.0$/, '');
-            if (rawId.toUpperCase().includes('E+')) {
-              try {
-                const numVal = parseFloat(rawId.replace(',', '.'));
-                if (!isNaN(numVal)) rawId = Math.round(numVal).toString();
-              } catch {}
-            }
-            const rowCpf = extractCPF(row);
-            let isFaturado = false;
-            if (fatIdMap.has(rawId)) {
-              isFaturado = true;
-              dataFaturamento = fatIdMap.get(rawId);
-            } else if (rowCpf && fatCpfMap.has(rowCpf)) {
-              isFaturado = true;
-              dataFaturamento = fatCpfMap.get(rowCpf);
-            }
-            if (!isFaturado && fatIdMap.size > 0) {
-              ignoradosPorNaoFaturados++;
-              i++; 
-              continue;
-            }
-            precoVendaUnitario = getPdvValue(rule.colPdv || 'J', row, selectedChannel);
-            const colRebateIdx = colToIdx(rule.colRebate || 'C');
-            const rebateRowValue = colRebateIdx >= 0 ? parseSmartFloat(row[colRebateIdx], selectedChannel) : 0;
-            repasseCalculado = evaluateFormula(rule.formulaExcel || 'J - (J * 9%) - K', row, rebateRowValue, selectedChannel);
-            const colSkuIdx = colToIdx(rule.colSku || 'AS');
-            skuVal = colSkuIdx >= 0 && row[colSkuIdx] ? String(row[colSkuIdx]).trim().toUpperCase() : 'SKU-GERAL';
-            const colQtdIdx = colToIdx(rule.colQuantidade || 'I');
-            quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
-            if (precoVendaUnitario === 0 && repasseCalculado === 0) { i++; continue; }
-          }
-
-          novasVendas.push({ 
-            id_pedido: rawId, 
-            data_faturamento: dataFaturamento, 
-            canal: selectedChannel, 
-            sku: skuVal, 
-            quantidade: quantidade, 
-            preco_venda: precoVendaUnitario, 
-            repasse_liquido: repasseCalculado, 
-            lote_id: loteId,
-            mes_referencia: mesVendas,
-            cmv_clube: custoCmvClube 
-          });
-          i++;
-        }
-
-        const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        const filteredOldSales = sales.filter((s: any) => !(s.canal === selectedChannel && s.mes_referencia === mesVendas));
-        const updatedSales = [...salesWithKeys, ...filteredOldSales];
-        await saveToCloudAndState('vendas', updatedSales, setSales);
-
-        const clubeMsg = isClube ? ' (Modo Clube com CMV)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
-        addLog(`Importação canal [${selectedChannel}] para ${mesVendas}: ${novasVendas.length} itens salvos.`, 'success');
-        alert(`Sucesso! ${novasVendas.length} vendas importadas para ${selectedChannel} no mês ${mesVendas}${clubeMsg}.`);
-      } catch (err: any) {
-        addLog(`Erro ao processar vendas: ${err.message}`, 'error');
-        alert(`Erro ao processar ficheiro: ${err.message}`);
-      } finally { setIsProcessing(false); }
-    };
-    if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
-    else reader.readAsArrayBuffer(file);
-    if (fileVendasRef.current) fileVendasRef.current.value = '';
-  };
-
-  const handleExcluirVendasPorCanal = async () => {
-    if (targetChannelDelete === 'TODOS') {
-      if (confirm(`Tem a certeza absoluta que deseja apagar TODAS AS VENDAS do mês ${mesLimpeza} de todos os canais?`)) {
-        const remainingSales = sales.filter((s: any) => s.mes_referencia !== mesLimpeza);
-        await saveToCloudAndState('vendas', remainingSales, setSales);
-        addLog(`Base de vendas do mês ${mesLimpeza} limpa.`, 'warning');
-        alert(`As vendas do mês ${mesLimpeza} foram apagadas.`);
+        lojasFisicasRepasse.push({
+          nome: nomeLimpo,
+          repasse: repasseCanal
+        });
+      } else {
+        metaDigitalTotal += metaCanal;
       }
-    } else {
-      if (confirm(`Tem a certeza que deseja apagar as vendas do canal [${targetChannelDelete}] referentes ao mês ${mesLimpeza}?`)) {
-        const remainingSales = sales.filter((s: any) => !(s.canal === targetChannelDelete && s.mes_referencia === mesLimpeza));
-        await saveToCloudAndState('vendas', remainingSales, setSales);
-        addLog(`Vendas do canal [${targetChannelDelete}] para o mês ${mesLimpeza} apagadas.`, 'warning');
-        alert(`Vendas do canal ${targetChannelDelete} (${mesLimpeza}) removidas com sucesso.`);
+    });
+
+    enrichedSales.forEach((s: any) => {
+      const fisico = isChannelFisico(s.canal);
+      const valBruto = s.preco_venda;
+      const valRepasse = s.repasse_liquido;
+      const valCmv = s.custoCMV;
+
+      faturamentoBrutoVendas += valBruto;
+      faturamentoLiquidoRepasse += valRepasse;
+      custoTotalCMV += valCmv;
+
+      if (fisico) {
+        fatBrutoFisico += valBruto;
+        repasseFisico += valRepasse;
+        cmvFisico += valCmv;
+      } else {
+        fatBrutoDigital += valBruto;
+        repasseDigital += valRepasse;
+        cmvDigital += valCmv;
       }
-    }
-  };
+    });
 
-  const handleExcluirUltimoLoteCanal = async () => {
-    if (targetChannelDelete === 'TODOS') {
-      alert('Por favor, selecione um canal específico acima para excluir o último lote enviado.');
-      return;
-    }
-    const canalSales = sales.filter((s: any) => s.canal === targetChannelDelete && s.mes_referencia === mesLimpeza);
-    if (canalSales.length === 0) {
-      alert(`Não existem vendas registadas para o canal ${targetChannelDelete} no mês ${mesLimpeza}.`);
-      return;
-    }
-    const lotes = Array.from(new Set(canalSales.map((s: any) => s.lote_id).filter(Boolean)));
-    if (lotes.length === 0) {
-      if (confirm(`O canal ${targetChannelDelete} não possui marcação de lotes para ${mesLimpeza}. Deseja remover todas as vendas deste canal neste mês?`)) {
-        const remainingSales = sales.filter((s: any) => !(s.canal === targetChannelDelete && s.mes_referencia === mesLimpeza));
-        await saveToCloudAndState('vendas', remainingSales, setSales);
-        alert(`Vendas do canal ${targetChannelDelete} (${mesLimpeza}) removidas.`);
-      }
-      return;
-    }
-    const ultimoLote = lotes[lotes.length - 1];
-    if (confirm(`Tem a certeza que deseja excluir o ÚLTIMO envio (lote) do canal [${targetChannelDelete}] para o mês ${mesLimpeza}?`)) {
-      const remainingSales = sales.filter((s: any) => s.lote_id !== ultimoLote);
-      await saveToCloudAndState('vendas', remainingSales, setSales);
-      addLog(`Último lote do canal [${targetChannelDelete}] (${mesLimpeza}) removido.`, 'warning');
-      alert(`Último envio do canal ${targetChannelDelete} foi desfeito/removido com sucesso!`);
-    }
-  };
+    faturamentoBrutoVendas = Math.max(0, faturamentoBrutoVendas - totalCancelamentosValor);
 
-  const clearDataByMonth = async (type: string, keyName: string, currentArr: any[], setter: any) => {
-    if (confirm(`Tem a certeza que deseja apagar os registos de ${type.toUpperCase()} referentes ao mês ${mesLimpeza}?`)) {
-      const filtered = currentArr.filter((item: any) => item.mes_referencia !== mesLimpeza);
-      await saveToCloudAndState(keyName, filtered, setter);
-      addLog(`Base de ${type.toUpperCase()} para o mês ${mesLimpeza} limpa na nuvem.`, 'warning');
-      alert(`Registos de ${type} do mês ${mesLimpeza} removidos com sucesso!`);
-    }
-  };
+    const canceladosDigitais = activeCancelados
+        .filter((c: any) => !isChannelFisico(c.canal))
+        .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+    
+    fatBrutoDigital = Math.max(0, fatBrutoDigital - canceladosDigitais);
 
-  if (!isAdminUnlocked) {
-    return (
-      <div className="max-w-md mx-auto bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center shadow-2xl mt-10">
-        <h2 className="text-xl font-bold text-white mb-2">Área Restrita Admin</h2>
-        <form onSubmit={auth}>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha (Dash321)" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl mb-4 text-white text-sm" />
-          <button className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition">Desbloquear Central</button>
-        </form>
-      </div>
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatBrutoDigital / metaDigitalTotal) * 100 : 0;
+    const diffDigital = Math.abs(progressoDigitalPct - 100);
+
+    const totalFlexCost = enrichedSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+    
+    const filteredAds = adsData.filter((a: any) => 
+      a.mes_referencia === currentRefMonth && 
+      (appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter)
     );
-  }
+    const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+    
+    const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
+    const lucroFisico = repasseFisico - cmvFisico;
+    const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
-  const faturadosMesAtual = (faturados || []).filter((f: any) => f.mes_referencia === mesFaturado);
-  const canceladosMesAtual = (cancelados || []).filter((c: any) => c.mes_referencia === mesCancelado);
-  const adsMesAtual = (adsData || []).filter((a: any) => a.mes_referencia === mesAds);
-  const flexMesAtual = (flexData || []).filter((f: any) => f.mes_referencia === mesFlex);
+    return { 
+      faturamentoBrutoVendas, 
+      fatBrutoFisico,
+      fatBrutoDigital,
+      faturamentoLiquidoRepasse, 
+      repasseFisico,
+      repasseDigital,
+      custoTotalCMV, 
+      cmvFisico,
+      cmvDigital,
+      lucroLiquidoReal, 
+      lucroFisico,
+      lucroDigital,
+      totalPedidos: enrichedSales.length,
+      lojasFisicasDetalhes,
+      lojasFisicasRepasse,
+      progressoDigitalPct,
+      diffDigital,
+      totalCancelamentosValor
+    };
+  }, [enrichedSales, adsData, appliedChannelFilter, canais, channelRules, goals, currentRefMonth, activeCancelados]);
+
+  const channelAnalytics = useMemo(() => {
+    const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
+    let channelsToAnalyze = appliedChannelFilter === 'TODOS' ? activeChannels : activeChannels.filter(c => c === appliedChannelFilter);
+
+    if (appliedModalidadeFilter === 'FISICO') {
+      channelsToAnalyze = channelsToAnalyze.filter(c => isChannelFisico(c));
+    } else if (appliedModalidadeFilter === 'DIGITAL') {
+      channelsToAnalyze = channelsToAnalyze.filter(c => !isChannelFisico(c));
+    }
+
+    channelsToAnalyze.sort((a, b) => {
+      const aFisico = isChannelFisico(a);
+      const bFisico = isChannelFisico(b);
+      if (aFisico && !bFisico) return -1;
+      if (!aFisico && bFisico) return 1;
+      return a.localeCompare(b);
+    });
+
+    const [refAnoStr, refMesStr] = currentRefMonth.split('-');
+    const refAno = parseInt(refAnoStr, 10);
+    const refMes = parseInt(refMesStr, 10) - 1;
+
+    const now = new Date();
+    const isCurrentMonth = (now.getFullYear() === refAno && now.getMonth() === refMes);
+    const totalDiasMes = new Date(refAno, refMes + 1, 0).getDate();
+    
+    let diasPassados = 1;
+    let diasFaltantes = 1;
+
+    if (isCurrentMonth) {
+      diasPassados = Math.max(1, now.getDate());
+      diasFaltantes = Math.max(1, totalDiasMes - now.getDate());
+    } else if (new Date(refAno, refMes, 1) < now) {
+      diasPassados = totalDiasMes;
+      diasFaltantes = 0;
+    } else {
+      diasPassados = 1;
+      diasFaltantes = totalDiasMes;
+    }
+
+    return channelsToAnalyze.map(channelName => {
+      const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
+      
+      const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
+      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+                   || goals.find((g: any) => g.canal === channelName) 
+                   || { meta_valor: 0, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
+
+      const cancelamentosMes = activeCancelados
+        .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
+        .reduce((sum: number, c: any) => sum + parseCurrency(c.valor), 0);
+
+      const faturadoBrutoPuro = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
+      const faturadoComRedutor = Math.max(0, faturadoBrutoPuro - cancelamentosMes);
+      const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
+      
+      const canalAds = adsData
+        .filter((a: any) => a.canal === channelName && a.mes_referencia === currentRefMonth)
+        .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
+      const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+
+      const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
+      
+      const metaBase = parseCurrency(goalObj.meta_valor);
+      const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
+      
+      const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
+      const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
+
+      const projecaoFaturamento = isCurrentMonth 
+        ? (faturadoComRedutor / diasPassados) * totalDiasMes
+        : faturadoComRedutor;
+        
+      const valorFaltante = Math.max(0, metaBase - faturadoComRedutor);
+      const mediaDiariaNecessaria = (isCurrentMonth && valorFaltante > 0) ? valorFaltante / diasFaltantes : 0;
+
+      const logoUrl = channelLogos[channelName] || ruleObj.logo_url || null;
+
+      return { 
+        canal: channelName, 
+        responsavel: ruleObj.responsavel || goalObj.responsavel || 'Equipe Best Fit', 
+        metaValor: metaBase,
+        faturadoBruto: faturadoBrutoPuro,
+        faturadoComRedutor, 
+        lucroLiquidoFinal, 
+        progressoMetaPct, 
+        margemBrutaPct, 
+        margemLiquidaPct, 
+        projecaoFaturamento,
+        valorFaltante,
+        mediaDiariaNecessaria,
+        cancelamentosMes,
+        isCurrentMonth,
+        logoUrl 
+      };
+    });
+  }, [enrichedSales, goals, adsData, appliedChannelFilter, appliedModalidadeFilter, channelRules, channelLogos, currentRefMonth, canais, activeCancelados]);
+
+  const handleEnviarEmailAlerta = () => {
+    const emailsCadastrados = users && users.length > 0 
+      ? users.map((u: any) => u.username).filter(Boolean).join(';') 
+      : "gisele@usebestfit.com.br";
+    
+    const dataHoje = new Date().toLocaleDateString('pt-BR');
+    const assunto = encodeURIComponent(`📊 Resumo de Vendas - Lojas Físicas e Online (${dataHoje})`);
+
+    const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoBruto: 0, progressoMetaPct: 0 };
+    const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoBruto: 0, progressoMetaPct: 0 };
+    
+    const fatDigitalTotal = channelAnalytics
+      .filter(c => !isChannelFisico(c.canal))
+      .reduce((acc, c) => acc + c.faturadoBruto, 0);
+    
+    const metaDigitalTotal = channelAnalytics
+      .filter(c => !isChannelFisico(c.canal))
+      .reduce((acc, c) => acc + c.metaValor, 0);
+    
+    const progressoDigitalPct = metaDigitalTotal > 0 ? (fatDigitalTotal / metaDigitalTotal) * 100 : 0;
+
+    let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas fisica e onlines do dia ${dataHoje}.\n\n`;
+    corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasObj.progressoMetaPct.toFixed(1)}% da meta)\n`;
+    corpoTexto += `E-commerce: R$ ${fatDigitalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${progressoDigitalPct.toFixed(1)}% da meta)\n\n`;
+    corpoTexto += `Caso queiram visualiza-lo, acessem o link a seguir: https://dashboard-e-commerce-nine.vercel.app/\n`;
+
+    const corpoEncoded = encodeURIComponent(corpoTexto);
+    window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${corpoEncoded}`;
+    addLog('E-mail aberto com os destinatários separados por ponto e vírgula.', 'success');
+  };
 
   return (
     <div className="space-y-6">
-       
-       <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-         <div>
-           <h2 className="text-xl font-bold text-white tracking-tight">Painel Administrativo</h2>
-           <p className="text-xs text-slate-400 mt-1">Gestão de bases, faturados e redutores por mês de referência</p>
-         </div>
-         
-         <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-            {(() => {
-              const usageStr = getDbUsageMB();
-              const usageNum = parseFloat(usageStr);
-              const limitMB = 500;
-              const pct = Math.min((usageNum / limitMB) * 100, 100);
-              const colorText = pct > 90 ? 'text-rose-400' : pct > 75 ? 'text-amber-400' : 'text-emerald-400';
-              const colorBg = pct > 90 ? 'bg-rose-500' : pct > 75 ? 'bg-amber-500' : 'bg-emerald-500';
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
+          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Real = Repasse Líq - CMV - Fretes Flex - ADS</p>
+        </div>
+        
+        <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
+          <button 
+            onClick={handleEnviarEmailAlerta} 
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
+          >
+            <i className="fa-solid fa-envelope"></i> Enviar Relatório por E-mail
+          </button>
 
-              return (
-                <div className="flex flex-col justify-center bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 min-w-[170px]">
-                  <div className="flex justify-between items-end mb-1">
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Uso DB (Supa)</span>
-                    <span className={`text-[10px] font-black ${colorText}`}>{pct.toFixed(2)}%</span>
-                  </div>
-                  <div className="flex items-baseline gap-1 mb-1.5">
-                    <span className={`text-sm font-black ${colorText}`}>{usageStr}</span>
-                    <span className="text-[10px] font-bold text-slate-500">/ {limitMB} MB</span>
-                  </div>
-                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                    <div className={`h-full ${colorBg} transition-all duration-500`} style={{ width: `${pct}%` }}></div>
-                  </div>
-                </div>
-              );
-            })()}
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-regular fa-calendar text-indigo-400 pl-2 text-xs"></i>
+            <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="bg-transparent text-indigo-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="MES_ATUAL" className="bg-slate-900 text-white">Mês Atual (Padrão Metas)</option>
+              <option value="MES_ANTERIOR" className="bg-slate-900 text-white">Mês Anterior</option>
+              <option value="HOJE" className="bg-slate-900 text-white">Hoje</option>
+              <option value="SEMANA" className="bg-slate-900 text-white">Últimos 7 dias</option>
+              <option value="QUINZENA" className="bg-slate-900 text-white">Últimos 15 dias</option>
+              <option value="PERSONALIZADO" className="bg-slate-900 text-white">Personalizado</option>
+            </select>
+          </div>
+          {dateFilter === 'PERSONALIZADO' && (
+            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+              <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
+              <span className="text-slate-500 text-xs font-bold">até</span>
+              <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs focus:outline-none" />
+            </div>
+          )}
 
-            <button onClick={() => setIsAdminUnlocked(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition whitespace-nowrap">
-              Bloquear Admin
-            </button>
-         </div>
-       </div>
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-solid fa-layer-group text-emerald-400 pl-2 text-xs"></i>
+            <select value={modalidadeFilter} onChange={(e) => setModalidadeFilter(e.target.value)} className="bg-transparent text-emerald-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="SELECIONE" className="bg-slate-900 text-slate-500">Selecione...</option>
+              <option value="TODAS" className="bg-slate-900 text-white">Todas as Modalidades</option>
+              <option value="FISICO" className="bg-slate-900 text-white">Lojas Físicas</option>
+              <option value="DIGITAL" className="bg-slate-900 text-white">E-commerce / Marketplaces</option>
+            </select>
+          </div>
 
-       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 1: Bases e Filtros ERP</h2>
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 space-y-3">
-           <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
-           <div>
-              <span className="block text-[10px] text-slate-400 font-bold mb-1">Mês de Referência dos Faturados</span>
-              <input 
-                type="month" 
-                value={mesFaturado} 
-                onChange={e => setMesFaturado(e.target.value)} 
-                className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-emerald-500" 
-              />
-           </div>
-           <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações / AI)</span>
-                <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+          <div className="flex gap-2 items-center bg-slate-950 p-1.5 rounded-xl border border-slate-700">
+            <i className="fa-solid fa-store text-purple-400 pl-2 text-xs"></i>
+            <select value={selectedChannelFilter} onChange={(e) => setSelectedChannelFilter(e.target.value)} className="bg-transparent text-purple-300 font-bold text-xs focus:outline-none pr-1 cursor-pointer">
+              <option value="TODOS" className="bg-slate-900 text-white">Todos os Canais</option>
+              {canais.map((ch: string) => <option key={ch} value={ch} className="bg-slate-900 text-white">{ch}</option>)}
+            </select>
+          </div>
+
+          <button onClick={handleRecalculate} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg">
+            {isRecalculating ? 'A calcular...' : 'Recalcular'}
+          </button>
+        </div>
+      </div>
+
+      {/* 4 PAINÉIS DO TOPO */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        
+        {/* 1. FATURAMENTO BRUTO */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
+            <h3 className="text-2xl font-black text-white mt-1">R$ {kpis.faturamentoBrutoVendas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {kpis.totalPedidos} itens validados
+              {kpis.totalCancelamentosValor > 0 && <span className="text-rose-400 block mt-0.5">Redutor Consolidado: - R$ {kpis.totalCancelamentosValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>}
+            </p>
+          </div>
+          
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-2">Lojas Físicas</span>
+              <div className="grid grid-cols-2 gap-2">
+                {kpis.lojasFisicasDetalhes.map((loja: any) => (
+                  <div key={loja.nome} className="bg-slate-950/50 p-2 rounded-xl border border-slate-800/50">
+                    <span className="font-bold text-slate-200 text-xs block">{loja.nome}</span>
+                    <span className="text-xs font-black text-white block mt-0.5">R$ {loja.faturado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className={`text-[9px] font-black block mt-0.5 ${loja.abaixo ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {loja.abaixo ? `▼ ${loja.diff.toFixed(1)}% abaixo` : `▲ ${loja.diff.toFixed(1)}% acima`}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div>
-                <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna Data (D)</span>
-                <input type="text" value={colFaturadosData} onChange={e => setColFaturadosData(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+            </div>
+
+            <div className="pt-2 border-t border-slate-800/50">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.fatBrutoDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span className={`text-[10px] font-black block mt-0.5 ${kpis.progressoDigitalPct >= 100 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpis.progressoDigitalPct >= 100 ? `▲ ${kpis.diffDigital.toFixed(1)}% acima` : `▼ ${kpis.diffDigital.toFixed(1)}% abaixo`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. REPASSE TOTAL */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
+            <h3 className="text-2xl font-black text-purple-400 mt-1">R$ {kpis.faturamentoLiquidoRepasse.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.repasseFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="pt-2 border-t border-slate-800/50">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.repasseDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* 3. CMV TOTAL */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
+            <h3 className="text-2xl font-black text-amber-400 mt-1">R$ {kpis.custoTotalCMV.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-[10px] font-bold text-slate-400 italic block">Com CMV Consolidado</span>
+            </div>
+            <div className="pt-2 border-t border-slate-800/50">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.cmvDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. LUCRO LÍQUIDO REAL */}
+        <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
+          <div>
+            <span className="text-[10px] font-bold text-emerald-400 uppercase">Lucro Líquido Real</span>
+            <h3 className="text-2xl font-black text-emerald-400 mt-1">R$ {kpis.lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
+            <div>
+              <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.lucroFisico.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="pt-2 border-t border-slate-800/50">
+              <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>
+              <span className="text-xs font-bold text-slate-200 block">R$ {kpis.lucroDigital.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* RENDERIZAÇÃO CONDICIONAL DOS CARDS COM AS SETINHAS E MARGEM LÍQ */}
+      {appliedModalidadeFilter === 'SELECIONE' ? (
+        <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
+          <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
+          <p className="text-slate-400 text-sm font-bold text-center leading-relaxed">
+            Selecione uma modalidade (Todas, Lojas Físicas ou E-commerce)<br/> 
+            no filtro acima e clique em "Recalcular" para ver o detalhamento por canal.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {channelAnalytics.map((item: any) => {
+            const metaBatida = item.progressoMetaPct >= 100;
+            return (
+              <div key={item.canal} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between hover:border-slate-700 transition duration-300 shadow-sm">
+                 <div className="flex justify-between items-start border-b border-slate-800 pb-3 gap-3">
+                   <div className="flex items-center gap-3">
+                     {item.logoUrl ? <img src={item.logoUrl} alt={item.canal} className="w-11 h-11 rounded-xl bg-white object-contain p-1 border border-slate-700 shadow" /> : <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-[10px] font-bold">Logo</div>}
+                     <div>
+                       <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">{item.responsavel || 'Equipe'}</span>
+                       <h4 className="font-black text-white text-sm tracking-tight">{item.canal}</h4>
+                     </div>
+                   </div>
+                   
+                   <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-flex items-center gap-1 whitespace-nowrap ${metaBatida ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border-rose-500/40'}`}>
+                        {metaBatida ? <i className="fa-solid fa-arrow-trend-up"></i> : <i className="fa-solid fa-arrow-trend-down"></i>}
+                        {item.progressoMetaPct.toFixed(1)}% da meta atingida
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400 tracking-tight">
+                        Meta: R$ {item.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                   </div>
+                 </div>
+                 
+                 {/* 3 COLUNAS */}
+                 <div className="grid grid-cols-3 gap-2 bg-slate-800/30 p-3.5 rounded-xl border border-slate-700/50">
+                   <div>
+                     <span className="text-[9px] text-slate-300 block font-bold tracking-wider mb-0.5">FAT. BRUTO</span>
+                     <strong className="text-xs font-black text-white">R$ {item.faturadoBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-sky-200 block font-bold tracking-wider mb-0.5">C/ REDUTOR</span>
+                     <strong className="text-xs font-black text-sky-400">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                   <div>
+                     <span className="text-[9px] text-purple-200 block font-bold tracking-wider mb-0.5">LUCRO LÍQ.</span>
+                     <strong className="text-xs font-black text-purple-400">R$ {item.lucroLiquidoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+                 </div>
+
+                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
+                   
+                   <div className="flex justify-between items-center">
+                     <span className="text-[10px] text-slate-400 font-bold uppercase">
+                        {item.isCurrentMonth ? 'Projeção Fechamento:' : 'Faturamento Final:'}
+                     </span>
+                     <strong className="text-xs font-black text-indigo-300">R$ {item.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                   </div>
+
+                   <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                     {item.valorFaltante === 0 ? (
+                       <span className="w-full text-center text-xs font-black text-emerald-400 py-0.5">🎉 Parabéns, meta batida!</span>
+                     ) : (
+                       <>
+                         <span className="text-[10px] text-slate-400 font-bold uppercase">
+                            {item.isCurrentMonth ? 'Meta Diária Restante:' : 'Faltou para a Meta:'}
+                         </span>
+                         <strong className="text-xs font-black text-amber-400">
+                            R$ {item.isCurrentMonth 
+                                ? item.mediaDiariaNecessaria.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' / dia' 
+                                : item.valorFaltante.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                         </strong>
+                       </>
+                     )}
+                   </div>
+                   
+                   {item.cancelamentosMes > 0 && (
+                     <div className="flex justify-between items-center pt-1 border-t border-slate-900">
+                       <span className="text-[10px] text-slate-400 font-bold uppercase">Cancelamentos do Mês:</span>
+                       <strong className="text-xs font-black text-rose-400">- R$ {item.cancelamentosMes.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                     </div>
+                   )}
+                 </div>
+                 
+                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700/50">
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Bruta</span>
+                      <strong className="text-sm font-black text-blue-400">{item.margemBrutaPct.toFixed(1)}%</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-300 block font-bold mb-0.5">Margem Líquida</span>
+                      <strong className="text-sm font-black text-emerald-400">{item.margemLiquidaPct.toFixed(1)}%</strong>
+                    </div>
+                 </div>
               </div>
-           </div>
-           <label className="cursor-pointer block text-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados (Excel/CSV)
-           </label>
-           <p className="text-[10px] text-slate-400 text-center">Registos p/ {mesFaturado}: <span className="text-emerald-400 font-bold">{faturadosMesAtual.length}</span></p>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 space-y-3">
-           <h3 className="font-bold text-rose-400 text-sm">Cancelados / Redutores</h3>
-           <div>
-              <span className="block text-[10px] text-slate-400 font-bold mb-1">Mês de Referência para Abatimento</span>
-              <input 
-                type="month" 
-                value={mesCancelado} 
-                onChange={e => setMesCancelado(e.target.value)} 
-                className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-rose-500" 
-              />
-           </div>
-           <label className="cursor-pointer block text-center px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition mt-4">
-             <input type="file" ref={fileCanceladosRef} className="hidden" accept=".xlsx, .csv" onChange={handleUploadCancelados}/>
-             Subir Cancelados
-           </label>
-           <p className="text-[10px] text-slate-400 text-center">Registos p/ {mesCancelado}: <span className="text-emerald-400 font-bold">{canceladosMesAtual.length}</span></p>
-         </div>
-       </div>
-
-       <h2 className="text-xl font-bold text-white mt-8 mb-4">Passo 2: Vendas, Custos e Logística</h2>
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-         <div className="bg-slate-900 p-5 rounded-2xl border border-purple-500/30 flex flex-col justify-between">
-           <div>
-             <h3 className="font-bold text-white text-sm mb-2">Planilha Vendas (Canal)</h3>
-             <div className="mb-3">
-               <label className="text-[10px] text-slate-400 block mb-1">Mês de Referência das Vendas</label>
-               <input 
-                 type="month" 
-                 value={mesVendas} 
-                 onChange={e => setMesVendas(e.target.value)} 
-                 className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-purple-500" 
-               />
-             </div>
-             <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2.5 bg-slate-950 mb-2 text-purple-300 border border-slate-700 font-bold rounded-xl text-xs">
-               {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
-             </select>
-             
-             {/* CONFIGURAÇÃO DA COLUNA DO CMV DO CLUBE */}
-             {(selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja')) && (
-               <div className="mb-3 bg-slate-950 p-2.5 rounded-xl border border-amber-500/40">
-                 <label className="text-[10px] text-amber-400 font-bold block mb-1">Coluna CMV (Planilha do Clube)</label>
-                 <input type="text" value={colCmvClube} onChange={e => setColCmvClube(e.target.value.toUpperCase())} className="w-full p-1.5 bg-slate-900 text-amber-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
-               </div>
-             )}
-           </div>
-           <label className={`cursor-pointer block py-3 text-white font-bold text-xs text-center rounded-xl transition shadow-lg ${isProcessing ? 'bg-slate-600' : 'bg-purple-600 hover:bg-purple-500'}`}>
-             <input ref={fileVendasRef} type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendasCanal} disabled={isProcessing}/>
-             {isProcessing ? 'A processar...' : 'Importar e Cruzar Vendas'}
-           </label>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-cyan-500/30 flex flex-col justify-between">
-           <div>
-             <h3 className="font-bold text-white text-sm mb-1">Débitos Frete FLEX</h3>
-             <p className="text-[10px] text-slate-400 mb-2">Coluna A: ID do Pedido | Coluna B: Valor do Frete</p>
-             <div className="mb-3">
-               <label className="text-[10px] text-slate-400 block mb-1">Mês de Referência para FLEX</label>
-               <input 
-                 type="month" 
-                 value={mesFlex} 
-                 onChange={e => setMesFlex(e.target.value)} 
-                 className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-cyan-500" 
-               />
-             </div>
-           </div>
-           <label className="cursor-pointer block py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input ref={fileFlexRef} type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFlex} />
-             Importar Frete Flex
-           </label>
-           <p className="text-[10px] text-slate-400 text-center mt-2">Registos p/ {mesFlex}: <span className="text-cyan-400 font-bold">{flexMesAtual.length}</span></p>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-amber-500/30 flex flex-col justify-between">
-           <div>
-             <h3 className="font-bold text-white text-sm mb-1">Investimento ADS</h3>
-             <p className="text-[10px] text-slate-400 mb-3">Coluna A: Nome do Canal | Coluna B: Valor Gasto</p>
-             <div className="mb-3">
-               <label className="text-[10px] text-slate-400 block mb-1">Mês de Referência para ADS</label>
-               <input 
-                 type="month" 
-                 value={mesAds} 
-                 onChange={e => setMesAds(e.target.value)} 
-                 className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-amber-500" 
-               />
-             </div>
-           </div>
-           <label className="cursor-pointer block py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input ref={fileAdsRef} type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadAds} />
-             Importar ADS
-           </label>
-           <p className="text-[10px] text-slate-400 text-center mt-2">Registos p/ {mesAds}: <span className="text-amber-400 font-bold">{adsMesAtual.length}</span></p>
-         </div>
-
-         <div className="bg-slate-900 p-5 rounded-2xl border border-indigo-500/30 flex flex-col justify-between space-y-3">
-           <div>
-             <h3 className="font-bold text-white text-sm mb-1">Consulta Tarifas Site</h3>
-             <p className="text-[10px] text-slate-400 mb-2">Cruza ID do Pedido com a tarifa para descontar do líquido final.</p>
-             <div className="grid grid-cols-2 gap-2">
-               <div>
-                 <span className="block text-[9px] text-slate-400 font-bold mb-1">Col ID Pedido</span>
-                 <input type="text" value={colTarifasIdPedido} onChange={e => setColTarifasIdPedido(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-indigo-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
-               </div>
-               <div>
-                 <span className="block text-[9px] text-slate-400 font-bold mb-1">Col Valor Tarifa</span>
-                 <input type="text" value={colTarifasValor} onChange={e => setColTarifasValor(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-indigo-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
-               </div>
-             </div>
-           </div>
-           <label className="cursor-pointer block py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs text-center rounded-xl transition shadow-lg">
-             <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadTarifasSite}/>
-             Subir Tarifas do Site
-           </label>
-         </div>
-       </div>
-
-       {/* ZONA DE LIMPEZA COM SELEÇÃO DE MÊS */}
-       <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-             <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Dados por Mês</h3>
-             
-             <div className="flex items-center gap-3 w-full sm:w-auto">
-               <div className="flex items-center gap-1.5">
-                 <span className="text-xs text-slate-400 font-bold">Mês Alvo:</span>
-                 <input 
-                   type="month" 
-                   value={mesLimpeza} 
-                   onChange={e => setMesLimpeza(e.target.value)} 
-                   className="p-1.5 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none" 
-                 />
-               </div>
-               <div className="flex items-center gap-1.5">
-                 <span className="text-xs text-slate-400 font-bold">Canal:</span>
-                 <select 
-                   value={targetChannelDelete} 
-                   onChange={e => setTargetChannelDelete(e.target.value)} 
-                   className="p-2 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none cursor-pointer"
-                 >
-                   <option value="TODOS">Todos os Canais</option>
-                   {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
-                 </select>
-               </div>
-             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <button 
-              onClick={handleExcluirUltimoLoteCanal} 
-              className="py-3 bg-rose-950/50 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <i className="fa-solid fa-rotate-left"></i> Excluir Último Lote do Canal ({mesLimpeza})
-            </button>
-            <button 
-              onClick={handleExcluirVendasPorCanal} 
-              className="py-3 bg-rose-900 hover:bg-rose-800 border border-rose-700 text-white text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <i className="fa-solid fa-trash-can"></i> Apagar Vendas do Canal no Mês ({mesLimpeza})
-            </button>
-          </div>
-
-          <div className="pt-3 border-t border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <button onClick={() => clearDataByMonth('faturados', 'faturados', faturados, setFaturados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Faturados ({mesLimpeza})</button>
-            <button onClick={() => clearDataByMonth('cancelados', 'cancelados', cancelados, setCancelados)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar Cancelados ({mesLimpeza})</button>
-            <button onClick={() => clearDataByMonth('flex', 'flex', flexData, setFlexData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar FLEX ({mesLimpeza})</button>
-            <button onClick={() => clearDataByMonth('ads', 'ads', adsData, setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS ({mesLimpeza})</button>
-          </div>
-       </div>
-
-       <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-3">
-          <div className="flex justify-between items-center"><h3 className="font-bold text-white text-xs uppercase tracking-wider">Console de Auditoria</h3><button onClick={() => addLog('Console limpo.', 'info')} className="text-[10px] text-slate-400 hover:text-white border border-slate-700 px-3 py-1 rounded-lg">Limpar Console</button></div>
-          <div className="bg-slate-950 p-4 rounded-xl font-mono text-xs max-h-40 overflow-y-auto text-slate-300 space-y-1.5 border border-slate-800">
-             {logs.map((log: any) => (<div key={log.id}><span className="text-slate-500 mr-2">[{log.timestamp}]</span> <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'warning' ? 'text-amber-400' : log.type === 'error' ? 'text-rose-400' : 'text-slate-300'}>{log.message}</span></div>))}
-          </div>
-       </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
