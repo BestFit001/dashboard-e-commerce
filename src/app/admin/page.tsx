@@ -8,7 +8,7 @@ export default function AdminPage() {
   const { 
     canais, isAdminUnlocked, setIsAdminUnlocked, channelRules, 
     sales, setSales, flexData, setFlexData, adsData, setAdsData, 
-    faturados, setFaturados, cancelados, setCancelados, importCanceladosComMes, importAdsComMes, addLog, logs 
+    faturados, setFaturados, cancelados, setCancelados, importFaturadosComMes, importCanceladosComMes, importAdsComMes, addLog, logs 
   } = useAppContext();
   
   const [password, setPassword] = useState('');
@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [colFaturadosObs, setColFaturadosObs] = useState('AI');
   const [colFaturadosData, setColFaturadosData] = useState('D');
   
+  const [mesFaturado, setMesFaturado] = useState(new Date().toISOString().slice(0, 7));
   const [mesCancelado, setMesCancelado] = useState(new Date().toISOString().slice(0, 7));
   const [mesAds, setMesAds] = useState(new Date().toISOString().slice(0, 7)); 
 
@@ -39,7 +40,6 @@ export default function AdminPage() {
     }
   };
 
-  // CÁLCULO DE MEMÓRIA OTIMIZADO: Não trava o navegador!
   const getDbUsageMB = () => {
     try {
       const estimate = (arr: any[]) => arr && arr.length > 0 ? JSON.stringify(arr[0]).length * arr.length : 0;
@@ -176,10 +176,8 @@ export default function AdminPage() {
           }
         });
 
-        const updatedFaturados = [...novosFaturados, ...faturados];
-        await saveToCloudAndState('faturados', updatedFaturados, setFaturados);
-        addLog(`${novosFaturados.length} Registos Faturados extraídos e salvos.`, 'success');
-        alert(`Sucesso! ${novosFaturados.length} faturados lidos e mapeados na base.`);
+        await importFaturadosComMes(rows, mesFaturado, novosFaturados);
+        alert(`Sucesso! ${novosFaturados.length} faturados lidos e salvos para o mês ${mesFaturado}.`);
       } catch (err: any) { alert(`Erro ao ler faturados: ${err.message}`); }
     };
     if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file, 'ISO-8859-1');
@@ -291,11 +289,15 @@ export default function AdminPage() {
     const file = e.target.files[0];
     if (!file) return;
     const isClube = selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja');
-    if (!isClube && (!faturados || faturados.length === 0)) {
+    
+    // Coleta todos os faturados acumulados de todos os meses para o cruzamento de ID/CPF
+    const faturadosAtuais = faturados || [];
+    if (!isClube && faturadosAtuais.length === 0) {
       alert('ATENÇÃO: A base de Faturados (NFes Saída) está vazia! Por favor, suba a planilha de Faturados no Passo 1 antes de importar as vendas do e-commerce.');
       if (fileVendasRef.current) fileVendasRef.current.value = '';
       return;
     }
+
     setIsProcessing(true);
     const isShopee = selectedChannel.toLowerCase().includes('shopee');
     const rule = channelRules.find((r: any) => r.canal === selectedChannel) || { colIdPedido: 'A', colSku: isShopee ? 'S' : 'AS', colRebate: 'C', colPdv: isShopee ? 'BA' : 'J', colQuantidade: isShopee ? 'X' : 'I', formulaExcel: 'J - (J * 9%) - K' };
@@ -315,7 +317,7 @@ export default function AdminPage() {
         
         const fatIdMap = new Map();
         const fatCpfMap = new Map();
-        faturados.forEach((item: any) => {
+        faturadosAtuais.forEach((item: any) => {
           if (item.id && !item.id.includes('s-id-')) fatIdMap.set(String(item.id).trim(), item.data);
           if (item.cpf) fatCpfMap.set(String(item.cpf).trim(), item.data);
         });
@@ -371,7 +373,7 @@ export default function AdminPage() {
               isFaturado = true;
               dataFaturamento = fatCpfMap.get(rowCpf);
             }
-            if (!isFaturado && (fatIdMap.size > 0 || fatCpfMap.size > 0)) {
+            if (!isFaturado && fatIdMap.size > 0) {
               ignoradosPorNaoFaturados++;
               i++; 
               continue;
@@ -493,13 +495,13 @@ export default function AdminPage() {
     );
   }
 
+  const faturadosMesAtual = (faturados || []).filter((f: any) => f.mes_referencia === mesFaturado);
   const canceladosMesAtual = (cancelados || []).filter((c: any) => c.mes_referencia === mesCancelado);
   const adsMesAtual = (adsData || []).filter((a: any) => a.mes_referencia === mesAds);
 
   return (
     <div className="space-y-6">
        
-       {/* PAINEL ADMINISTRATIVO COM MEMÓRIA BLINDADA */}
        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
          <div>
            <h2 className="text-xl font-bold text-white tracking-tight">Painel Administrativo</h2>
@@ -542,7 +544,16 @@ export default function AdminPage() {
        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
          <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/30 space-y-3">
            <h3 className="font-bold text-emerald-400 text-sm">Faturados (NFes Saída)</h3>
-           <div className="flex gap-2">
+           <div>
+              <span className="block text-[10px] text-slate-400 font-bold mb-1">Mês de Referência dos Faturados</span>
+              <input 
+                type="month" 
+                value={mesFaturado} 
+                onChange={e => setMesFaturado(e.target.value)} 
+                className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-emerald-500" 
+              />
+           </div>
+           <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="block text-[10px] text-slate-400 font-bold mb-1">Coluna ID (Observações / AI)</span>
                 <input type="text" value={colFaturadosObs} onChange={e => setColFaturadosObs(e.target.value.toUpperCase())} className="w-full p-2 bg-slate-950 text-emerald-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
@@ -555,7 +566,7 @@ export default function AdminPage() {
            <label className="cursor-pointer block text-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition">
              <input type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadFaturados}/>Subir Faturados (Excel/CSV)
            </label>
-           <p className="text-[10px] text-slate-400 text-center">Registos Carregados: {faturados.length}</p>
+           <p className="text-[10px] text-slate-400 text-center">Registos p/ {mesFaturado}: <span className="text-emerald-400 font-bold">{faturadosMesAtual.length}</span></p>
          </div>
 
          <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 space-y-3">

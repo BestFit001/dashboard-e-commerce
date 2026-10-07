@@ -110,6 +110,16 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const importFaturadosComMes = async (rows: any[], mesReferencia: string, novosFaturados: any[]) => {
+    const updatedFaturados = [
+      ...faturados.filter((f: any) => f.mes_referencia !== mesReferencia), 
+      ...novosFaturados.map(f => ({ ...f, mes_referencia: mesReferencia }))
+    ];
+    setFaturados(updatedFaturados);
+    await updateCloudState('faturados', updatedFaturados);
+    addLog(`Faturados importados para o mês ${mesReferencia} com sucesso!`, 'success');
+  };
+
   const importCanceladosComMes = async (rows: any[], mesReferencia: string) => {
     const formatted = rows.map((r: any) => {
       let rawVal = r['Valor'] !== undefined ? r['Valor'] : (r['valor'] !== undefined ? r['valor'] : 0);
@@ -178,6 +188,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         setCancelados(updated);
         await updateCloudState('cancelados', updated);
       },
+      importFaturadosComMes,
       importCanceladosComMes,
       importAdsComMes,
       channelLogos, setChannelLogos,
