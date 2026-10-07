@@ -134,9 +134,16 @@ export default function DashboardPage() {
         return true;
       })
       .map((s: any) => {
-        const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
-        const qtd = parseCurrency(s.quantidade) || 1;
-        const custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
+        let custoCMV = 0;
+        
+        if (isChannelFisico(s.canal) && s.cmv_clube !== undefined && s.cmv_clube !== null) {
+          custoCMV = parseCurrency(s.cmv_clube);
+        } else {
+          const prod = products.find((p: any) => p.sku === s.sku) || { preco_custo: 0, custo_embalagem: 0 };
+          const qtd = parseCurrency(s.quantidade) || 1;
+          custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
+        }
+
         const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido);
         const custoFlex = flexOrder ? parseCurrency(flexOrder.valor_frete) : 0;
         
@@ -551,7 +558,7 @@ export default function DashboardPage() {
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-3">
             <div>
               <span className="block text-[9px] text-emerald-400 font-bold uppercase mb-1">Lojas Físicas</span>
-              <span className="text-[10px] font-bold text-slate-400 italic block">Sem custos detalhados</span>
+              <span className="text-[10px] font-bold text-slate-400 italic block">Com CMV Consolidado</span>
             </div>
             <div className="pt-2 border-t border-slate-800/50">
               <span className="block text-[9px] text-blue-400 font-bold uppercase mb-0.5">E-commerce</span>

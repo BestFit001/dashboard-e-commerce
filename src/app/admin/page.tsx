@@ -27,6 +27,9 @@ export default function AdminPage() {
   const [mesVendas, setMesVendas] = useState(new Date().toISOString().slice(0, 7));
   const [mesLimpeza, setMesLimpeza] = useState(new Date().toISOString().slice(0, 7));
 
+  // NOVO: Estado para a coluna de CMV direto da planilha do clube
+  const [colCmvClube, setColCmvClube] = useState('G');
+
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
   const [colTarifasValor, setColTarifasValor] = useState('E');
 
@@ -366,6 +369,7 @@ export default function AdminPage() {
           let repasseCalculado = 0;
           let skuVal = 'SKU-GERAL';
           let quantidade = 1;
+          let custoCmvClube = 0;
 
           if (isClube) {
             const colAStr = row[0] !== undefined ? String(row[0]).trim().toLowerCase() : '';
@@ -379,6 +383,11 @@ export default function AdminPage() {
                 const apIdx = colToIdx(apuracaoStr);
                 repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
             } else { repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel); }
+            
+            // LENDO O CMV DIRETO DA PLANILHA DO CLUBE (CONSOLIDADO)
+            const cmvIdx = colToIdx(colCmvClube);
+            custoCmvClube = cmvIdx >= 0 ? parseSmartFloat(row[cmvIdx], selectedChannel) : 0;
+
             skuVal = 'SKU-CLUBE-ISENTO'; 
             const colQtdIdx = colToIdx(rule.colQuantidade || 'ZZZ');
             quantidade = colQtdIdx >= 0 && row[colQtdIdx] ? parseInt(String(row[colQtdIdx]).replace(/[^0-9]/g, ''), 10) || 1 : 1;
@@ -428,19 +437,18 @@ export default function AdminPage() {
             preco_venda: precoVendaUnitario, 
             repasse_liquido: repasseCalculado, 
             lote_id: loteId,
-            mes_referencia: mesVendas 
+            mes_referencia: mesVendas,
+            cmv_clube: custoCmvClube // Armazena o CMV específico do clube
           });
           i++;
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        
-        // Remove apenas as vendas do mesmo canal E do mesmo mês de referência para não sobrescrever outros meses
         const filteredOldSales = sales.filter((s: any) => !(s.canal === selectedChannel && s.mes_referencia === mesVendas));
         const updatedSales = [...salesWithKeys, ...filteredOldSales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
 
-        const clubeMsg = isClube ? ' (Modo Loja Física)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
+        const clubeMsg = isClube ? ' (Modo Clube com CMV)' : ` (${ignoradosPorNaoFaturados} ignorados)`;
         addLog(`Importação canal [${selectedChannel}] para ${mesVendas}: ${novasVendas.length} itens salvos.`, 'success');
         alert(`Sucesso! ${novasVendas.length} vendas importadas para ${selectedChannel} no mês ${mesVendas}${clubeMsg}.`);
       } catch (err: any) {
@@ -628,9 +636,17 @@ export default function AdminPage() {
                  className="w-full p-2 bg-slate-950 text-white font-bold border border-slate-700 rounded-lg text-xs outline-none focus:border-purple-500" 
                />
              </div>
-             <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2.5 bg-slate-950 mb-4 text-purple-300 border border-slate-700 font-bold rounded-xl text-xs">
+             <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} className="w-full p-2.5 bg-slate-950 mb-2 text-purple-300 border border-slate-700 font-bold rounded-xl text-xs">
                {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
              </select>
+             
+             {/* CONFIGURAÇÃO DA COLUNA DE CMV CASO SEJA CLUBE */}
+             {(selectedChannel.toLowerCase().includes('clube') || selectedChannel.toLowerCase().includes('loja')) && (
+               <div className="mb-3 bg-slate-950 p-2.5 rounded-xl border border-amber-500/40">
+                 <label className="text-[10px] text-amber-400 font-bold block mb-1">Coluna CMV (Planilha do Clube)</label>
+                 <input type="text" value={colCmvClube} onChange={e => setColCmvClube(e.target.value.toUpperCase())} className="w-full p-1.5 bg-slate-900 text-amber-300 font-bold text-center border border-slate-700 rounded-lg text-xs" />
+               </div>
+             )}
            </div>
            <label className={`cursor-pointer block py-3 text-white font-bold text-xs text-center rounded-xl transition shadow-lg ${isProcessing ? 'bg-slate-600' : 'bg-purple-600 hover:bg-purple-500'}`}>
              <input ref={fileVendasRef} type="file" className="hidden" accept=".xlsx, .csv" onChange={handleUploadVendasCanal} disabled={isProcessing}/>
@@ -713,7 +729,7 @@ export default function AdminPage() {
                  <input 
                    type="month" 
                    value={mesLimpeza} 
-                   onChange={e => setMesLimpeza(e.target.value)} 
+                   onChange={e => mesLimpeza(e.target.value)} 
                    className="p-1.5 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none" 
                  />
                </div>
