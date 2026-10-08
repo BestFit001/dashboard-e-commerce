@@ -1,7 +1,6 @@
 'use client';
 import React, { useState, useRef, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
-import html2canvas from 'html2canvas';
 
 export default function PainelExecutivoPage() {
   const context = useAppContext();
@@ -223,24 +222,22 @@ export default function PainelExecutivoPage() {
     if (!tableRef.current) return;
     try {
       setIsCopying(true);
-      const canvas = await html2canvas(tableRef.current, {
-        backgroundColor: '#0f172a',
-        scale: 2,
-        // Ignora propriedades de cores complexas para evitar erro de lab()
-        onclone: (doc) => {
-          const el = doc.body;
-          if (el) el.style.colorScheme = 'dark';
-        }
+      // Importação dinâmica para evitar erro de build no Next.js
+      const { toBlob } = await import('html-to-image');
+      
+      const blob = await toBlob(tableRef.current, {
+        backgroundColor: '#0f172a', // Mantém o fundo slate-900 idêntico ao painel
+        pixelRatio: 2 // Mantém a qualidade alta para colar no email
       });
       
-      canvas.toBlob(async (blob) => {
-        if (!blob) throw new Error('Falha ao gerar imagem.');
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]);
-        alert('✅ Imagem da tabela copiada com sucesso! Agora basta ir no e-mail e apertar Ctrl + V para colar.');
-        addLog('Print do Painel Executivo copiado para a área de transferência.', 'success');
-      });
+      if (!blob) throw new Error('Falha ao gerar imagem.');
+      
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob })
+      ]);
+      
+      alert('✅ Imagem da tabela copiada com sucesso! Agora basta ir no e-mail e apertar Ctrl + V para colar.');
+      addLog('Print do Painel Executivo copiado para a área de transferência.', 'success');
     } catch (err: any) {
       alert(`Erro ao copiar print: ${err.message}`);
     } finally {
@@ -267,6 +264,7 @@ export default function PainelExecutivoPage() {
         </div>
       </div>
 
+      {/* A referência ref={tableRef} pega exatamente essa área para gerar a imagem perfeitamente */}
       <div ref={tableRef} className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-slate-200 border-collapse">
