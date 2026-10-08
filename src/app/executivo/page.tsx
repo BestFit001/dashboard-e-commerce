@@ -133,37 +133,8 @@ export default function PainelExecutivoPage() {
     }
   };
 
-  const handleEnviarEmailAlerta = () => {
-    const emailsCadastrados = users && users.length > 0 
-      ? users.map((u: any) => u.username).filter(Boolean).join(';') 
-      : "gisele@usebestfit.com.br";
-    
-    const dataHoje = new Date().toLocaleDateString('pt-BR');
-    const assunto = encodeURIComponent(`📊 Painel Executivo - Margens e Metas (${dataHoje})`);
-    let corpoTexto = `Olá, tudo bem? Segue o resumo do Painel Executivo de Margens do dia ${dataHoje}.\n\nAcesse o sistema para conferir a visão completa: https://dashboard-e-commerce-nine.vercel.app/`;
-
-    window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
-    addLog('E-mail do Painel Executivo disparado para a equipe.', 'success');
-  };
-
   return (
     <div className="space-y-4 max-w-7xl mx-auto pb-10">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900 p-4 rounded-xl border border-slate-800 gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">Painel Executivo de Margens & Metas</h2>
-          <p className="text-[11px] text-slate-400">Visão consolidada de performance, metas de margem bruta e margem líquida.</p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleEnviarEmailAlerta} 
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-lg shadow-md flex items-center gap-2"
-          >
-            <i className="fa-solid fa-envelope"></i> Enviar por E-mail ao Time
-          </button>
-        </div>
-      </div>
-
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-200">
