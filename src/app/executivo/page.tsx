@@ -16,7 +16,6 @@ export default function PainelExecutivoPage() {
   const addLog = context?.addLog || (() => {});
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
-  const [dateFilter, setDateFilter] = useState('MES_ATUAL');
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
 
   const isChannelFisico = (canalName: string) => {
@@ -81,7 +80,7 @@ export default function PainelExecutivoPage() {
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
-                   || { meta_valor: 0, meta_margem_bruta: 45, meta_margem_liq: 18, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
+                   || { meta_valor: 0, meta_margem_bruta: 45, meta_margem_liq: 15, responsavel: ruleObj.responsavel || 'Equipe Best Fit' };
 
       const cancelamentosMes = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
@@ -104,7 +103,6 @@ export default function PainelExecutivoPage() {
       const margemBrutaAtingida = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
       const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
-      // Metas de Margem configuráveis ou padrão de mercado
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || 45);
       const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || 15);
 
@@ -149,75 +147,75 @@ export default function PainelExecutivoPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
+    <div className="space-y-4 max-w-7xl mx-auto pb-10">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900 p-4 rounded-xl border border-slate-800 gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Painel Executivo de Margens & Metas</h2>
-          <p className="text-xs text-slate-400 mt-1">Visão consolidada de performance, metas de margem bruta e margem líquida.</p>
+          <h2 className="text-lg font-bold text-white tracking-tight">Painel Executivo de Margens & Metas</h2>
+          <p className="text-[11px] text-slate-400">Visão consolidada de performance, metas de margem bruta e margem líquida.</p>
         </div>
         
         <div className="flex items-center gap-3">
           <button 
             onClick={handleEnviarEmailAlerta} 
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center gap-2"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 transition text-white font-extrabold text-xs rounded-lg shadow-md flex items-center gap-2"
           >
             <i className="fa-solid fa-envelope"></i> Enviar por E-mail ao Time
           </button>
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-200">
             <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800 tracking-wider">
               <tr>
-                <th className="py-4 px-6">Canal / Responsável</th>
-                <th className="py-4 px-4 text-right">Faturamento</th>
-                <th className="py-4 px-4 text-center">Meta Margem Bruta %</th>
-                <th className="py-4 px-4 text-center">Margem Bruta Atingida %</th>
-                <th className="py-4 px-4 text-center">Meta Margem Líq. %</th>
-                <th className="py-4 px-6 text-center">Margem Líq. Atingida %</th>
+                <th className="py-3 px-5">Canal / Responsável</th>
+                <th className="py-3 px-4 text-right">Faturamento</th>
+                <th className="py-3 px-4 text-center">Meta Margem Bruta %</th>
+                <th className="py-3 px-4 text-center">Margem Bruta Atingida %</th>
+                <th className="py-3 px-4 text-center">Meta Margem Líq. %</th>
+                <th className="py-3 px-5 text-center">Margem Líq. Atingida %</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-medium">
+            <tbody className="divide-y divide-slate-800/40 font-medium">
               
               {/* E-COMMERCE */}
-              <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                <td colSpan={6} className="py-3 px-6 text-indigo-400 flex items-center gap-2">
+              <tr className="bg-slate-950/90 font-black text-white text-xs border-y border-slate-800">
+                <td colSpan={6} className="py-2.5 px-5 text-indigo-400 flex items-center gap-2">
                   <i className="fa-solid fa-globe"></i> E-COMMERCE
                 </td>
               </tr>
-              {ecommerceChannels.map((item: any) => (
-                <tr key={item.canal} className="hover:bg-slate-800/40 transition">
-                  <td className="py-3.5 px-6">
-                    <span className="font-bold text-white text-xs block">{item.canal}</span>
-                    <span className="text-[9px] uppercase font-bold text-slate-400">{item.responsavel}</span>
+              {ecommerceChannels.map((item: any, idx: number) => (
+                <tr key={item.canal} className={`${idx % 2 === 0 ? 'bg-slate-900/60' : 'bg-slate-950/30'} hover:bg-slate-800/40 transition`}>
+                  <td className="py-2.5 px-5">
+                    <span className="font-bold text-white text-xs">{item.canal}</span>
+                    <span className="text-[10px] text-slate-400 ml-1">({item.responsavel})</span>
                   </td>
-                  <td className="py-3.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-3.5 px-4 text-center font-mono text-slate-300">{item.metaMargemBruta.toFixed(1)}%</td>
-                  <td className="py-3.5 px-4 text-center">{renderSeta(item.margemBrutaAtingida, item.metaMargemBruta)}</td>
-                  <td className="py-3.5 px-4 text-center font-mono text-slate-300">{item.metaMargemLiq.toFixed(1)}%</td>
-                  <td className="py-3.5 px-6 text-center">{renderSeta(item.margemLiqAtingida, item.metaMargemLiq)}</td>
+                  <td className="py-2.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="py-2.5 px-4 text-center font-mono text-slate-300">{item.metaMargemBruta.toFixed(1)}%</td>
+                  <td className="py-2.5 px-4 text-center">{renderSeta(item.margemBrutaAtingida, item.metaMargemBruta)}</td>
+                  <td className="py-2.5 px-4 text-center font-mono text-slate-300">{item.metaMargemLiq.toFixed(1)}%</td>
+                  <td className="py-2.5 px-5 text-center">{renderSeta(item.margemLiqAtingida, item.metaMargemLiq)}</td>
                 </tr>
               ))}
 
               {/* LOJAS FÍSICAS */}
-              <tr className="bg-slate-950/80 font-black text-white text-xs border-y border-slate-800">
-                <td colSpan={6} className="py-3 px-6 text-emerald-400 flex items-center gap-2">
+              <tr className="bg-slate-950/90 font-black text-white text-xs border-y border-slate-800">
+                <td colSpan={6} className="py-2.5 px-5 text-emerald-400 flex items-center gap-2">
                   <i className="fa-solid fa-store"></i> LOJAS FÍSICAS
                 </td>
               </tr>
-              {physicalChannels.map((item: any) => (
-                <tr key={item.canal} className="hover:bg-slate-800/40 transition">
-                  <td className="py-3.5 px-6">
-                    <span className="font-bold text-white text-xs block">{item.canal}</span>
-                    <span className="text-[9px] uppercase font-bold text-slate-400">{item.responsavel}</span>
+              {physicalChannels.map((item: any, idx: number) => (
+                <tr key={item.canal} className={`${idx % 2 === 0 ? 'bg-slate-900/60' : 'bg-slate-950/30'} hover:bg-slate-800/40 transition`}>
+                  <td className="py-2.5 px-5">
+                    <span className="font-bold text-white text-xs">{item.canal}</span>
+                    <span className="text-[10px] text-slate-400 ml-1">({item.responsavel})</span>
                   </td>
-                  <td className="py-3.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td className="py-3.5 px-4 text-center font-mono text-slate-300">{item.metaMargemBruta.toFixed(1)}%</td>
-                  <td className="py-3.5 px-4 text-center">{renderSeta(item.margemBrutaAtingida, item.metaMargemBruta)}</td>
-                  <td className="py-3.5 px-4 text-center font-mono text-slate-300">{item.metaMargemLiq.toFixed(1)}%</td>
-                  <td className="py-3.5 px-6 text-center">{renderSeta(item.margemLiqAtingida, item.metaMargemLiq)}</td>
+                  <td className="py-2.5 px-4 text-right font-bold text-white">R$ {item.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="py-2.5 px-4 text-center font-mono text-slate-300">{item.metaMargemBruta.toFixed(1)}%</td>
+                  <td className="py-2.5 px-4 text-center">{renderSeta(item.margemBrutaAtingida, item.metaMargemBruta)}</td>
+                  <td className="py-2.5 px-4 text-center font-mono text-slate-300">{item.metaMargemLiq.toFixed(1)}%</td>
+                  <td className="py-2.5 px-5 text-center">{renderSeta(item.margemLiqAtingida, item.metaMargemLiq)}</td>
                 </tr>
               ))}
 
