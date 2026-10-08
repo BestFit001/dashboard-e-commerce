@@ -166,7 +166,10 @@ export default function PainelExecutivoPage() {
         diffMargemBruta,
         metaMargemLiq,
         diffMargemLiq,
-        isFisico: fisico
+        isFisico: fisico,
+        faturadoBrutoPuro,
+        repasseTotal,
+        lucroLiquidoFinal
       };
     });
   }, [enrichedSales, previousMonthSales, goals, adsData, channelRules, currentRefMonth, canais, activeCancelados, targetDateStr, flexData]);
@@ -181,18 +184,53 @@ export default function PainelExecutivoPage() {
       metaValor: acc.metaValor + curr.metaValor,
       projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento,
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
-    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, faturadoMesAnterior: 0 });
+      faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
+      repasseTotal: acc.repasseTotal + curr.repasseTotal,
+      lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
+      metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
+      metaLiqPonderada: acc.metaLiqPonderada + (curr.metaMargemLiq * curr.metaValor),
+    }), { 
+      vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, faturadoMesAnterior: 0, 
+      faturadoBrutoPuro: 0, repasseTotal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
+    });
   };
 
-  const totalEcom = sumTotals(ecommerceChannels);
-  const totalFisico = sumTotals(physicalChannels);
-  const totalGeral = {
-    vendasDoDia: totalEcom.vendasDoDia + totalFisico.vendasDoDia,
-    faturadoComRedutor: totalEcom.faturadoComRedutor + totalFisico.faturadoComRedutor,
-    metaValor: totalEcom.metaValor + totalFisico.metaValor,
-    projecaoFaturamento: totalEcom.projecaoFaturamento + totalFisico.projecaoFaturamento,
-    faturadoMesAnterior: totalEcom.faturadoMesAnterior + totalFisico.faturadoMesAnterior,
+  const enrichTotals = (totals: any) => {
+    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
+    const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
+    const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
+
+    return {
+      ...totals,
+      margemBrutaAtingida,
+      margemLiqAtingida,
+      metaMargemBruta,
+      metaMargemLiq,
+      diffMargemBruta: margemBrutaAtingida - metaMargemBruta,
+      diffMargemLiq: margemLiqAtingida - metaMargemLiq
+    };
   };
+
+  const totalEcomRaw = sumTotals(ecommerceChannels);
+  const totalEcom = enrichTotals(totalEcomRaw);
+
+  const totalFisicoRaw = sumTotals(physicalChannels);
+  const totalFisico = enrichTotals(totalFisicoRaw);
+
+  const totalGeralRaw = {
+    vendasDoDia: totalEcomRaw.vendasDoDia + totalFisicoRaw.vendasDoDia,
+    faturadoComRedutor: totalEcomRaw.faturadoComRedutor + totalFisicoRaw.faturadoComRedutor,
+    metaValor: totalEcomRaw.metaValor + totalFisicoRaw.metaValor,
+    projecaoFaturamento: totalEcomRaw.projecaoFaturamento + totalFisicoRaw.projecaoFaturamento,
+    faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
+    faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
+    repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
+    lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
+    metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
+    metaLiqPonderada: totalEcomRaw.metaLiqPonderada + totalFisicoRaw.metaLiqPonderada,
+  };
+  const totalGeral = enrichTotals(totalGeralRaw);
 
   const renderSetaVariacao = (val: number) => {
     if (val >= 0) {
@@ -239,27 +277,22 @@ export default function PainelExecutivoPage() {
       const dataHoje = new Date().toLocaleDateString('pt-BR');
       const assunto = encodeURIComponent(`📊 Painel Executivo - Margens e Metas (${dataHoje})`);
       
-      const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoComRedutor: 0, metaValor: 0, projecaoVsMeta: 0 };
-      const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoComRedutor: 0, metaValor: 0, projecaoVsMeta: 0 };
-      
-      const hebraicaPct = hebraicaObj.metaValor > 0 ? (hebraicaObj.faturadoComRedutor / hebraicaObj.metaValor) * 100 : 0;
-      const paineirasPct = paineirasObj.metaValor > 0 ? (paineirasObj.faturadoComRedutor / paineirasObj.metaValor) * 100 : 0;
-      
-      const ecomPct = totalEcom.metaValor > 0 ? (totalEcom.faturadoComRedutor / totalEcom.metaValor) * 100 : 0;
+      const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
+      const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
       const ecomProjVsMeta = totalEcom.metaValor > 0 ? ((totalEcom.projecaoFaturamento / totalEcom.metaValor) - 1) * 100 : 0;
 
       const formatProjText = (val: number) => val >= 0 ? `+${val.toFixed(1)}%` : `${val.toFixed(1)}%`;
 
       let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas fisica e onlines do dia ${dataHoje}.\n\n`;
-      corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${hebraicaPct.toFixed(1)}% da meta | Projeção: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
-      corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${paineirasPct.toFixed(1)}% da meta | Projeção: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
-      corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${ecomPct.toFixed(1)}% da meta | Projeção: ${formatProjText(ecomProjVsMeta)})\n\n`;
-      corpoTexto += `[ COLOQUE O CURSOR AQUI E APERTE CTRL + V PARA COLAR A TABELA DE MARGENS E METAS ]\n\n`;
+      corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
+      corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
+      corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(ecomProjVsMeta)})\n\n`;
+      corpoTexto += `Imagem do Dash:\n\n\n`;
       corpoTexto += `Acesse o sistema para conferir a visão completa: https://dashboard-e-commerce-nine.vercel.app/executivo`;
       
       window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
 
-      alert('✅ O print foi copiado com sucesso e seu e-mail foi aberto!\n\nAgora basta clicar no corpo do e-mail e apertar "Ctrl + V" para colar a tabela.');
+      alert('✅ O print foi copiado com sucesso e seu e-mail foi aberto!\n\nAgora basta clicar onde diz "Imagem do Dash:" no e-mail e apertar "Ctrl + V" para colar a tabela.');
       addLog('Print copiado e cliente de e-mail acionado.', 'success');
       
     } catch (err: any) {
@@ -327,7 +360,7 @@ export default function PainelExecutivoPage() {
                 </tr>
               ))}
               
-              {/* E-COMMERCE TOTAL (ABAIXO DOS CANAIS) */}
+              {/* E-COMMERCE TOTAL */}
               <tr className="bg-indigo-900 font-black text-white text-[10px] border-y-2 border-indigo-500 shadow-md">
                 <td className="py-2 px-2 border-r border-indigo-500/50 whitespace-nowrap text-white">TOTAL E-COMMERCE</td>
                 <td className="py-2 px-2 text-right font-mono text-white whitespace-nowrap">R$ {totalEcom.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -337,7 +370,10 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.metaValor > 0 ? ((totalEcom.projecaoFaturamento / totalEcom.metaValor) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-right font-mono text-indigo-100 whitespace-nowrap">R$ {totalEcom.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.faturadoMesAnterior > 0 ? ((totalEcom.faturadoComRedutor / totalEcom.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-2 px-2 text-center text-indigo-200/50 whitespace-nowrap">-</td>
+                <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.diffMargemBruta)}</td>
+                <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalEcom.diffMargemLiq)}</td>
               </tr>
 
               {/* LOJAS FÍSICAS */}
@@ -363,7 +399,7 @@ export default function PainelExecutivoPage() {
                 </tr>
               ))}
 
-              {/* LOJAS FÍSICAS TOTAL (ABAIXO DOS CANAIS) */}
+              {/* LOJAS FÍSICAS TOTAL */}
               <tr className="bg-emerald-900 font-black text-white text-[10px] border-y-2 border-emerald-500 shadow-md">
                 <td className="py-2 px-2 border-r border-emerald-500/50 whitespace-nowrap text-white">TOTAL LOJAS FÍSICAS</td>
                 <td className="py-2 px-2 text-right font-mono text-white whitespace-nowrap">R$ {totalFisico.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -373,7 +409,10 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.metaValor > 0 ? ((totalFisico.projecaoFaturamento / totalFisico.metaValor) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-right font-mono text-emerald-100 whitespace-nowrap">R$ {totalFisico.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
+                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemBruta)}</td>
+                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemLiq)}</td>
               </tr>
 
             </tbody>
@@ -389,7 +428,10 @@ export default function PainelExecutivoPage() {
                 <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.metaValor > 0 ? ((totalGeral.projecaoFaturamento / totalGeral.metaValor) - 1) * 100 : 0)}</td>
                 <td className="py-3 px-2 text-right font-mono text-slate-200 whitespace-nowrap">R$ {totalGeral.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.faturadoMesAnterior > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-3 px-2 text-center text-slate-400 whitespace-nowrap">-</td>
+                <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemBruta)}</td>
+                <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-3 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemLiq)}</td>
               </tr>
             </tfoot>
           </table>
