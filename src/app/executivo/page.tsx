@@ -16,7 +16,7 @@ export default function PainelExecutivoPage() {
   const addLog = context?.addLog || (() => {});
 
   const tableRef = useRef<HTMLDivElement>(null);
-  const [isCopying, setIsCopying] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
   const previousMonthDefault = useMemo(() => {
@@ -210,24 +210,16 @@ export default function PainelExecutivoPage() {
     }
   };
 
-  const handleEnviarEmailAlerta = () => {
-    const emailsCadastrados = users && users.length > 0 ? users.map((u: any) => u.username).filter(Boolean).join(';') : "gisele@usebestfit.com.br";
-    const dataHoje = new Date().toLocaleDateString('pt-BR');
-    const assunto = encodeURIComponent(`📊 Painel Executivo - Margens e Metas (${dataHoje})`);
-    window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(`Olá, segue o Painel Executivo consolidado do dia ${dataHoje}.`)}`;
-    addLog('E-mail do Painel Executivo disparado.', 'success');
-  };
-
-  const handleCopyScreenshot = async () => {
+  const handleEnviarEmailComPrint = async () => {
     if (!tableRef.current) return;
     try {
-      setIsCopying(true);
-      // Importação dinâmica para evitar erro de build no Next.js
-      const { toBlob } = await import('html-to-image');
+      setIsProcessing(true);
       
+      // 1. Tira o print e salva na área de transferência (Ctrl+C)
+      const { toBlob } = await import('html-to-image');
       const blob = await toBlob(tableRef.current, {
-        backgroundColor: '#0f172a', // Mantém o fundo slate-900 idêntico ao painel
-        pixelRatio: 2 // Mantém a qualidade alta para colar no email
+        backgroundColor: '#0f172a',
+        pixelRatio: 2
       });
       
       if (!blob) throw new Error('Falha ao gerar imagem.');
@@ -236,12 +228,22 @@ export default function PainelExecutivoPage() {
         new ClipboardItem({ 'image/png': blob })
       ]);
       
-      alert('✅ Imagem da tabela copiada com sucesso! Agora basta ir no e-mail e apertar Ctrl + V para colar.');
-      addLog('Print do Painel Executivo copiado para a área de transferência.', 'success');
+      // 2. Abre o E-mail com o texto preenchido
+      const emailsCadastrados = users && users.length > 0 ? users.map((u: any) => u.username).filter(Boolean).join(';') : "gisele@usebestfit.com.br";
+      const dataHoje = new Date().toLocaleDateString('pt-BR');
+      const assunto = encodeURIComponent(`📊 Painel Executivo - Margens e Metas (${dataHoje})`);
+      const corpoTexto = `Olá, tudo bem?\n\nSegue abaixo o Painel Executivo consolidado de hoje (${dataHoje}).\n\n[ COLOQUE O CURSOR AQUI E APERTE CTRL + V PARA COLAR A TABELA ]\n\nAcesse o sistema para conferir a visão completa: https://dashboard-e-commerce-nine.vercel.app/executivo`;
+      
+      window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
+
+      // 3. Avisa o usuário sobre o próximo passo
+      alert('✅ O print foi copiado com sucesso e seu e-mail foi aberto!\n\nAgora basta clicar no corpo do e-mail e apertar "Ctrl + V" para colar a tabela.');
+      addLog('Print copiado e cliente de e-mail acionado.', 'success');
+      
     } catch (err: any) {
-      alert(`Erro ao copiar print: ${err.message}`);
+      alert(`Erro ao copiar print/abrir e-mail: ${err.message}`);
     } finally {
-      setIsCopying(false);
+      setIsProcessing(false);
     }
   };
 
@@ -250,21 +252,15 @@ export default function PainelExecutivoPage() {
       <div className="flex justify-between items-center bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
         <span className="font-bold text-slate-300">Data de Referência: <span className="text-indigo-400 font-mono">{new Date().toLocaleDateString('pt-BR')}</span></span>
         
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleCopyScreenshot} 
-            disabled={isCopying}
-            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-1 disabled:opacity-50"
-          >
-            <i className="fa-solid fa-camera"></i> {isCopying ? 'A gerar print...' : 'Copiar Print da Tabela'}
-          </button>
-          <button onClick={handleEnviarEmailAlerta} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-1">
-            <i className="fa-solid fa-envelope"></i> Enviar por E-mail
-          </button>
-        </div>
+        <button 
+          onClick={handleEnviarEmailComPrint} 
+          disabled={isProcessing}
+          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-2 disabled:opacity-50"
+        >
+          <i className="fa-solid fa-paper-plane"></i> {isProcessing ? 'A gerar print...' : 'Copiar Print & Enviar E-mail'}
+        </button>
       </div>
 
-      {/* A referência ref={tableRef} pega exatamente essa área para gerar a imagem perfeitamente */}
       <div ref={tableRef} className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-slate-200 border-collapse">
