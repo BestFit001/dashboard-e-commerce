@@ -1,6 +1,7 @@
 'use client';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
+import html2canvas from 'html2canvas';
 
 export default function PainelExecutivoPage() {
   const context = useAppContext();
@@ -14,6 +15,9 @@ export default function PainelExecutivoPage() {
   const cancelados = context?.cancelados || [];
   const users = context?.users || [];
   const addLog = context?.addLog || (() => {});
+
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [isCopying, setIsCopying] = useState(false);
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
   const previousMonthDefault = useMemo(() => {
@@ -215,16 +219,50 @@ export default function PainelExecutivoPage() {
     addLog('E-mail do Painel Executivo disparado.', 'success');
   };
 
+  const handleCopyScreenshot = async () => {
+    if (!tableRef.current) return;
+    try {
+      setIsCopying(true);
+      const canvas = await html2canvas(tableRef.current, {
+        backgroundColor: '#0f172a',
+        scale: 2
+      });
+      
+      canvas.toBlob(async (blob) => {
+        if (!blob) throw new Error('Falha ao gerar imagem.');
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        alert('✅ Imagem da tabela copiada com sucesso! Agora basta ir no e-mail e apertar Ctrl + V para colar.');
+        addLog('Print do Painel Executivo copiado para a área de transferência.', 'success');
+      });
+    } catch (err: any) {
+      alert(`Erro ao copiar print: ${err.message}`);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
   return (
     <div className="space-y-2 max-w-full mx-auto pb-6 px-1 text-[10px]">
       <div className="flex justify-between items-center bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
         <span className="font-bold text-slate-300">Data de Referência: <span className="text-indigo-400 font-mono">{new Date().toLocaleDateString('pt-BR')}</span></span>
-        <button onClick={handleEnviarEmailAlerta} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-1">
-          <i className="fa-solid fa-envelope"></i> Enviar por E-mail
-        </button>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleCopyScreenshot} 
+            disabled={isCopying}
+            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-1 disabled:opacity-50"
+          >
+            <i className="fa-solid fa-camera"></i> {isCopying ? 'A gerar print...' : 'Copiar Print da Tabela'}
+          </button>
+          <button onClick={handleEnviarEmailAlerta} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded shadow transition flex items-center gap-1">
+            <i className="fa-solid fa-envelope"></i> Enviar por E-mail
+          </button>
+        </div>
       </div>
 
-      <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
+      <div ref={tableRef} className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-slate-200 border-collapse">
             <thead className="bg-slate-950 text-slate-400 uppercase text-[9px] font-bold border-b border-slate-800 tracking-tight">
