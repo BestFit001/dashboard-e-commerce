@@ -225,7 +225,12 @@ export default function PainelExecutivoPage() {
       setIsCopying(true);
       const canvas = await html2canvas(tableRef.current, {
         backgroundColor: '#0f172a',
-        scale: 2
+        scale: 2,
+        // Ignora propriedades de cores complexas para evitar erro de lab()
+        onclone: (doc) => {
+          const el = doc.body;
+          if (el) el.style.colorScheme = 'dark';
+        }
       });
       
       canvas.toBlob(async (blob) => {
