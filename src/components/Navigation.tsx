@@ -27,6 +27,9 @@ export default function Navigation() {
         <Link href="/" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
           <i className="fa-solid fa-chart-pie"></i> Dashboard
         </Link>
+        <Link href="/executivo" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/executivo' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+          <i className="fa-solid fa-chart-line"></i> Painel Executivo
+        </Link>
         <Link href="/produtos" className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${pathname === '/produtos' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
           <i className="fa-solid fa-boxes-stacked"></i> Análise (ABC)
         </Link>

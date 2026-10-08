@@ -11,10 +11,11 @@ export default function Navbar() {
   if (!currentUser) return null;
 
   const isAdminPrincipal = currentUser.username === 'gisele@usebestfit.com.br';
-  const permissoes = isAdminPrincipal ? ['dashboard', 'produtos', 'skus', 'regras', 'auxiliar', 'admin', 'usuarios'] : (currentUser.permissoes || ['dashboard']);
+  const permissoes = isAdminPrincipal ? ['dashboard', 'executivo', 'produtos', 'skus', 'regras', 'auxiliar', 'admin', 'usuarios'] : (currentUser.permissoes || ['dashboard']);
 
   const navLinks = [
     { name: 'Dashboard', path: '/', icon: 'fa-solid fa-chart-pie', id: 'dashboard' },
+    { name: 'Painel Executivo', path: '/executivo', icon: 'fa-solid fa-chart-line', id: 'executivo' },
     { name: 'Análise (ABC)', path: '/produtos', icon: 'fa-solid fa-boxes-stacked', id: 'produtos' },
     { name: 'SKUs & Custos', path: '/skus', icon: 'fa-solid fa-tags', id: 'skus' },
     { name: 'Regras Canal', path: '/regras', icon: 'fa-solid fa-calculator', id: 'regras' },
