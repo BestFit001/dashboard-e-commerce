@@ -148,7 +148,6 @@ export default function AdminPage() {
     }
   };
 
-  // NOVA FUNÇÃO: APAGAR TUDO DO SUPABASE
   const handleZerarBancoSupabase = async () => {
     const confirm1 = confirm("⚠️ ATENÇÃO: Tem a certeza absoluta que deseja APAGAR COMPLETAMENTE TODAS AS INFORMAÇÕES (vendas, faturados, cancelados, flex e ads) de todos os meses do banco de dados?");
     if (!confirm1) return;
@@ -161,13 +160,11 @@ export default function AdminPage() {
 
     try {
       setIsProcessing(true);
-      // Limpa as chaves principais no tb_estado_global do Supabase
       const chaves = ['vendas', 'faturados', 'cancelados', 'flex', 'ads', 'tarifas_site'];
       for (const chave of chaves) {
         await supabase.from('tb_estado_global').delete().eq('chave', chave);
       }
 
-      // Atualiza os estados locais
       setSales([]);
       setFaturados([]);
       setCancelados([]);
@@ -477,6 +474,8 @@ export default function AdminPage() {
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
+        
+        // CORREÇÃO APLICADA: Remove estritamente apenas as vendas do mesmo canal E do mesmo mês selecionado
         const filteredOldSales = sales.filter((s: any) => !(s.canal === selectedChannel && s.mes_referencia === mesVendas));
         const updatedSales = [...salesWithKeys, ...filteredOldSales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
@@ -750,7 +749,7 @@ export default function AdminPage() {
          </div>
        </div>
 
-       {/* ZONA DE LIMPEZA COM SELEÇÃO DE MÊS + BOTÃO DE ZERAR SUPABASE */}
+       {/* ZONA DE LIMPEZA COM SELEÇÃO DE MÊS */}
        <div className="bg-slate-900 p-5 rounded-2xl border border-rose-500/30 mt-6 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
              <h3 className="font-bold text-rose-400 text-sm flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation"></i> Zona de Limpeza de Dados por Mês</h3>
@@ -801,7 +800,6 @@ export default function AdminPage() {
             <button onClick={() => clearDataByMonth('ads', 'ads', adsData, setAdsData)} className="py-2.5 bg-slate-950 hover:bg-rose-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-xl transition">Apagar ADS ({mesLimpeza})</button>
           </div>
 
-          {/* BOTÃO EXTREMO PARA APAGAR TUDO DO SUPABASE */}
           <div className="pt-4 border-t border-rose-900/60 flex justify-end">
             <button 
               onClick={handleZerarBancoSupabase}
