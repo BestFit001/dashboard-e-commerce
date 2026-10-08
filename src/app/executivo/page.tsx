@@ -210,6 +210,15 @@ export default function PainelExecutivoPage() {
     }
   };
 
+  // Cores mais claras para contrastar bem contra o fundo escuro das linhas de Totais
+  const renderSetaTotal = (val: number) => {
+    if (val >= 0) {
+      return <span className="text-green-300 font-black inline-flex items-center gap-0.5"><i className="fa-solid fa-caret-up"></i> +{val.toFixed(1)}%</span>;
+    } else {
+      return <span className="text-red-300 font-black inline-flex items-center gap-0.5"><i className="fa-solid fa-caret-down"></i> {val.toFixed(1)}%</span>;
+    }
+  };
+
   const handleEnviarEmailComPrint = async () => {
     if (!tableRef.current) return;
     try {
@@ -279,19 +288,11 @@ export default function PainelExecutivoPage() {
             </thead>
             <tbody className="divide-y divide-slate-800/40 font-medium">
               
-              {/* E-COMMERCE HEADER E TOTAIS */}
-              <tr className="bg-indigo-950/40 font-black text-white text-[10px] border-y border-indigo-500/30">
-                <td className="py-2 px-2 border-r border-slate-800/50 whitespace-nowrap text-indigo-400 flex items-center gap-1.5">
+              {/* E-COMMERCE HEADER */}
+              <tr className="bg-slate-950 font-black text-white text-[10px]">
+                <td colSpan={12} className="py-2 px-2.5 text-indigo-400 flex items-center gap-1.5">
                   <i className="fa-solid fa-globe"></i> E-COMMERCE
                 </td>
-                <td className="py-2 px-2 text-right font-mono text-indigo-300 whitespace-nowrap">R$ {totalEcom.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right text-white whitespace-nowrap">R$ {totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right font-mono text-slate-300 whitespace-nowrap">R$ {totalEcom.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right text-indigo-300 whitespace-nowrap">R$ {totalEcom.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(totalEcom.metaValor > 0 ? ((totalEcom.projecaoFaturamento / totalEcom.metaValor) - 1) * 100 : 0)}</td>
-                <td className="py-2 px-2 text-right font-mono text-slate-300 whitespace-nowrap">R$ {totalEcom.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(totalEcom.faturadoMesAnterior > 0 ? ((totalEcom.faturadoComRedutor / totalEcom.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-2 px-2 text-center text-slate-500 whitespace-nowrap">-</td>
               </tr>
               {ecommerceChannels.map((item: any, idx: number) => (
                 <tr key={item.canal} className={`${idx % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-950/20'} hover:bg-slate-800/40 transition`}>
@@ -309,20 +310,25 @@ export default function PainelExecutivoPage() {
                   <td className="py-1.5 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemLiq)}</td>
                 </tr>
               ))}
+              
+              {/* E-COMMERCE TOTAL (ABAIXO DOS CANAIS) */}
+              <tr className="bg-indigo-900 font-black text-white text-[10px] border-y-2 border-indigo-500 shadow-md">
+                <td className="py-2 px-2 border-r border-indigo-500/50 whitespace-nowrap text-white">TOTAL E-COMMERCE</td>
+                <td className="py-2 px-2 text-right font-mono text-white whitespace-nowrap">R$ {totalEcom.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right text-white whitespace-nowrap">R$ {totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right font-mono text-indigo-100 whitespace-nowrap">R$ {totalEcom.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right text-indigo-100 whitespace-nowrap">R$ {totalEcom.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.metaValor > 0 ? ((totalEcom.projecaoFaturamento / totalEcom.metaValor) - 1) * 100 : 0)}</td>
+                <td className="py-2 px-2 text-right font-mono text-indigo-100 whitespace-nowrap">R$ {totalEcom.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.faturadoMesAnterior > 0 ? ((totalEcom.faturadoComRedutor / totalEcom.faturadoMesAnterior) - 1) * 100 : 0)}</td>
+                <td colSpan={4} className="py-2 px-2 text-center text-indigo-200/50 whitespace-nowrap">-</td>
+              </tr>
 
-              {/* LOJAS FÍSICAS HEADER E TOTAIS */}
-              <tr className="bg-emerald-950/30 font-black text-white text-[10px] border-y border-emerald-500/20">
-                <td className="py-2 px-2 border-r border-slate-800/50 whitespace-nowrap text-emerald-400 flex items-center gap-1.5">
+              {/* LOJAS FÍSICAS HEADER */}
+              <tr className="bg-slate-950 font-black text-white text-[10px]">
+                <td colSpan={12} className="py-2 px-2.5 text-emerald-400 flex items-center gap-1.5 border-t border-slate-800">
                   <i className="fa-solid fa-store"></i> LOJAS FÍSICAS
                 </td>
-                <td className="py-2 px-2 text-right font-mono text-emerald-300 whitespace-nowrap">R$ {totalFisico.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right text-white whitespace-nowrap">R$ {totalFisico.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right font-mono text-slate-300 whitespace-nowrap">R$ {totalFisico.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-right text-emerald-300 whitespace-nowrap">R$ {totalFisico.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(totalFisico.metaValor > 0 ? ((totalFisico.projecaoFaturamento / totalFisico.metaValor) - 1) * 100 : 0)}</td>
-                <td className="py-2 px-2 text-right font-mono text-slate-300 whitespace-nowrap">R$ {totalFisico.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-2 px-2 text-center text-slate-500 whitespace-nowrap">-</td>
               </tr>
               {physicalChannels.map((item: any, idx: number) => (
                 <tr key={item.canal} className={`${idx % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-950/20'} hover:bg-slate-800/40 transition`}>
@@ -341,19 +347,33 @@ export default function PainelExecutivoPage() {
                 </tr>
               ))}
 
+              {/* LOJAS FÍSICAS TOTAL (ABAIXO DOS CANAIS) */}
+              <tr className="bg-emerald-900 font-black text-white text-[10px] border-y-2 border-emerald-500 shadow-md">
+                <td className="py-2 px-2 border-r border-emerald-500/50 whitespace-nowrap text-white">TOTAL LOJAS FÍSICAS</td>
+                <td className="py-2 px-2 text-right font-mono text-white whitespace-nowrap">R$ {totalFisico.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right text-white whitespace-nowrap">R$ {totalFisico.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right font-mono text-emerald-100 whitespace-nowrap">R$ {totalFisico.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-right text-emerald-100 whitespace-nowrap">R$ {totalFisico.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.metaValor > 0 ? ((totalFisico.projecaoFaturamento / totalFisico.metaValor) - 1) * 100 : 0)}</td>
+                <td className="py-2 px-2 text-right font-mono text-emerald-100 whitespace-nowrap">R$ {totalFisico.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
+                <td colSpan={4} className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
+              </tr>
+
             </tbody>
 
-            <tfoot className="bg-slate-700 text-white font-black text-[11px] border-t-2 border-slate-500 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.3)]">
+            {/* TOTAL GERAL ABSOLUTO COM CONTRASTE MÁXIMO */}
+            <tfoot className="bg-slate-800 text-white font-black text-[11px] border-t-4 border-slate-400 shadow-[0_-8px_10px_-1px_rgba(0,0,0,0.4)]">
               <tr>
-                <td className="py-3 px-2 border-r border-slate-600 whitespace-nowrap">TOTAL GERAL</td>
-                <td className="py-3 px-2 text-right font-mono text-emerald-400 whitespace-nowrap">R$ {totalGeral.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-3 px-2 border-r border-slate-600 whitespace-nowrap text-white">TOTAL GERAL</td>
+                <td className="py-3 px-2 text-right font-mono text-white whitespace-nowrap">R$ {totalGeral.vendasDoDia.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-3 px-2 text-right text-white whitespace-nowrap">R$ {totalGeral.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-3 px-2 text-right font-mono text-slate-200 whitespace-nowrap">R$ {totalGeral.metaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-3 px-2 text-right text-emerald-400 whitespace-nowrap">R$ {totalGeral.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaVariacao(totalGeral.metaValor > 0 ? ((totalGeral.projecaoFaturamento / totalGeral.metaValor) - 1) * 100 : 0)}</td>
+                <td className="py-3 px-2 text-right text-white whitespace-nowrap">R$ {totalGeral.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.metaValor > 0 ? ((totalGeral.projecaoFaturamento / totalGeral.metaValor) - 1) * 100 : 0)}</td>
                 <td className="py-3 px-2 text-right font-mono text-slate-200 whitespace-nowrap">R$ {totalGeral.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaVariacao(totalGeral.faturadoMesAnterior > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.faturadoMesAnterior) - 1) * 100 : 0)}</td>
-                <td colSpan={4} className="py-3 px-2 text-center text-slate-300 whitespace-nowrap">-</td>
+                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.faturadoMesAnterior > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.faturadoMesAnterior) - 1) * 100 : 0)}</td>
+                <td colSpan={4} className="py-3 px-2 text-center text-slate-400 whitespace-nowrap">-</td>
               </tr>
             </tfoot>
           </table>
