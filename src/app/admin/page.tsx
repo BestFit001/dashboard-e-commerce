@@ -27,7 +27,8 @@ export default function AdminPage() {
   const [mesVendas, setMesVendas] = useState(new Date().toISOString().slice(0, 7));
   const [mesLimpeza, setMesLimpeza] = useState(new Date().toISOString().slice(0, 7));
 
-  const [colCmvClube, setColCmvClube] = useState('G');
+  // PADRÃO DEFINIDO COMO 'H' PARA O CMV DOS CLUBES
+  const [colCmvClube, setColCmvClube] = useState('H');
 
   const [colTarifasIdPedido, setColTarifasIdPedido] = useState('A');
   const [colTarifasValor, setColTarifasValor] = useState('E');
@@ -474,8 +475,6 @@ export default function AdminPage() {
         }
 
         const salesWithKeys = novasVendas.map((s, idx) => ({ ...s, unique_key: `${s.id_pedido}_${s.sku}_${idx}` }));
-        
-        // CORREÇÃO APLICADA: Remove estritamente apenas as vendas do mesmo canal E do mesmo mês selecionado
         const filteredOldSales = sales.filter((s: any) => !(s.canal === selectedChannel && s.mes_referencia === mesVendas));
         const updatedSales = [...salesWithKeys, ...filteredOldSales];
         await saveToCloudAndState('vendas', updatedSales, setSales);
