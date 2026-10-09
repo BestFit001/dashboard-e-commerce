@@ -409,13 +409,15 @@ export default function AdminPage() {
             if (!colAStr || colAStr.includes('total') || colAStr === 'nan' || colAStr.includes('data') || colAStr.includes('empresa') || colAStr.includes('filial') || colFStr.includes('vendas') || colFStr === 'nan') { i++; continue; }
             rawId = `clube-${Date.now()}-${i}`;
             dataFaturamento = parseExcelDate(row[0]);
-            precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
-            const apuracaoStr = (rule.formulaExcel || 'I').trim();
-            if (!/[+\-*/()]/.test(apuracaoStr)) {
-                const apIdx = colToIdx(apuracaoStr);
-                repasseCalculado = apIdx >= 0 ? parseSmartFloat(row[apIdx], selectedChannel) : 0;
-            } else { repasseCalculado = evaluateFormula(apuracaoStr, row, 0, selectedChannel); }
             
+            // Faturamento Bruto da Loja Física (Coluna F)
+            precoVendaUnitario = getPdvValue(rule.colPdv || 'F', row, selectedChannel);
+            
+            // CORREÇÃO CRUCIAL: Em loja física própria, o Repasse é 100% da Venda Bruta (Coluna F)
+            // Não deve puxar a Coluna I, pois a Coluna I da planilha já é o Lucro Bruto descontado do CMV
+            repasseCalculado = precoVendaUnitario;
+
+            // CMV Consolidado da Loja Física (Coluna H)
             const cmvIdx = colToIdx(colCmvClube);
             custoCmvClube = cmvIdx >= 0 ? parseSmartFloat(row[cmvIdx], selectedChannel) : 0;
 
@@ -768,7 +770,7 @@ export default function AdminPage() {
                  <select 
                    value={targetChannelDelete} 
                    onChange={e => setTargetChannelDelete(e.target.value)} 
-                   className="p-2 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none cursor-pointer"
+                   className="p-2 bg-slate-950 border border-slate-700 text-white rounded-xl text-xs font-bold outline-none cursor-pointer" 
                  >
                    <option value="TODOS">Todos os Canais</option>
                    {canais.map((ch: string) => <option key={ch} value={ch}>{ch}</option>)}
