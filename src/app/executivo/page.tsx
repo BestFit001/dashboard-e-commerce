@@ -163,8 +163,10 @@ export default function PainelExecutivoPage() {
         faturadoMesAnterior,
         projVsMesAnterior,
         metaMargemBruta,
+        margemBrutaAtingida,
         diffMargemBruta,
         metaMargemLiq,
+        margemLiqAtingida,
         diffMargemLiq,
         isFisico: fisico,
         faturadoBrutoPuro,
@@ -184,7 +186,7 @@ export default function PainelExecutivoPage() {
       metaValor: acc.metaValor + curr.metaValor,
       projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento,
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
-      faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
+      faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBruroPuro,
       repasseTotal: acc.repasseTotal + curr.repasseTotal,
       lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
       metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
@@ -275,7 +277,7 @@ export default function PainelExecutivoPage() {
       
       const emailsCadastrados = users && users.length > 0 ? users.map((u: any) => u.username).filter(Boolean).join(';') : "gisele@usebestfit.com.br";
       const dataHoje = new Date().toLocaleDateString('pt-BR');
-      const assunto = encodeURIComponent(`📊 Painel Executivo - Margens e Metas (${dataHoje})`);
+      const assunto = encodeURIComponent(`DASHBOARD DIARIO LOJA E ECO ${dataHoje}`);
       
       const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
       const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
@@ -329,17 +331,19 @@ export default function PainelExecutivoPage() {
                 <th className="py-2 px-2 text-center border-r border-slate-800 whitespace-nowrap">Proj x Meta</th>
                 <th className="py-2 px-2 text-right whitespace-nowrap">Mês Ant.</th>
                 <th className="py-2 px-2 text-center border-r border-slate-800 whitespace-nowrap">Proj x Ant.</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Meta Bruta</th>
-                <th className="py-2 px-2 text-center border-r border-slate-800 whitespace-nowrap">Bruta x Ating.</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Meta Líq.</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Líq. x Ating.</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Meta Margem Bruta</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Margem Bruta Ating</th>
+                <th className="py-2 px-2 text-center border-r border-slate-800 whitespace-nowrap">Margem Bruta x Ating</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Meta Margem Liq</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Margem Liq Ating</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap">Margem Liq x Ating</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40 font-medium">
               
               {/* E-COMMERCE */}
               <tr className="bg-slate-950 font-black text-white text-[10px]">
-                <td colSpan={12} className="py-2 px-2.5 text-indigo-400 flex items-center gap-1.5">
+                <td colSpan={14} className="py-2 px-2.5 text-indigo-400 flex items-center gap-1.5">
                   <i className="fa-solid fa-globe"></i> E-COMMERCE
                 </td>
               </tr>
@@ -354,8 +358,10 @@ export default function PainelExecutivoPage() {
                   <td className="py-1.5 px-2 text-right font-mono text-slate-400 whitespace-nowrap">R$ {item.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="py-1.5 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(item.projVsMesAnterior)}</td>
                   <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemBruta.toFixed(1)}%</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{item.margemBrutaAtingida.toFixed(1)}%</td>
                   <td className="py-1.5 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemBruta)}</td>
                   <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemLiq.toFixed(1)}%</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{item.margemLiqAtingida.toFixed(1)}%</td>
                   <td className="py-1.5 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemLiq)}</td>
                 </tr>
               ))}
@@ -371,14 +377,16 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-right font-mono text-indigo-100 whitespace-nowrap">R$ {totalEcom.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.faturadoMesAnterior > 0 ? ((totalEcom.faturadoComRedutor / totalEcom.faturadoMesAnterior) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.margemBrutaAtingida.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center border-r border-indigo-500/50 whitespace-nowrap">{renderSetaTotal(totalEcom.diffMargemBruta)}</td>
                 <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center font-mono text-indigo-100 whitespace-nowrap">{totalEcom.margemLiqAtingida.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalEcom.diffMargemLiq)}</td>
               </tr>
 
               {/* LOJAS FÍSICAS */}
               <tr className="bg-slate-950 font-black text-white text-[10px]">
-                <td colSpan={12} className="py-2 px-2.5 text-emerald-400 flex items-center gap-1.5 border-t border-slate-800">
+                <td colSpan={14} className="py-2 px-2.5 text-emerald-400 flex items-center gap-1.5 border-t border-slate-800">
                   <i className="fa-solid fa-store"></i> LOJAS FÍSICAS
                 </td>
               </tr>
@@ -393,9 +401,11 @@ export default function PainelExecutivoPage() {
                   <td className="py-1.5 px-2 text-right font-mono text-slate-400 whitespace-nowrap">R$ {item.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="py-1.5 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaVariacao(item.projVsMesAnterior)}</td>
                   <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemBruta.toFixed(1)}%</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{item.margemBrutaAtingida.toFixed(1)}%</td>
                   <td className="py-1.5 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemBruta)}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemLiq.toFixed(1)}%</td>
-                  <td className="py-1.5 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemLiq)}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-500 whitespace-nowrap">-</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-500 whitespace-nowrap">-</td>
+                  <td className="py-1.5 px-2 text-center text-slate-500 whitespace-nowrap">-</td>
                 </tr>
               ))}
 
@@ -410,9 +420,11 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-right font-mono text-emerald-100 whitespace-nowrap">R$ {totalFisico.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.margemBrutaAtingida.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemBruta)}</td>
-                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemLiq.toFixed(1)}%</td>
-                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemLiq)}</td>
+                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
+                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
+                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
               </tr>
 
             </tbody>
@@ -429,8 +441,10 @@ export default function PainelExecutivoPage() {
                 <td className="py-3 px-2 text-right font-mono text-slate-200 whitespace-nowrap">R$ {totalGeral.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.faturadoMesAnterior > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.faturadoMesAnterior) - 1) * 100 : 0)}</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemBruta.toFixed(1)}%</td>
+                <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.margemBrutaAtingida.toFixed(1)}%</td>
                 <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemBruta)}</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.margemLiqAtingida.toFixed(1)}%</td>
                 <td className="py-3 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemLiq)}</td>
               </tr>
             </tfoot>
