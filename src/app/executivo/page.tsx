@@ -15,7 +15,7 @@ export default function PainelExecutivoPage() {
   const users = context?.users || [];
   const addLog = context?.addLog || (() => {});
 
-  const tableRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
@@ -186,7 +186,7 @@ export default function PainelExecutivoPage() {
       metaValor: acc.metaValor + curr.metaValor,
       projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento,
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
-      faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBruroPuro,
+      faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
       repasseTotal: acc.repasseTotal + curr.repasseTotal,
       lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
       metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
@@ -264,8 +264,19 @@ export default function PainelExecutivoPage() {
       setIsProcessing(true);
       
       const { toBlob } = await import('html-to-image');
+      
+      // Captura a largura total real da tabela (sem cortes laterais)
+      const fullWidth = tableRef.current.scrollWidth;
+      const fullHeight = tableRef.current.scrollHeight;
+
       const blob = await toBlob(tableRef.current, {
         backgroundColor: '#0f172a',
+        width: fullWidth,
+        height: fullHeight,
+        style: {
+          width: `${fullWidth}px`,
+          maxWidth: 'none',
+        },
         pixelRatio: 2
       });
       
@@ -294,8 +305,8 @@ export default function PainelExecutivoPage() {
       
       window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
 
-      alert('✅ O print foi copiado com sucesso e seu e-mail foi aberto!\n\nAgora basta clicar onde diz "Imagem do Dash:" no e-mail e apertar "Ctrl + V" para colar a tabela.');
-      addLog('Print copiado e cliente de e-mail acionado.', 'success');
+      alert('✅ Tabela completa copiada em alta resolução! Clique em "Imagem do Dash:" e aperte Ctrl + V para colar.');
+      addLog('Print panorâmico copiado e cliente de e-mail acionado.', 'success');
       
     } catch (err: any) {
       alert(`Erro ao copiar print/abrir e-mail: ${err.message}`);
@@ -318,9 +329,10 @@ export default function PainelExecutivoPage() {
         </button>
       </div>
 
-      <div ref={tableRef} className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
+      <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-slate-200 border-collapse">
+          {/* A referência ref={tableRef} está diretamente na table para capturar todas as colunas sem corte */}
+          <table ref={tableRef} className="w-full text-left text-slate-200 border-collapse bg-slate-900">
             <thead className="bg-slate-950 text-slate-400 uppercase text-[9px] font-bold border-b border-slate-800 tracking-tight">
               <tr>
                 <th className="py-2 px-2 border-r border-slate-800 whitespace-nowrap">Canal / Resp.</th>
