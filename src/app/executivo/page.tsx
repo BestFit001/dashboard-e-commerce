@@ -18,12 +18,31 @@ export default function PainelExecutivoPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Mês padrão atual (AAAA-MM)
   const currentMonthDefault = new Date().toISOString().slice(0, 7);
-  const previousMonthDefault = useMemo(() => {
-    const d = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthDefault);
+
+  // Lista dinâmica de meses encontrados nas bases de dados
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+    monthsSet.add(currentMonthDefault);
+
+    (sales || []).forEach((s: any) => { if (s.mes_referencia) monthsSet.add(s.mes_referencia); });
+    (goals || []).forEach((g: any) => { if (g.mes_referencia) monthsSet.add(g.mes_referencia); });
+    (adsData || []).forEach((a: any) => { if (a.mes_referencia) monthsSet.add(a.mes_referencia); });
+
+    return Array.from(monthsSet).sort().reverse();
+  }, [sales, goals, adsData, currentMonthDefault]);
+
+  const currentRefMonth = selectedMonth;
+
+  // Mês anterior calculado em relação ao mês selecionado
+  const previousMonthRef = useMemo(() => {
+    const [yearStr, monthStr] = currentRefMonth.split('-');
+    const d = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 1);
     d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 7);
-  }, []);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, [currentRefMonth]);
 
   const [selectedChannelFilter, setSelectedChannelFilter] = useState('TODOS');
 
@@ -44,8 +63,6 @@ export default function PainelExecutivoPage() {
     const num = Number(s);
     return isNaN(num) ? 0 : num;
   };
-
-  const currentRefMonth = currentMonthDefault;
 
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
@@ -81,8 +98,8 @@ export default function PainelExecutivoPage() {
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
   const previousMonthSales = useMemo(() => {
-    return (sales || []).filter((s: any) => s.mes_referencia === previousMonthDefault);
-  }, [sales, previousMonthDefault]);
+    return (sales || []).filter((s: any) => s.mes_referencia === previousMonthRef);
+  }, [sales, previousMonthRef]);
 
   const { targetDateStr } = useMemo(() => {
     const d = new Date();
@@ -265,7 +282,6 @@ export default function PainelExecutivoPage() {
       
       const { toBlob } = await import('html-to-image');
       
-      // Captura a largura total real da tabela (sem cortes laterais)
       const fullWidth = tableRef.current.scrollWidth;
       const fullHeight = tableRef.current.scrollHeight;
 
@@ -287,8 +303,12 @@ export default function PainelExecutivoPage() {
       ]);
       
       const emailsCadastrados = users && users.length > 0 ? users.map((u: any) => u.username).filter(Boolean).join(';') : "gisele@usebestfit.com.br";
-      const dataHoje = new Date().toLocaleDateString('pt-BR');
-      const assunto = encodeURIComponent(`DASHBOARD DIARIO LOJA E ECO ${dataHoje}`);
+      
+      const [anoFormat, mesFormat] = currentRefMonth.split('-');
+      const mesReferenciaFormatado = `${mesFormat}/${anoFormat}`;
+      const isMesAtual = currentRefMonth === currentMonthDefault;
+      const tituloPeriodo = isMesAtual ? `DIÁRIO (${new Date().toLocaleDateString('pt-BR')})` : `MENSAL (${mesReferenciaFormatado})`;
+      const assunto = encodeURIComponent(`DASHBOARD ${tituloPeriodo} LOJA E ECO`);
       
       const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
       const paineirasObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('paineiras')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
@@ -296,17 +316,17 @@ export default function PainelExecutivoPage() {
 
       const formatProjText = (val: number) => val >= 0 ? `+${val.toFixed(1)}%` : `${val.toFixed(1)}%`;
 
-      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas fisica e onlines do dia ${dataHoje}.\n\n`;
-      corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
-      corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
-      corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção: ${formatProjText(ecomProjVsMeta)})\n\n`;
+      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas físicas e online do período de referência ${mesReferenciaFormatado}.\n\n`;
+      corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
+      corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
+      corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(ecomProjVsMeta)})\n\n`;
       corpoTexto += `Imagem do Dash:\n\n\n`;
       corpoTexto += `Acesse o sistema para conferir a visão completa: https://dashboard-e-commerce-nine.vercel.app/executivo`;
       
       window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
 
-      alert('✅ Tabela completa copiada em alta resolução! Clique em "Imagem do Dash:" e aperte Ctrl + V para colar.');
-      addLog('Print panorâmico copiado e cliente de e-mail acionado.', 'success');
+      alert(`✅ Tabela referente a ${mesReferenciaFormatado} copiada em alta resolução! Clique em "Imagem do Dash:" no e-mail e aperte Ctrl + V para colar.`);
+      addLog(`Print panorâmico do mês ${mesReferenciaFormatado} copiado e cliente de e-mail acionado.`, 'success');
       
     } catch (err: any) {
       alert(`Erro ao copiar print/abrir e-mail: ${err.message}`);
@@ -317,8 +337,29 @@ export default function PainelExecutivoPage() {
 
   return (
     <div className="space-y-2 max-w-full mx-auto pb-6 px-1 text-[10px]">
-      <div className="flex justify-between items-center bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
-        <span className="font-bold text-slate-300">Data de Referência: <span className="text-indigo-400 font-mono">{new Date().toLocaleDateString('pt-BR')}</span></span>
+      <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-300">Mês de Referência:</span>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="bg-slate-950 border border-slate-700 text-indigo-400 font-mono font-bold rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {availableMonths.map((m) => {
+                const [ano, mes] = m.split('-');
+                return (
+                  <option key={m} value={m}>
+                    {mes}/{ano} {m === currentMonthDefault ? '(Atual)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <span className="font-bold text-slate-400 text-[9px] border-l border-slate-700 pl-3">
+            Comparativo Mês Ant: <span className="text-slate-300 font-mono">{previousMonthRef.split('-').reverse().join('/')}</span>
+          </span>
+        </div>
         
         <button 
           onClick={handleEnviarEmailComPrint} 
@@ -331,7 +372,6 @@ export default function PainelExecutivoPage() {
 
       <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-2xl p-1">
         <div className="overflow-x-auto">
-          {/* A referência ref={tableRef} está diretamente na table para capturar todas as colunas sem corte */}
           <table ref={tableRef} className="w-full text-left text-slate-200 border-collapse bg-slate-900">
             <thead className="bg-slate-950 text-slate-400 uppercase text-[9px] font-bold border-b border-slate-800 tracking-tight">
               <tr>
