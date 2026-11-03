@@ -101,14 +101,34 @@ export default function PainelExecutivoPage() {
     return (sales || []).filter((s: any) => s.mes_referencia === previousMonthRef);
   }, [sales, previousMonthRef]);
 
-  const { targetDateStr } = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return { targetDateStr: `${yyyy}-${mm}-${dd}` };
-  }, []);
+  // Identifica o último dia com venda faturada do mês selecionado ou o último dia corrido do mês
+  const { targetDateStr, targetDateFormatted } = useMemo(() => {
+    const datasDisponiveis = (sales || [])
+      .filter((s: any) => s.mes_referencia === currentRefMonth && s.data_faturamento)
+      .map((s: any) => String(s.data_faturamento).trim())
+      .filter((dataStr: string) => /^\d{4}-\d{2}-\d{2}$/.test(dataStr));
+
+    let finalDateStr = '';
+
+    if (datasDisponiveis.length > 0) {
+      // Ordena decrescente e extrai a última data registrada
+      datasDisponiveis.sort();
+      finalDateStr = datasDisponiveis[datasDisponiveis.length - 1];
+    } else {
+      // Se não houver vendas ou datas no mês, calcula o último dia do mês em questão
+      const [yearStr, monthStr] = currentRefMonth.split('-');
+      const yyyy = parseInt(yearStr, 10);
+      const mm = parseInt(monthStr, 10);
+      const ultimoDia = new Date(yyyy, mm, 0).getDate();
+      finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+    }
+
+    const [y, m, d] = finalDateStr.split('-');
+    return {
+      targetDateStr: finalDateStr,
+      targetDateFormatted: `${d}/${m}/${y}`
+    };
+  }, [sales, currentRefMonth]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -216,7 +236,7 @@ export default function PainelExecutivoPage() {
 
   const enrichTotals = (totals: any) => {
     const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
-    const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemLiqAtingida = totals.faturadoBruroPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
     const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
 
@@ -307,7 +327,7 @@ export default function PainelExecutivoPage() {
       const [anoFormat, mesFormat] = currentRefMonth.split('-');
       const mesReferenciaFormatado = `${mesFormat}/${anoFormat}`;
       const isMesAtual = currentRefMonth === currentMonthDefault;
-      const tituloPeriodo = isMesAtual ? `DIÁRIO (${new Date().toLocaleDateString('pt-BR')})` : `MENSAL (${mesReferenciaFormatado})`;
+      const tituloPeriodo = isMesAtual ? `DIÁRIO (${targetDateFormatted})` : `FECHAMENTO (${mesReferenciaFormatado} - Dia ${targetDateFormatted})`;
       const assunto = encodeURIComponent(`DASHBOARD ${tituloPeriodo} LOJA E ECO`);
       
       const hebraicaObj = channelAnalytics.find(c => c.canal.toLowerCase().includes('hebraica')) || { faturadoComRedutor: 0, projecaoVsMeta: 0 };
@@ -316,7 +336,7 @@ export default function PainelExecutivoPage() {
 
       const formatProjText = (val: number) => val >= 0 ? `+${val.toFixed(1)}%` : `${val.toFixed(1)}%`;
 
-      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas físicas e online do período de referência ${mesReferenciaFormatado}.\n\n`;
+      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas físicas e online do período de referência ${mesReferenciaFormatado} (Último dia apurado: ${targetDateFormatted}).\n\n`;
       corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
       corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
       corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(ecomProjVsMeta)})\n\n`;
@@ -325,8 +345,8 @@ export default function PainelExecutivoPage() {
       
       window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
 
-      alert(`✅ Tabela referente a ${mesReferenciaFormatado} copiada em alta resolução! Clique em "Imagem do Dash:" no e-mail e aperte Ctrl + V para colar.`);
-      addLog(`Print panorâmico do mês ${mesReferenciaFormatado} copiado e cliente de e-mail acionado.`, 'success');
+      alert(`✅ Tabela referente ao último dia ${targetDateFormatted} (${mesReferenciaFormatado}) copiada em alta resolução! Clique em "Imagem do Dash:" no e-mail e aperte Ctrl + V para colar.`);
+      addLog(`Print panorâmico do dia ${targetDateFormatted} copiado e cliente de e-mail acionado.`, 'success');
       
     } catch (err: any) {
       alert(`Erro ao copiar print/abrir e-mail: ${err.message}`);
@@ -357,6 +377,9 @@ export default function PainelExecutivoPage() {
             </select>
           </div>
           <span className="font-bold text-slate-400 text-[9px] border-l border-slate-700 pl-3">
+            Último Dia de Vendas: <span className="text-emerald-400 font-mono font-bold">{targetDateFormatted}</span>
+          </span>
+          <span className="font-bold text-slate-400 text-[9px] border-l border-slate-700 pl-3">
             Comparativo Mês Ant: <span className="text-slate-300 font-mono">{previousMonthRef.split('-').reverse().join('/')}</span>
           </span>
         </div>
@@ -376,7 +399,9 @@ export default function PainelExecutivoPage() {
             <thead className="bg-slate-950 text-slate-400 uppercase text-[9px] font-bold border-b border-slate-800 tracking-tight">
               <tr>
                 <th className="py-2 px-2 border-r border-slate-800 whitespace-nowrap">Canal / Resp.</th>
-                <th className="py-2 px-2 text-right whitespace-nowrap">Vendas Dia</th>
+                <th className="py-2 px-2 text-right whitespace-nowrap">
+                  Vendas Dia <span className="text-[8px] text-emerald-400 font-mono">({targetDateFormatted})</span>
+                </th>
                 <th className="py-2 px-2 text-right whitespace-nowrap">Total Mês</th>
                 <th className="py-2 px-2 text-right whitespace-nowrap">Meta Mês</th>
                 <th className="py-2 px-2 text-right whitespace-nowrap">Projeção</th>
