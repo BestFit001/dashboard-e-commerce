@@ -2,6 +2,37 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useAppContext } from '@/context/AppContext';
 
+const MESES_MAP: Record<string, string> = {
+  '01': 'janeiro', '02': 'fevereiro', '03': 'março', '04': 'abril',
+  '05': 'maio', '06': 'junho', '07': 'julho', '08': 'agosto',
+  '09': 'setembro', '10': 'outubro', '11': 'novembro', '12': 'dezembro'
+};
+
+// Converte qualquer formato ("2026-11", "11/2026", "novembro de 2026") para a chave canónica "AAAA-MM"
+function normalizarMesParaChave(mesRef: any): string {
+  if (!mesRef) return '';
+  const s = String(mesRef).trim().toLowerCase();
+
+  // Caso: AAAA-MM
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+
+  // Caso: MM/AAAA
+  const matchBarra = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if (matchBarra) {
+    return `${matchBarra[2]}-${matchBarra[1].padStart(2, '0')}`;
+  }
+
+  // Caso por extenso: "outubro de 2026"
+  for (const [num, nome] of Object.entries(MESES_MAP)) {
+    if (s.includes(nome)) {
+      const anoMatch = s.match(/\d{4}/);
+      if (anoMatch) return `${anoMatch[0]}-${num}`;
+    }
+  }
+
+  return s;
+}
+
 export default function PainelExecutivoPage() {
   const context = useAppContext();
   const canais = context?.canais || [];
@@ -18,25 +49,38 @@ export default function PainelExecutivoPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Mês padrão atual (AAAA-MM)
-  const currentMonthDefault = new Date().toISOString().slice(0, 7);
+  // Mês padrão atual no formato AAAA-MM
+  const currentMonthDefault = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthDefault);
 
-  // Lista dinâmica de meses encontrados nas bases de dados
+  // Extrai todos os meses presentes de forma normalizada
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
     monthsSet.add(currentMonthDefault);
 
-    (sales || []).forEach((s: any) => { if (s.mes_referencia) monthsSet.add(s.mes_referencia); });
-    (goals || []).forEach((g: any) => { if (g.mes_referencia) monthsSet.add(g.mes_referencia); });
-    (adsData || []).forEach((a: any) => { if (a.mes_referencia) monthsSet.add(a.mes_referencia); });
+    (sales || []).forEach((s: any) => {
+      const k = normalizarMesParaChave(s.mes_referencia);
+      if (k) monthsSet.add(k);
+    });
+    (goals || []).forEach((g: any) => {
+      const k = normalizarMesParaChave(g.mes_referencia);
+      if (k) monthsSet.add(k);
+    });
+    (adsData || []).forEach((a: any) => {
+      const k = normalizarMesParaChave(a.mes_referencia);
+      if (k) monthsSet.add(k);
+    });
 
     return Array.from(monthsSet).sort().reverse();
   }, [sales, goals, adsData, currentMonthDefault]);
 
-  const currentRefMonth = selectedMonth;
+  const currentRefMonth = selectedMonth; // Chave canónica AAAA-MM
 
-  // Mês anterior calculado em relação ao mês selecionado
+  // Mês anterior canónico (AAAA-MM)
   const previousMonthRef = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const d = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 1);
@@ -64,14 +108,16 @@ export default function PainelExecutivoPage() {
     return isNaN(num) ? 0 : num;
   };
 
+  // Filtra cancelados estritamente pelo mês canónico selecionado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
-    return cancelados.filter((c: any) => c.mes_referencia === currentRefMonth);
+    return cancelados.filter((c: any) => normalizarMesParaChave(c.mes_referencia) === currentRefMonth);
   }, [cancelados, currentRefMonth]);
 
+  // Vendas do mês selecionado rigorosamente filtradas
   const enrichedSales = useMemo(() => {
     return (sales || []).filter((s: any) => {
-      if (s.mes_referencia !== currentRefMonth) return false;
+      if (normalizarMesParaChave(s.mes_referencia) !== currentRefMonth) return false;
       if (selectedChannelFilter !== 'TODOS' && s.canal !== selectedChannelFilter) return false;
       return true;
     }).map((s: any) => {
@@ -84,7 +130,7 @@ export default function PainelExecutivoPage() {
         custoCMV = (parseCurrency(prod.preco_custo) + parseCurrency(prod.custo_embalagem)) * qtd;
       }
 
-      const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido && f.mes_referencia === currentRefMonth);
+      const flexOrder = flexData.find((f: any) => f.id_pedido === s.id_pedido && normalizarMesParaChave(f.mes_referencia) === currentRefMonth);
       const custoFlex = flexOrder ? parseCurrency(flexOrder.valor_frete) : 0;
       const precoVenda = parseCurrency(s.preco_venda);
       let repasseLiquido = parseCurrency(s.repasse_liquido);
@@ -97,30 +143,38 @@ export default function PainelExecutivoPage() {
     });
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
+  // Vendas do mês anterior rigorosamente filtradas
   const previousMonthSales = useMemo(() => {
-    return (sales || []).filter((s: any) => s.mes_referencia === previousMonthRef);
+    return (sales || []).filter((s: any) => normalizarMesParaChave(s.mes_referencia) === previousMonthRef);
   }, [sales, previousMonthRef]);
 
-  // Identifica o último dia com venda faturada do mês selecionado ou o último dia corrido do mês
+  // Determina o último dia de vendas ESTRITAMENTE dentro do mês selecionado
   const { targetDateStr, targetDateFormatted } = useMemo(() => {
-    const datasDisponiveis = (sales || [])
-      .filter((s: any) => s.mes_referencia === currentRefMonth && s.data_faturamento)
-      .map((s: any) => String(s.data_faturamento).trim())
-      .filter((dataStr: string) => /^\d{4}-\d{2}-\d{2}$/.test(dataStr));
+    const [yearStr, monthStr] = currentRefMonth.split('-');
+    const yyyy = parseInt(yearStr, 10);
+    const mm = parseInt(monthStr, 10);
+
+    // Considera apenas as vendas que pertencem ao mês selecionado
+    const datasValidas = enrichedSales
+      .map((s: any) => String(s.data_faturamento || '').trim())
+      .filter((dt: string) => dt.startsWith(`${yearStr}-${monthStr}`));
 
     let finalDateStr = '';
 
-    if (datasDisponiveis.length > 0) {
-      // Ordena decrescente e extrai a última data registrada
-      datasDisponiveis.sort();
-      finalDateStr = datasDisponiveis[datasDisponiveis.length - 1];
+    if (datasValidas.length > 0) {
+      datasValidas.sort();
+      finalDateStr = datasValidas[datasValidas.length - 1];
     } else {
-      // Se não houver vendas ou datas no mês, calcula o último dia do mês em questão
-      const [yearStr, monthStr] = currentRefMonth.split('-');
-      const yyyy = parseInt(yearStr, 10);
-      const mm = parseInt(monthStr, 10);
-      const ultimoDia = new Date(yyyy, mm, 0).getDate();
-      finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+      const now = new Date();
+      const isMesAtual = (now.getFullYear() === yyyy && (now.getMonth() + 1) === mm);
+      if (isMesAtual) {
+        // Se for o mês corrente sem vendas importadas, assume a data de hoje
+        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      } else {
+        // Se for mês passado sem vendas, assume o último dia do calendário daquele mês
+        const ultimoDia = new Date(yyyy, mm, 0).getDate();
+        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+      }
     }
 
     const [y, m, d] = finalDateStr.split('-');
@@ -128,7 +182,7 @@ export default function PainelExecutivoPage() {
       targetDateStr: finalDateStr,
       targetDateFormatted: `${d}/${m}/${y}`
     };
-  }, [sales, currentRefMonth]);
+  }, [enrichedSales, currentRefMonth]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -152,7 +206,7 @@ export default function PainelExecutivoPage() {
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const defaultMetaBruta = fisico ? 56.0 : 48.0;
-      const goalObj = goals.find((g: any) => g.canal === channelName && g.mes_referencia === currentRefMonth) 
+      const goalObj = goals.find((g: any) => g.canal === channelName && normalizarMesParaChave(g.mes_referencia) === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: 15, responsavel: ruleObj.responsavel || 'Equipe' };
 
@@ -165,7 +219,7 @@ export default function PainelExecutivoPage() {
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
       
       const canalAds = adsData
-        .filter((a: any) => a.canal === channelName && a.mes_referencia === currentRefMonth)
+        .filter((a: any) => a.canal === channelName && normalizarMesParaChave(a.mes_referencia) === currentRefMonth)
         .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
 
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
@@ -211,7 +265,7 @@ export default function PainelExecutivoPage() {
         lucroLiquidoFinal
       };
     });
-  }, [enrichedSales, previousMonthSales, goals, adsData, channelRules, currentRefMonth, canais, activeCancelados, targetDateStr, flexData]);
+  }, [enrichedSales, previousMonthSales, goals, adsData, channelRules, currentRefMonth, canais, activeCancelados, targetDateStr]);
 
   const ecommerceChannels = channelAnalytics.filter(c => !c.isFisico);
   const physicalChannels = channelAnalytics.filter(c => c.isFisico);
@@ -236,7 +290,7 @@ export default function PainelExecutivoPage() {
 
   const enrichTotals = (totals: any) => {
     const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
-    const margemLiqAtingida = totals.faturadoBruroPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
     const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
 
@@ -263,7 +317,7 @@ export default function PainelExecutivoPage() {
     metaValor: totalEcomRaw.metaValor + totalFisicoRaw.metaValor,
     projecaoFaturamento: totalEcomRaw.projecaoFaturamento + totalFisicoRaw.projecaoFaturamento,
     faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
-    faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
+    faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBruroPuro,
     repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
     lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
     metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
@@ -336,7 +390,7 @@ export default function PainelExecutivoPage() {
 
       const formatProjText = (val: number) => val >= 0 ? `+${val.toFixed(1)}%` : `${val.toFixed(1)}%`;
 
-      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas físicas e online do período de referência ${mesReferenciaFormatado} (Último dia apurado: ${targetDateFormatted}).\n\n`;
+      let corpoTexto = `Olá, tudo bem? Segue resumo das vendas das lojas físicas e online do período de referência ${mesReferenciaFormatado} (Dia apurado: ${targetDateFormatted}).\n\n`;
       corpoTexto += `Hebraica: R$ ${hebraicaObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(hebraicaObj.projecaoVsMeta)})\n`;
       corpoTexto += `Paineiras: R$ ${paineirasObj.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(paineirasObj.projecaoVsMeta)})\n`;
       corpoTexto += `E-commerce: R$ ${totalEcom.faturadoComRedutor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Projeção/Fechamento: ${formatProjText(ecomProjVsMeta)})\n\n`;
@@ -345,7 +399,7 @@ export default function PainelExecutivoPage() {
       
       window.location.href = `mailto:${emailsCadastrados}?subject=${assunto}&body=${encodeURIComponent(corpoTexto)}`;
 
-      alert(`✅ Tabela referente ao último dia ${targetDateFormatted} (${mesReferenciaFormatado}) copiada em alta resolução! Clique em "Imagem do Dash:" no e-mail e aperte Ctrl + V para colar.`);
+      alert(`✅ Tabela referente ao dia ${targetDateFormatted} (${mesReferenciaFormatado}) copiada em alta resolução! Clique em "Imagem do Dash:" no e-mail e aperte Ctrl + V para colar.`);
       addLog(`Print panorâmico do dia ${targetDateFormatted} copiado e cliente de e-mail acionado.`, 'success');
       
     } catch (err: any) {
