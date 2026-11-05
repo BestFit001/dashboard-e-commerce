@@ -114,7 +114,7 @@ export default function PainelExecutivoPage() {
     return cancelados.filter((c: any) => normalizarMesParaChave(c.mes_referencia) === currentRefMonth);
   }, [cancelados, currentRefMonth]);
 
-  // Vendas do mês selecionado rigorosamente filtradas
+  // Vendas do mês selecionado rigorosamente filtradas (usadas em todo o restante do dashboard)
   const enrichedSales = useMemo(() => {
     return (sales || []).filter((s: any) => {
       if (normalizarMesParaChave(s.mes_referencia) !== currentRefMonth) return false;
@@ -148,35 +148,23 @@ export default function PainelExecutivoPage() {
     return (sales || []).filter((s: any) => normalizarMesParaChave(s.mes_referencia) === previousMonthRef);
   }, [sales, previousMonthRef]);
 
-  // Determina o último dia de vendas ESTRITAMENTE dentro do mês selecionado (ajustado para o dia anterior)
+  // Força o dia anterior fixo (D-1) para a coluna "Vendas Dia"
   const { targetDateStr, targetDateFormatted } = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const yyyy = parseInt(yearStr, 10);
     const mm = parseInt(monthStr, 10);
 
-    // Considera apenas as vendas que pertencem ao mês selecionado
-    const datasValidas = enrichedSales
-      .map((s: any) => String(s.data_faturamento || '').trim())
-      .filter((dt: string) => dt.startsWith(`${yearStr}-${monthStr}`));
+    const now = new Date();
+    const isMesAtual = (now.getFullYear() === yyyy && (now.getMonth() + 1) === mm);
 
     let finalDateStr = '';
-
-    if (datasValidas.length > 0) {
-      datasValidas.sort();
-      finalDateStr = datasValidas[datasValidas.length - 1];
+    if (isMesAtual) {
+      const ontem = new Date(now);
+      ontem.setDate(now.getDate() - 1);
+      finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
     } else {
-      const now = new Date();
-      const isMesAtual = (now.getFullYear() === yyyy && (now.getMonth() + 1) === mm);
-      if (isMesAtual) {
-        // Se for o mês corrente, pega o dia anterior ao atual
-        const ontem = new Date(now);
-        ontem.setDate(now.getDate() - 1);
-        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
-      } else {
-        // Se for mês passado sem vendas, assume o último dia do calendário daquele mês
-        const ultimoDia = new Date(yyyy, mm, 0).getDate();
-        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
-      }
+      const ultimoDia = new Date(yyyy, mm, 0).getDate();
+      finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
     }
 
     const [y, m, d] = finalDateStr.split('-');
@@ -184,7 +172,7 @@ export default function PainelExecutivoPage() {
       targetDateStr: finalDateStr,
       targetDateFormatted: `${d}/${m}/${y}`
     };
-  }, [enrichedSales, currentRefMonth]);
+  }, [currentRefMonth]);
 
   const channelAnalytics = useMemo(() => {
     const activeChannels = Array.from(new Set([...canais, ...channelRules.map((r: any) => r.canal)]));
@@ -203,7 +191,7 @@ export default function PainelExecutivoPage() {
       const fisico = isChannelFisico(channelName);
 
       const vendasDoDia = chSales
-        .filter((s: any) => s.data_faturamento === targetDateStr)
+        .filter((s: any) => String(s.data_faturamento || '').trim() === targetDateStr)
         .reduce((sum: number, s: any) => sum + s.preco_venda, 0);
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
