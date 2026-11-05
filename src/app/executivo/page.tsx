@@ -148,7 +148,7 @@ export default function PainelExecutivoPage() {
     return (sales || []).filter((s: any) => normalizarMesParaChave(s.mes_referencia) === previousMonthRef);
   }, [sales, previousMonthRef]);
 
-  // Determina o último dia de vendas ESTRITAMENTE dentro do mês selecionado
+  // Determina o último dia de vendas ESTRITAMENTE dentro do mês selecionado (ajustado para o dia anterior)
   const { targetDateStr, targetDateFormatted } = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const yyyy = parseInt(yearStr, 10);
@@ -168,8 +168,10 @@ export default function PainelExecutivoPage() {
       const now = new Date();
       const isMesAtual = (now.getFullYear() === yyyy && (now.getMonth() + 1) === mm);
       if (isMesAtual) {
-        // Se for o mês corrente sem vendas importadas, assume a data de hoje
-        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // Se for o mês corrente, pega o dia anterior ao atual
+        const ontem = new Date(now);
+        ontem.setDate(now.getDate() - 1);
+        finalDateStr = `${yyyy}-${String(mm).padStart(2, '0')}-${String(ontem.getDate()).padStart(2, '0')}`;
       } else {
         // Se for mês passado sem vendas, assume o último dia do calendário daquele mês
         const ultimoDia = new Date(yyyy, mm, 0).getDate();
@@ -193,7 +195,7 @@ export default function PainelExecutivoPage() {
     const now = new Date();
     const isCurrentMonth = (now.getFullYear() === refAno && now.getMonth() === refMes);
     const totalDiasMes = new Date(refAno, refMes + 1, 0).getDate();
-    let diasPassados = isCurrentMonth ? Math.max(1, now.getDate()) : totalDiasMes;
+    let diasPassados = isCurrentMonth ? Math.max(1, now.getDate() - 1) : totalDiasMes;
 
     return activeChannels.map(channelName => {
       const chSales = enrichedSales.filter((s: any) => s.canal === channelName);
@@ -317,7 +319,7 @@ export default function PainelExecutivoPage() {
     metaValor: totalEcomRaw.metaValor + totalFisicoRaw.metaValor,
     projecaoFaturamento: totalEcomRaw.projecaoFaturamento + totalFisicoRaw.projecaoFaturamento,
     faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
-    faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBruroPuro,
+    faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
     repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
     lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
     metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
