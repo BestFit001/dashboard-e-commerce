@@ -502,7 +502,7 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Bruta = (Repasse - CMV) / Faturamento | Margem Líq = Lucro Líquido Real / Faturamento | Imposto de 9% em Hebraica e Paineiras</p>
+          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Bruta = Repasse - CMV | Margem Líquida = Repasse - CMV - 9% Imposto</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">

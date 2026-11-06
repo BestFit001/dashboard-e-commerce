@@ -8,17 +8,21 @@ const MESES_MAP: Record<string, string> = {
   '09': 'setembro', '10': 'outubro', '11': 'novembro', '12': 'dezembro'
 };
 
+// Converte qualquer formato ("2026-11", "11/2026", "novembro de 2026") para a chave canónica "AAAA-MM"
 function normalizarMesParaChave(mesRef: any): string {
   if (!mesRef) return '';
   const s = String(mesRef).trim().toLowerCase();
 
+  // Caso: AAAA-MM
   if (/^\d{4}-\d{2}$/.test(s)) return s;
 
+  // Caso: MM/AAAA
   const matchBarra = s.match(/^(\d{1,2})\/(\d{4})$/);
   if (matchBarra) {
     return `${matchBarra[2]}-${matchBarra[1].padStart(2, '0')}`;
   }
 
+  // Caso por extenso: "outubro de 2026"
   for (const [num, nome] of Object.entries(MESES_MAP)) {
     if (s.includes(nome)) {
       const anoMatch = s.match(/\d{4}/);
@@ -45,6 +49,7 @@ export default function PainelExecutivoPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Mês padrão atual no formato AAAA-MM
   const currentMonthDefault = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -52,6 +57,7 @@ export default function PainelExecutivoPage() {
 
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthDefault);
 
+  // Extrai todos os meses presentes de forma normalizada
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
     monthsSet.add(currentMonthDefault);
@@ -72,8 +78,9 @@ export default function PainelExecutivoPage() {
     return Array.from(monthsSet).sort().reverse();
   }, [sales, goals, adsData, currentMonthDefault]);
 
-  const currentRefMonth = selectedMonth;
+  const currentRefMonth = selectedMonth; // Chave canónica AAAA-MM
 
+  // Mês anterior canónico (AAAA-MM)
   const previousMonthRef = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const d = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 1);
@@ -101,11 +108,13 @@ export default function PainelExecutivoPage() {
     return isNaN(num) ? 0 : num;
   };
 
+  // Filtra cancelados estritamente pelo mês canónico selecionado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => normalizarMesParaChave(c.mes_referencia) === currentRefMonth);
   }, [cancelados, currentRefMonth]);
 
+  // Vendas do mês selecionado rigorosamente filtradas (usadas em todo o restante do dashboard)
   const enrichedSales = useMemo(() => {
     return (sales || []).filter((s: any) => {
       if (normalizarMesParaChave(s.mes_referencia) !== currentRefMonth) return false;
@@ -127,6 +136,7 @@ export default function PainelExecutivoPage() {
       let repasseLiquido = parseCurrency(s.repasse_liquido);
       if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) repasseLiquido = precoVenda;
 
+      // Imposto de 9% aplicado SOMENTE em Hebraica e Paineiras
       const nomeCanal = String(s.canal || '').toLowerCase();
       const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
       const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0;
@@ -139,10 +149,12 @@ export default function PainelExecutivoPage() {
     });
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
+  // Vendas do mês anterior rigorosamente filtradas
   const previousMonthSales = useMemo(() => {
     return (sales || []).filter((s: any) => normalizarMesParaChave(s.mes_referencia) === previousMonthRef);
   }, [sales, previousMonthRef]);
 
+  // Força o dia anterior fixo (D-1) para a coluna "Vendas Dia"
   const { targetDateStr, targetDateFormatted } = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const yyyy = parseInt(yearStr, 10);
@@ -190,10 +202,9 @@ export default function PainelExecutivoPage() {
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const defaultMetaBruta = fisico ? 56.0 : 48.0;
-      const defaultMetaLiq = 15.0;
       const goalObj = goals.find((g: any) => g.canal === channelName && normalizarMesParaChave(g.mes_referencia) === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
-                   || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: defaultMetaLiq, responsavel: ruleObj.responsavel || 'Equipe' };
+                   || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: 15, responsavel: ruleObj.responsavel || 'Equipe' };
 
       const cancelamentosMes = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
@@ -211,7 +222,11 @@ export default function PainelExecutivoPage() {
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
       const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
 
+      // Margem Bruta = Repasse - CMV
+      const ganhoBrutoCanal = repasseTotal - cmvCanal;
+      // Margem Líquida = Repasse - CMV - 9% Imposto (- demais despesas se aplicável)
       const lucroLiquidoFinal = repasseTotal - impostoCanal - cmvCanal - flexCanal - canalAds;
+
       const metaBase = parseCurrency(goalObj.meta_valor);
       
       const projecaoFaturamento = isCurrentMonth ? (faturadoComRedutor / diasPassados) * totalDiasMes : faturadoComRedutor;
@@ -220,11 +235,11 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
-      const margemBrutaAtingida = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
+      const margemBrutaAtingida = faturadoBrutoPuro > 0 ? (ganhoBrutoCanal / faturadoBrutoPuro) * 100 : 0;
       const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
-      const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || defaultMetaLiq);
+      const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || 15);
 
       const diffMargemBruta = margemBrutaAtingida - metaMargemBruta;
       const diffMargemLiq = margemLiqAtingida - metaMargemLiq;
@@ -248,7 +263,7 @@ export default function PainelExecutivoPage() {
         isFisico: fisico,
         faturadoBrutoPuro,
         repasseTotal,
-        cmvCanal,
+        ganhoBrutoCanal,
         lucroLiquidoFinal
       };
     });
@@ -266,18 +281,18 @@ export default function PainelExecutivoPage() {
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
       faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
       repasseTotal: acc.repasseTotal + curr.repasseTotal,
-      cmvCanal: acc.cmvCanal + curr.cmvCanal,
+      ganhoBrutoCanal: acc.ganhoBrutoCanal + curr.ganhoBrutoCanal,
       lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
       metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
       metaLiqPonderada: acc.metaLiqPonderada + (curr.metaMargemLiq * curr.metaValor),
     }), { 
       vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, faturadoMesAnterior: 0, 
-      faturadoBrutoPuro: 0, repasseTotal: 0, cmvCanal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
+      faturadoBrutoPuro: 0, repasseTotal: 0, ganhoBrutoCanal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
     });
   };
 
   const enrichTotals = (totals: any) => {
-    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? ((totals.repasseTotal - totals.cmvCanal) / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.ganhoBrutoCanal / totals.faturadoBrutoPuro) * 100 : 0;
     const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
     const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
@@ -307,7 +322,7 @@ export default function PainelExecutivoPage() {
     faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
     faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
     repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
-    cmvCanal: totalEcomRaw.cmvCanal + totalFisicoRaw.cmvCanal,
+    ganhoBrutoCanal: totalEcomRaw.ganhoBrutoCanal + totalFisicoRaw.ganhoBrutoCanal,
     lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
     metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
     metaLiqPonderada: totalEcomRaw.metaLiqPonderada + totalFisicoRaw.metaLiqPonderada,
