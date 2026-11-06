@@ -201,9 +201,10 @@ export default function PainelExecutivoPage() {
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const defaultMetaBruta = fisico ? 56.0 : 48.0;
+      const defaultMetaLiq = fisico ? 15.0 : 15.0;
       const goalObj = goals.find((g: any) => g.canal === channelName && normalizarMesParaChave(g.mes_referencia) === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
-                   || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: 15, responsavel: ruleObj.responsavel || 'Equipe' };
+                   || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: defaultMetaLiq, responsavel: ruleObj.responsavel || 'Equipe' };
 
       const cancelamentosMes = activeCancelados
         .filter((c: any) => String(c.canal).toLowerCase() === String(channelName).toLowerCase())
@@ -221,7 +222,7 @@ export default function PainelExecutivoPage() {
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
       const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
 
-      const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
+      const lucroLiquidoFinal = faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds;
       const metaBase = parseCurrency(goalObj.meta_valor);
       
       const projecaoFaturamento = isCurrentMonth ? (faturadoComRedutor / diasPassados) * totalDiasMes : faturadoComRedutor;
@@ -230,13 +231,11 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
-      // Margem Bruta corrigida: (Repasse - CMV) / Faturamento Bruto
       const margemBrutaAtingida = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
-      // Margem Líquida corrigida: descontando o imposto de 9% nos clubes e demais despesas
-      const margemLiqAtingida = faturadoBrutoPuro > 0 ? ((faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds) / faturadoBrutoPuro) * 100 : 0;
+      const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
-      const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || 15);
+      const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || defaultMetaLiq);
 
       const diffMargemBruta = margemBrutaAtingida - metaMargemBruta;
       const diffMargemLiq = margemLiqAtingida - metaMargemLiq;
@@ -260,6 +259,10 @@ export default function PainelExecutivoPage() {
         isFisico: fisico,
         faturadoBrutoPuro,
         repasseTotal,
+        cmvCanal,
+        impostoCanal,
+        flexCanal,
+        canalAds,
         lucroLiquidoFinal
       };
     });
@@ -277,18 +280,18 @@ export default function PainelExecutivoPage() {
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
       faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
       repasseTotal: acc.repasseTotal + curr.repasseTotal,
+      cmvCanal: acc.cmvCanal + curr.cmvCanal,
       lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
       metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
       metaLiqPonderada: acc.metaLiqPonderada + (curr.metaMargemLiq * curr.metaValor),
     }), { 
       vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, faturadoMesAnterior: 0, 
-      faturadoBrutoPuro: 0, repasseTotal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
+      faturadoBrutoPuro: 0, repasseTotal: 0, cmvCanal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
     });
   };
 
   const enrichTotals = (totals: any) => {
-    // Para simplificar a agregação dos totais gerais nas colunas, ponderamos as margens de forma proporcional ao faturamento bruto
-    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? ((totals.repasseTotal - totals.cmvCanal) / totals.faturadoBrutoPuro) * 100 : 0;
     const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
     const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
@@ -318,6 +321,7 @@ export default function PainelExecutivoPage() {
     faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
     faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
     repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
+    cmvCanal: totalEcomRaw.cmvCanal + totalFisicoRaw.cmvCanal,
     lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
     metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
     metaLiqPonderada: totalEcomRaw.metaLiqPonderada + totalFisicoRaw.metaLiqPonderada,
@@ -548,13 +552,13 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-right text-emerald-100 whitespace-nowrap">R$ {totalFisico.projecaoFaturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.metaValor > 0 ? ((totalFisico.projecaoFaturamento / totalFisico.metaValor) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-right font-mono text-emerald-100 whitespace-nowrap">R$ {totalFisico.faturadoMesAnterior.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
+                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaTotal(totalFisico.faturadoMesAnterior > 0 ? ((totalFisico.faturadoComRedutor / totalFisico.faturadoMesAnterior) - 1) * 100 : 0)}</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemBruta.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.margemBrutaAtingida.toFixed(1)}%</td>
-                <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemBruta)}</td>
+                <td className="py-2 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaDiferencaMargem(totalFisico.diffMargemBruta)}</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemLiq.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.margemLiqAtingida.toFixed(1)}%</td>
-                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemLiq)}</td>
+                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(totalFisico.diffMargemLiq)}</td>
               </tr>
 
             </tbody>
@@ -572,10 +576,10 @@ export default function PainelExecutivoPage() {
                 <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.faturadoMesAnterior > 0 ? ((totalGeral.faturadoComRedutor / totalGeral.faturadoMesAnterior) - 1) * 100 : 0)}</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemBruta.toFixed(1)}%</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.margemBrutaAtingida.toFixed(1)}%</td>
-                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemBruta)}</td>
+                <td className="py-3 px-2 text-center border-r border-slate-600 whitespace-nowrap">{renderSetaDiferencaMargem(totalGeral.diffMargemBruta)}</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.metaMargemLiq.toFixed(1)}%</td>
                 <td className="py-3 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{totalGeral.margemLiqAtingida.toFixed(1)}%</td>
-                <td className="py-3 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalGeral.diffMargemLiq)}</td>
+                <td className="py-3 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(totalGeral.diffMargemLiq)}</td>
               </tr>
             </tfoot>
           </table>
