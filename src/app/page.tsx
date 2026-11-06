@@ -381,13 +381,33 @@ export default function DashboardPage() {
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 
-      const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
-      
       const metaBase = parseCurrency(goalObj.meta_valor);
       const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
-      const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
-      const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
+      // APLICAÇÃO EXATA SOLICITADA PARA OS CLUBES HEBRAICA E PAINEIRAS NO DASHBOARD:
+      let margemBrutaPct = 0;
+      let margemLiquidaPct = 0;
+
+      const nomeCanalLower = String(channelName).toLowerCase();
+      const isClubeEspecial = nomeCanalLower.includes('hebraica') || nomeCanalLower.includes('paineiras');
+
+      if (faturadoBrutoPuro > 0) {
+        if (isClubeEspecial) {
+          // Margem Bruta = Repasse - CMV
+          const brutoClube = repasseTotal - cmvCanal;
+          margemBrutaPct = (brutoClube / faturadoBrutoPuro) * 100;
+
+          // Margem Líquida = Repasse - CMV - 9% Imposto
+          const impostoClube = faturadoBrutoPuro * 0.09;
+          const liquidoClube = repasseTotal - cmvCanal - impostoClube;
+          margemLiquidaPct = (liquidoClube / faturadoBrutoPuro) * 100;
+        } else {
+          // Mantém o comportamento original inalterado para os outros canais
+          const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
+          margemBrutaPct = (repasseTotal / faturadoBrutoPuro) * 100;
+          margemLiquidaPct = (lucroLiquidoFinal / faturadoBrutoPuro) * 100;
+        }
+      }
 
       const projecaoFaturamento = isCurrentMonth 
         ? (faturadoComRedutor / diasPassados) * totalDiasMes
@@ -405,7 +425,6 @@ export default function DashboardPage() {
         vendasDoDia,
         faturadoBruto: faturadoBrutoPuro,
         faturadoComRedutor, 
-        lucroLiquidoFinal, 
         progressoMetaPct, 
         margemBrutaPct, 
         margemLiquidaPct, 
@@ -428,9 +447,8 @@ export default function DashboardPage() {
       vendasDoDia: acc.vendasDoDia + curr.vendasDoDia,
       faturadoComRedutor: acc.faturadoComRedutor + curr.faturadoComRedutor,
       metaValor: acc.metaValor + curr.metaValor,
-      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento,
-      lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal
-    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, lucroLiquidoFinal: 0 });
+      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento
+    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0 });
   }, [ecommerceChannels]);
 
   const totalPhysical = useMemo(() => {
@@ -438,9 +456,8 @@ export default function DashboardPage() {
       vendasDoDia: acc.vendasDoDia + curr.vendasDoDia,
       faturadoComRedutor: acc.faturadoComRedutor + curr.faturadoComRedutor,
       metaValor: acc.metaValor + curr.metaValor,
-      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento,
-      lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal
-    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, lucroLiquidoFinal: 0 });
+      projecaoFaturamento: acc.projecaoFaturamento + curr.projecaoFaturamento
+    }), { vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0 });
   }, [physicalChannels]);
 
   const totalGeral = useMemo(() => {
@@ -448,8 +465,7 @@ export default function DashboardPage() {
       vendasDoDia: totalEcommerce.vendasDoDia + totalPhysical.vendasDoDia,
       faturadoComRedutor: totalEcommerce.faturadoComRedutor + totalPhysical.faturadoComRedutor,
       metaValor: totalEcommerce.metaValor + totalPhysical.metaValor,
-      projecaoFaturamento: totalEcommerce.projecaoFaturamento + totalPhysical.projecaoFaturamento,
-      lucroLiquidoFinal: totalEcommerce.lucroLiquidoFinal + totalPhysical.lucroLiquidoFinal
+      projecaoFaturamento: totalEcommerce.projecaoFaturamento + totalPhysical.projecaoFaturamento
     };
   }, [totalEcommerce, totalPhysical]);
 
