@@ -161,16 +161,23 @@ export default function DashboardPage() {
            repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
         }
 
+        // Imposto de 9% aplicado SOMENTE nos clubes Hebraica e Paineiras
+        const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
+        const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0; 
+        const valorImposto = precoVenda * aliquotaImposto;
+
         const ganhoBruto = repasseLiquido - custoCMV; 
-        const ganhoLiquido = ganhoBruto - custoFlex;
+        const ganhoLiquido = precoVenda - valorImposto - custoCMV - custoFlex;
         
         return { 
           ...s, 
           preco_venda: precoVenda,
           custoCMV, 
           custoFlex, 
+          ganhoBruto,
           ganhoLiquido, 
-          repasse_liquido: repasseLiquido 
+          repasse_liquido: repasseLiquido,
+          valorImposto
         };
       });
   }, [sales, appliedChannelFilter, appliedModalidadeFilter, appliedDateFilter, appliedStartDate, appliedEndDate, products, flexData, currentMonthDefault, previousMonthDefault, tarifasSiteMap]);
@@ -379,6 +386,7 @@ export default function DashboardPage() {
         .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
 
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
+      const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
@@ -386,8 +394,11 @@ export default function DashboardPage() {
       const metaBase = parseCurrency(goalObj.meta_valor);
       const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
-      const margemBrutaPct = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
-      const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
+      // Margem Bruta corrigida: (Repasse - CMV) / Faturamento Bruto
+      const margemBrutaPct = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
+      
+      // Margem Líquida corrigida: (Bruto - Imposto) / Bruto (ou considerando o abatimento do imposto)
+      const margemLiquidaPct = faturadoBrutoPuro > 0 ? ((faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds) / faturadoBrutoPuro) * 100 : 0;
 
       const projecaoFaturamento = isCurrentMonth 
         ? (faturadoComRedutor / diasPassados) * totalDiasMes
@@ -490,7 +501,7 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Real = Repasse Líq - CMV - Fretes Flex - ADS</p>
+          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Bruta = (Repasse - CMV) / Faturamento | Imposto de 9% aplicado apenas em Hebraica e Paineiras</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
@@ -544,7 +555,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* BOTÕES DE CHECKBOX / ALTERNÂNCIA DE VISUALIZAÇÃO (CARDS vs LINHAS) */}
       <div className="flex justify-between items-center bg-slate-900/60 px-5 py-3 rounded-xl border border-slate-800">
         <span className="text-xs text-slate-300 font-bold">Modo de Visualização dos Canais:</span>
         <div className="flex items-center gap-4">
@@ -569,10 +579,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 PAINÉIS DO TOPO */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         
-        {/* 1. FATURAMENTO BRUTO */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Faturamento Bruto</span>
@@ -609,7 +617,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. REPASSE TOTAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Repasse Total das Plataformas</span>
@@ -627,7 +634,6 @@ export default function DashboardPage() {
           </div>
         </div>
         
-        {/* 3. CMV TOTAL (COM O VALOR NUMÉRICO DAS LOJAS FÍSICAS CORRIGIDO) */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">CMV Total (Custos de SKU x Qtd)</span>
@@ -645,7 +651,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. LUCRO LÍQUIDO REAL */}
         <div className="bg-slate-900 p-5 rounded-2xl border border-emerald-500/20 flex flex-col justify-between text-center">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase">Lucro Líquido Real</span>
@@ -665,7 +670,6 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* RENDERIZAÇÃO CONDICIONAL ENTRE CARDS E LINHAS (TABELA) */}
       {appliedModalidadeFilter === 'SELECIONE' ? (
         <div className="flex flex-col items-center justify-center py-16 px-6 bg-slate-900/50 rounded-2xl border border-slate-800 border-dashed">
           <i className="fa-solid fa-layer-group text-4xl text-slate-700 mb-4"></i>
@@ -675,7 +679,6 @@ export default function DashboardPage() {
           </p>
         </div>
       ) : viewMode === 'cards' ? (
-        // MODO CARDS
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {channelAnalytics.map((item: any) => {
             const metaBatida = item.progressoMetaPct >= 100;
@@ -764,7 +767,6 @@ export default function DashboardPage() {
           })}
         </div>
       ) : (
-        // MODO LINHAS (TABELA EXECUTIVA UNIFICADA COM O RÓTULO DINÂMICO DO DIA ANTERIOR)
         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-200">
