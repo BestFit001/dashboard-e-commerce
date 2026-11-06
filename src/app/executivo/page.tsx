@@ -142,7 +142,7 @@ export default function PainelExecutivoPage() {
       const valorImposto = precoVenda * aliquotaImposto;
 
       const ganhoBruto = repasseLiquido - custoCMV;
-      const ganhoLiquido = precoVenda - valorImposto - custoCMV - custoFlex;
+      const ganhoLiquido = repasseLiquido - valorImposto - custoCMV - custoFlex;
 
       return { ...s, preco_venda: precoVenda, custoCMV, custoFlex, ganhoBruto, ganhoLiquido, repasse_liquido: repasseLiquido, valorImposto };
     });
@@ -222,7 +222,7 @@ export default function PainelExecutivoPage() {
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
       const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
 
-      const lucroLiquidoFinal = faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds;
+      const lucroLiquidoFinal = repasseTotal - impostoCanal - cmvCanal - flexCanal - canalAds;
       const metaBase = parseCurrency(goalObj.meta_valor);
       
       const projecaoFaturamento = isCurrentMonth ? (faturadoComRedutor / diasPassados) * totalDiasMes : faturadoComRedutor;
@@ -231,7 +231,9 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
+      // Margem Bruta correta: (Repasse - CMV) / Faturamento Bruto[cite: 2]
       const margemBrutaAtingida = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
+      // Margem Líquida correta: Lucro Líquido Real / Faturamento Bruto
       const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
@@ -260,9 +262,6 @@ export default function PainelExecutivoPage() {
         faturadoBrutoPuro,
         repasseTotal,
         cmvCanal,
-        impostoCanal,
-        flexCanal,
-        canalAds,
         lucroLiquidoFinal
       };
     });
