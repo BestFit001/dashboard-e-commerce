@@ -161,7 +161,6 @@ export default function DashboardPage() {
            repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
         }
 
-        // Imposto de 9% aplicado SOMENTE em Hebraica e Paineiras
         const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
         const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0; 
         const valorImposto = precoVenda * aliquotaImposto;
@@ -390,15 +389,13 @@ export default function DashboardPage() {
       const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 
+      const ganhoBrutoCanal = repasseTotal - cmvCanal;
       const lucroLiquidoFinal = repasseTotal - impostoCanal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = parseCurrency(goalObj.meta_valor);
       const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
-      // Margem Bruta correta: (Repasse - CMV) / Faturamento Bruto
-      const margemBrutaPct = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
-      
-      // Margem Líquida correta: Lucro Líquido Real / Faturamento Bruto
+      const margemBrutaPct = faturadoBrutoPuro > 0 ? (ganhoBrutoCanal / faturadoBrutoPuro) * 100 : 0;
       const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const projecaoFaturamento = isCurrentMonth 
