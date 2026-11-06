@@ -136,16 +136,10 @@ export default function PainelExecutivoPage() {
       let repasseLiquido = parseCurrency(s.repasse_liquido);
       if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) repasseLiquido = precoVenda;
 
-      // Imposto de 9% aplicado SOMENTE em Hebraica e Paineiras
-      const nomeCanal = String(s.canal || '').toLowerCase();
-      const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
-      const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0;
-      const valorImposto = precoVenda * aliquotaImposto;
-
       const ganhoBruto = repasseLiquido - custoCMV;
-      const ganhoLiquido = repasseLiquido - valorImposto - custoCMV - custoFlex;
+      const ganhoLiquido = ganhoBruto - custoFlex;
 
-      return { ...s, preco_venda: precoVenda, custoCMV, custoFlex, ganhoBruto, ganhoLiquido, repasse_liquido: repasseLiquido, valorImposto };
+      return { ...s, preco_venda: precoVenda, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: repasseLiquido };
     });
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
@@ -213,19 +207,12 @@ export default function PainelExecutivoPage() {
       const faturadoBrutoPuro = chSales.reduce((sum: number, s: any) => sum + s.preco_venda, 0);
       const faturadoComRedutor = Math.max(0, faturadoBrutoPuro - cancelamentosMes);
       const repasseTotal = chSales.reduce((sum: number, s: any) => sum + s.repasse_liquido, 0);
+      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
       
       const canalAds = adsData
         .filter((a: any) => a.canal === channelName && normalizarMesParaChave(a.mes_referencia) === currentRefMonth)
         .reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
-
-      const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
-      const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
-
-      // Margem Bruta = Repasse - CMV
-      const ganhoBrutoCanal = repasseTotal - cmvCanal;
-      // Margem Líquida = Repasse - CMV - 9% Imposto (- demais despesas se aplicável)
-      const lucroLiquidoFinal = repasseTotal - impostoCanal - cmvCanal - flexCanal - canalAds;
 
       const metaBase = parseCurrency(goalObj.meta_valor);
       
@@ -235,8 +222,29 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
-      const margemBrutaAtingida = faturadoBrutoPuro > 0 ? (ganhoBrutoCanal / faturadoBrutoPuro) * 100 : 0;
-      const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
+      // Correção aplicada estritamente para Hebraica e Paineiras
+      let margemBrutaAtingida = 0;
+      let margemLiqAtingida = 0;
+      const nomeLower = String(channelName).toLowerCase();
+      const isClubeEspecial = nomeLower.includes('hebraica') || nomeLower.includes('paineiras');
+
+      if (faturadoBrutoPuro > 0) {
+        if (isClubeEspecial) {
+          // Margem Bruta = (Repasse - CMV) / Faturamento Bruto
+          const brutoClube = repasseTotal - cmvCanal;
+          margemBrutaAtingida = (brutoClube / faturadoBrutoPuro) * 100;
+
+          // Margem Líquida = (Repasse - CMV - 9% Imposto) / Faturamento Bruto
+          const impostoClube = faturadoBrutoPuro * 0.09;
+          const liquidoClube = repasseTotal - cmvCanal - impostoClube;
+          margemLiqAtingida = (liquidoClube / faturadoBrutoPuro) * 100;
+        } else {
+          // Demais canais mantêm a lógica original intacta
+          const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
+          margemBrutaAtingida = (repasseTotal / faturadoBrutoPuro) * 100;
+          margemLiqAtingida = (lucroLiquidoFinal / faturadoBrutoPuro) * 100;
+        }
+      }
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
       const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || 15);
@@ -262,9 +270,7 @@ export default function PainelExecutivoPage() {
         diffMargemLiq,
         isFisico: fisico,
         faturadoBrutoPuro,
-        repasseTotal,
-        ganhoBrutoCanal,
-        lucroLiquidoFinal
+        repasseTotal
       };
     });
   }, [enrichedSales, previousMonthSales, goals, adsData, channelRules, currentRefMonth, canais, activeCancelados, targetDateStr]);
@@ -281,19 +287,17 @@ export default function PainelExecutivoPage() {
       faturadoMesAnterior: acc.faturadoMesAnterior + curr.faturadoMesAnterior,
       faturadoBrutoPuro: acc.faturadoBrutoPuro + curr.faturadoBrutoPuro,
       repasseTotal: acc.repasseTotal + curr.repasseTotal,
-      ganhoBrutoCanal: acc.ganhoBrutoCanal + curr.ganhoBrutoCanal,
-      lucroLiquidoFinal: acc.lucroLiquidoFinal + curr.lucroLiquidoFinal,
       metaBrutaPonderada: acc.metaBrutaPonderada + (curr.metaMargemBruta * curr.metaValor),
       metaLiqPonderada: acc.metaLiqPonderada + (curr.metaMargemLiq * curr.metaValor),
     }), { 
       vendasDoDia: 0, faturadoComRedutor: 0, metaValor: 0, projecaoFaturamento: 0, faturadoMesAnterior: 0, 
-      faturadoBrutoPuro: 0, repasseTotal: 0, ganhoBrutoCanal: 0, lucroLiquidoFinal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
+      faturadoBrutoPuro: 0, repasseTotal: 0, metaBrutaPonderada: 0, metaLiqPonderada: 0 
     });
   };
 
   const enrichTotals = (totals: any) => {
-    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.ganhoBrutoCanal / totals.faturadoBrutoPuro) * 100 : 0;
-    const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
+    const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
     const metaMargemLiq = totals.metaValor > 0 ? totals.metaLiqPonderada / totals.metaValor : 0;
 
@@ -322,8 +326,6 @@ export default function PainelExecutivoPage() {
     faturadoMesAnterior: totalEcomRaw.faturadoMesAnterior + totalFisicoRaw.faturadoMesAnterior,
     faturadoBrutoPuro: totalEcomRaw.faturadoBrutoPuro + totalFisicoRaw.faturadoBrutoPuro,
     repasseTotal: totalEcomRaw.repasseTotal + totalFisicoRaw.repasseTotal,
-    ganhoBrutoCanal: totalEcomRaw.ganhoBrutoCanal + totalFisicoRaw.ganhoBrutoCanal,
-    lucroLiquidoFinal: totalEcomRaw.lucroLiquidoFinal + totalFisicoRaw.lucroLiquidoFinal,
     metaBrutaPonderada: totalEcomRaw.metaBrutaPonderada + totalFisicoRaw.metaBrutaPonderada,
     metaLiqPonderada: totalEcomRaw.metaLiqPonderada + totalFisicoRaw.metaLiqPonderada,
   };
