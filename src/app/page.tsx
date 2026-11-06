@@ -161,13 +161,13 @@ export default function DashboardPage() {
            repasseLiquido = Math.max(0, repasseLiquido - taxaVindi);
         }
 
-        // Imposto de 9% aplicado SOMENTE nos clubes Hebraica e Paineiras
+        // Imposto de 9% aplicado SOMENTE em Hebraica e Paineiras
         const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
         const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0; 
         const valorImposto = precoVenda * aliquotaImposto;
 
         const ganhoBruto = repasseLiquido - custoCMV; 
-        const ganhoLiquido = precoVenda - valorImposto - custoCMV - custoFlex;
+        const ganhoLiquido = repasseLiquido - valorImposto - custoCMV - custoFlex;
         
         return { 
           ...s, 
@@ -282,9 +282,10 @@ export default function DashboardPage() {
       (appliedChannelFilter === 'TODOS' || a.canal === appliedChannelFilter)
     );
     const totalAdsCost = filteredAds.reduce((sum: number, a: any) => sum + parseCurrency(a.custo_ads), 0);
+    const totalImpostoCost = enrichedSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
     
-    const lucroLiquidoReal = faturamentoLiquidoRepasse - custoTotalCMV - totalFlexCost - totalAdsCost;
-    const lucroFisico = repasseFisico - cmvFisico;
+    const lucroLiquidoReal = faturamentoLiquidoRepasse - totalImpostoCost - custoTotalCMV - totalFlexCost - totalAdsCost;
+    const lucroFisico = repasseFisico - enrichedSales.filter(s => isChannelFisico(s.canal)).reduce((acc, s) => acc + s.valorImposto, 0) - cmvFisico;
     const lucroDigital = repasseDigital - cmvDigital - totalFlexCost - totalAdsCost;
 
     return { 
@@ -389,16 +390,16 @@ export default function DashboardPage() {
       const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
 
-      const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
+      const lucroLiquidoFinal = repasseTotal - impostoCanal - cmvCanal - flexCanal - canalAds;
       
       const metaBase = parseCurrency(goalObj.meta_valor);
       const progressoMetaPct = metaBase > 0 ? (faturadoComRedutor / metaBase) * 100 : 0;
       
-      // Margem Bruta corrigida: (Repasse - CMV) / Faturamento Bruto
+      // Margem Bruta correta: (Repasse - CMV) / Faturamento Bruto
       const margemBrutaPct = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
       
-      // Margem Líquida corrigida: (Bruto - Imposto) / Bruto (ou considerando o abatimento do imposto)
-      const margemLiquidaPct = faturadoBrutoPuro > 0 ? ((faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds) / faturadoBrutoPuro) * 100 : 0;
+      // Margem Líquida correta: Lucro Líquido Real / Faturamento Bruto
+      const margemLiquidaPct = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const projecaoFaturamento = isCurrentMonth 
         ? (faturadoComRedutor / diasPassados) * totalDiasMes
@@ -501,7 +502,7 @@ export default function DashboardPage() {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center bg-slate-900 p-5 rounded-2xl border border-slate-800 gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Dashboard Best Fit</h2>
-          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Bruta = (Repasse - CMV) / Faturamento | Imposto de 9% aplicado apenas em Hebraica e Paineiras</p>
+          <p className="text-xs text-slate-400 mt-1">Cálculo de Margem Bruta = (Repasse - CMV) / Faturamento | Margem Líq = Lucro Líquido Real / Faturamento | Imposto de 9% em Hebraica e Paineiras</p>
         </div>
         
         <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">

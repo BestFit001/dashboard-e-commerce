@@ -8,21 +8,17 @@ const MESES_MAP: Record<string, string> = {
   '09': 'setembro', '10': 'outubro', '11': 'novembro', '12': 'dezembro'
 };
 
-// Converte qualquer formato ("2026-11", "11/2026", "novembro de 2026") para a chave canónica "AAAA-MM"
 function normalizarMesParaChave(mesRef: any): string {
   if (!mesRef) return '';
   const s = String(mesRef).trim().toLowerCase();
 
-  // Caso: AAAA-MM
   if (/^\d{4}-\d{2}$/.test(s)) return s;
 
-  // Caso: MM/AAAA
   const matchBarra = s.match(/^(\d{1,2})\/(\d{4})$/);
   if (matchBarra) {
     return `${matchBarra[2]}-${matchBarra[1].padStart(2, '0')}`;
   }
 
-  // Caso por extenso: "outubro de 2026"
   for (const [num, nome] of Object.entries(MESES_MAP)) {
     if (s.includes(nome)) {
       const anoMatch = s.match(/\d{4}/);
@@ -49,7 +45,6 @@ export default function PainelExecutivoPage() {
   const tableRef = useRef<HTMLTableElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Mês padrão atual no formato AAAA-MM
   const currentMonthDefault = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -57,7 +52,6 @@ export default function PainelExecutivoPage() {
 
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthDefault);
 
-  // Extrai todos os meses presentes de forma normalizada
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
     monthsSet.add(currentMonthDefault);
@@ -78,9 +72,8 @@ export default function PainelExecutivoPage() {
     return Array.from(monthsSet).sort().reverse();
   }, [sales, goals, adsData, currentMonthDefault]);
 
-  const currentRefMonth = selectedMonth; // Chave canónica AAAA-MM
+  const currentRefMonth = selectedMonth;
 
-  // Mês anterior canónico (AAAA-MM)
   const previousMonthRef = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const d = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 1);
@@ -108,13 +101,11 @@ export default function PainelExecutivoPage() {
     return isNaN(num) ? 0 : num;
   };
 
-  // Filtra cancelados estritamente pelo mês canónico selecionado
   const activeCancelados = useMemo(() => {
     if (!cancelados) return [];
     return cancelados.filter((c: any) => normalizarMesParaChave(c.mes_referencia) === currentRefMonth);
   }, [cancelados, currentRefMonth]);
 
-  // Vendas do mês selecionado rigorosamente filtradas
   const enrichedSales = useMemo(() => {
     return (sales || []).filter((s: any) => {
       if (normalizarMesParaChave(s.mes_referencia) !== currentRefMonth) return false;
@@ -148,12 +139,10 @@ export default function PainelExecutivoPage() {
     });
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
-  // Vendas do mês anterior rigorosamente filtradas
   const previousMonthSales = useMemo(() => {
     return (sales || []).filter((s: any) => normalizarMesParaChave(s.mes_referencia) === previousMonthRef);
   }, [sales, previousMonthRef]);
 
-  // Força o dia anterior fixo (D-1) para a coluna "Vendas Dia"
   const { targetDateStr, targetDateFormatted } = useMemo(() => {
     const [yearStr, monthStr] = currentRefMonth.split('-');
     const yyyy = parseInt(yearStr, 10);
@@ -201,7 +190,7 @@ export default function PainelExecutivoPage() {
 
       const ruleObj = channelRules.find((r: any) => r.canal === channelName) || {};
       const defaultMetaBruta = fisico ? 56.0 : 48.0;
-      const defaultMetaLiq = fisico ? 15.0 : 15.0;
+      const defaultMetaLiq = 15.0;
       const goalObj = goals.find((g: any) => g.canal === channelName && normalizarMesParaChave(g.mes_referencia) === currentRefMonth) 
                    || goals.find((g: any) => g.canal === channelName) 
                    || { meta_valor: 0, meta_margem_bruta: defaultMetaBruta, meta_margem_liq: defaultMetaLiq, responsavel: ruleObj.responsavel || 'Equipe' };
@@ -231,9 +220,7 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
-      // Margem Bruta correta: (Repasse - CMV) / Faturamento Bruto[cite: 2]
       const margemBrutaAtingida = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
-      // Margem Líquida correta: Lucro Líquido Real / Faturamento Bruto
       const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
