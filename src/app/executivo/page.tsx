@@ -114,7 +114,7 @@ export default function PainelExecutivoPage() {
     return cancelados.filter((c: any) => normalizarMesParaChave(c.mes_referencia) === currentRefMonth);
   }, [cancelados, currentRefMonth]);
 
-  // Vendas do mês selecionado rigorosamente filtradas (usadas em todo o restante do dashboard)
+  // Vendas do mês selecionado rigorosamente filtradas
   const enrichedSales = useMemo(() => {
     return (sales || []).filter((s: any) => {
       if (normalizarMesParaChave(s.mes_referencia) !== currentRefMonth) return false;
@@ -136,10 +136,15 @@ export default function PainelExecutivoPage() {
       let repasseLiquido = parseCurrency(s.repasse_liquido);
       if (repasseLiquido <= 0 || repasseLiquido > precoVenda * 2) repasseLiquido = precoVenda;
 
-      const ganhoBruto = repasseLiquido - custoCMV;
-      const ganhoLiquido = ganhoBruto - custoFlex;
+      const nomeCanal = String(s.canal || '').toLowerCase();
+      const isHebraicaOuPaineiras = nomeCanal.includes('hebraica') || nomeCanal.includes('paineiras');
+      const aliquotaImposto = isHebraicaOuPaineiras ? 0.09 : 0;
+      const valorImposto = precoVenda * aliquotaImposto;
 
-      return { ...s, preco_venda: precoVenda, custoCMV, custoFlex, ganhoLiquido, repasse_liquido: repasseLiquido };
+      const ganhoBruto = repasseLiquido - custoCMV;
+      const ganhoLiquido = precoVenda - valorImposto - custoCMV - custoFlex;
+
+      return { ...s, preco_venda: precoVenda, custoCMV, custoFlex, ganhoBruto, ganhoLiquido, repasse_liquido: repasseLiquido, valorImposto };
     });
   }, [sales, selectedChannelFilter, products, flexData, currentRefMonth]);
 
@@ -214,6 +219,7 @@ export default function PainelExecutivoPage() {
 
       const cmvCanal = chSales.reduce((sum: number, s: any) => sum + s.custoCMV, 0);
       const flexCanal = chSales.reduce((sum: number, s: any) => sum + s.custoFlex, 0);
+      const impostoCanal = chSales.reduce((sum: number, s: any) => sum + s.valorImposto, 0);
 
       const lucroLiquidoFinal = repasseTotal - cmvCanal - flexCanal - canalAds;
       const metaBase = parseCurrency(goalObj.meta_valor);
@@ -224,8 +230,10 @@ export default function PainelExecutivoPage() {
       const faturadoMesAnterior = prevChSales.reduce((sum: number, s: any) => sum + parseCurrency(s.preco_venda), 0);
       const projVsMesAnterior = faturadoMesAnterior > 0 ? ((faturadoComRedutor / faturadoMesAnterior) - 1) * 100 : 0;
 
-      const margemBrutaAtingida = faturadoBrutoPuro > 0 ? (repasseTotal / faturadoBrutoPuro) * 100 : 0;
-      const margemLiqAtingida = faturadoBrutoPuro > 0 ? (lucroLiquidoFinal / faturadoBrutoPuro) * 100 : 0;
+      // Margem Bruta corrigida: (Repasse - CMV) / Faturamento Bruto
+      const margemBrutaAtingida = faturadoBrutoPuro > 0 ? ((repasseTotal - cmvCanal) / faturadoBrutoPuro) * 100 : 0;
+      // Margem Líquida corrigida: descontando o imposto de 9% nos clubes e demais despesas
+      const margemLiqAtingida = faturadoBrutoPuro > 0 ? ((faturadoBrutoPuro - impostoCanal - cmvCanal - flexCanal - canalAds) / faturadoBrutoPuro) * 100 : 0;
 
       const metaMargemBruta = parseCurrency(goalObj.meta_margem_bruta || defaultMetaBruta);
       const metaMargemLiq = parseCurrency(goalObj.meta_margem_liq || 15);
@@ -279,6 +287,7 @@ export default function PainelExecutivoPage() {
   };
 
   const enrichTotals = (totals: any) => {
+    // Para simplificar a agregação dos totais gerais nas colunas, ponderamos as margens de forma proporcional ao faturamento bruto
     const margemBrutaAtingida = totals.faturadoBrutoPuro > 0 ? (totals.repasseTotal / totals.faturadoBrutoPuro) * 100 : 0;
     const margemLiqAtingida = totals.faturadoBrutoPuro > 0 ? (totals.lucroLiquidoFinal / totals.faturadoBrutoPuro) * 100 : 0;
     const metaMargemBruta = totals.metaValor > 0 ? totals.metaBrutaPonderada / totals.metaValor : 0;
@@ -524,9 +533,9 @@ export default function PainelExecutivoPage() {
                   <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemBruta.toFixed(1)}%</td>
                   <td className="py-1.5 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{item.margemBrutaAtingida.toFixed(1)}%</td>
                   <td className="py-1.5 px-2 text-center border-r border-slate-800/50 whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemBruta)}</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-500 whitespace-nowrap">-</td>
-                  <td className="py-1.5 px-2 text-center font-mono text-slate-500 whitespace-nowrap">-</td>
-                  <td className="py-1.5 px-2 text-center text-slate-500 whitespace-nowrap">-</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-300 whitespace-nowrap">{item.metaMargemLiq.toFixed(1)}%</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-slate-200 whitespace-nowrap">{item.margemLiqAtingida.toFixed(1)}%</td>
+                  <td className="py-1.5 px-2 text-center whitespace-nowrap">{renderSetaDiferencaMargem(item.diffMargemLiq)}</td>
                 </tr>
               ))}
 
@@ -543,9 +552,9 @@ export default function PainelExecutivoPage() {
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemBruta.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.margemBrutaAtingida.toFixed(1)}%</td>
                 <td className="py-2 px-2 text-center border-r border-emerald-500/50 whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemBruta)}</td>
-                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
-                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
-                <td className="py-2 px-2 text-center text-emerald-200/50 whitespace-nowrap">-</td>
+                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.metaMargemLiq.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center font-mono text-emerald-100 whitespace-nowrap">{totalFisico.margemLiqAtingida.toFixed(1)}%</td>
+                <td className="py-2 px-2 text-center whitespace-nowrap">{renderSetaTotal(totalFisico.diffMargemLiq)}</td>
               </tr>
 
             </tbody>
